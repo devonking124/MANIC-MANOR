@@ -1967,7 +1967,7 @@ class Soul {
     this.group.position.copy(this.pos);
     this.heart.lookAt(Head.pos);
     if (this.mode === 'yellow') this.heart.rotateZ(Math.PI);   // shooter soul points forward
-    this.heart.scale.setScalar(G.xr ? 1 : 0.7);
+    this.heart.scale.setScalar((G.xr ? 1 : 0.7) * (1 + 0.7 * this.wireK));   // bigger out on the wires (1 m+ away)
     let vis = this.active && this.alive && this.shatterT < 0;
     if (vis && this.invuln > 0) {
       const hz = Flash.reduced ? 5 : 10;
@@ -7623,7 +7623,7 @@ class PacketRouting extends Pattern {
     this.net = new CableNet();
     s.setMode('cyan'); s.attachWire(this.net.rider);
     G.loco.setMode('locked');
-    G.ui.showPrompt('* Your SOUL is now WIRED.', 2.4, '#2affd5');
+    this.say('* Your SOUL is now WIRED.', 2.4, '#2affd5');
     this.tipT = 2.5;
     // on the half-beat grid: warn 2 beats, then the train crosses; the next warning starts
     // only once the wire is clear again, so one wire at a time is ever dangerous
@@ -7643,6 +7643,13 @@ class PacketRouting extends Pattern {
     for (const E of this.net.edges) if (!E.alive && E.deadUntil >= 0 && n >= E.deadUntil) { E.alive = true; E.deadUntil = -1; }
     if (n % 2 === 0) G.audio.sfx.packet(when);
   }
+  // prompts go just above the board so they never cover the wires
+  say(text, life, color) {
+    const net = this.net, P = G.ui.prompt.mesh;
+    G.ui.showPrompt(text, life, color);
+    P.position.copy(net.center).addScaledVector(net.up, net.sy * (NET_ROWS - 1) / 2 + 0.2).addScaledVector(net.fwd, -0.1);
+    P.lookAt(Head.pos);
+  }
   // pick the wire for a transmission: usually the one you are on, so you have to move
   schedule(h) {
     const net = this.net, n = h / 2;
@@ -7655,7 +7662,7 @@ class PacketRouting extends Pattern {
     this.tx.push(t); this.last = t;
     G.audio.sfx.tone({ type: 'square', f: 1250, dur: 0.05, vol: 0.04 });
     const B = G.battle;
-    if (B && !B.taught.cyanLane) { B.taught.cyanLane = true; G.ui.showPrompt('RED WIRE = PACKETS INCOMING!  HOP TO ANOTHER WIRE', 3.0, '#ff2a4a'); }
+    if (B && !B.taught.cyanLane) { B.taught.cyanLane = true; this.say('RED WIRE = PACKETS!  HOP TO ANOTHER WIRE', 3.0, '#ff2a4a'); }
   }
   fire(t, when) {
     t.fired = true;
@@ -7664,16 +7671,17 @@ class PacketRouting extends Pattern {
       this.net.lanePoint(t.kind, t.lane, t.dir > 0 ? u0 : 1 - u0, _v1);
       const b = glyphBullet('packet', _v1.x, _v1.y, _v1.z, 0xd8fff6, 0.15); if (!b) break;
       b.beh = BEH.OWNER; b.owner = this; b.bounds = false; b.r = 0.07; b.collide = true;
-      b.life = (this.cross + 1.2) * G.clock.beatDur / Math.min(1, this.speedMul);
-      b.p0 = t.dir; b.p1 = u0; b.p2 = t.kind === 'row' ? 0 : 1; b.p3 = t.lane;
+      b.life = (this.cross + 2) * G.clock.beatDur / Math.min(1, this.speedMul);
+      b.p0 = t.dir; b.p1 = u0; b.p2 = t.kind === 'row' ? 0 : 1; b.p3 = t.lane; b.p4 = t.fireAt;
       b.glowCol.setHex(KC.cyan); b.glowA = 0.7;
     }
     G.audio.sfx.zap(when);
   }
-  bulletUpdate(b, dt) {
-    b.p1 += dt * this.speedMul / (this.cross * G.clock.beatDur);
-    if (b.p1 > 1.05) { b.age = b.life + 1; return; }
-    this.net.lanePoint(b.p2 === 0 ? 'row' : 'col', b.p3, b.p0 > 0 ? b.p1 : 1 - b.p1, b.pos);
+  // packets ride the music clock, not frame time, so they always match their telegraph
+  bulletUpdate(b) {
+    const u = b.p1 + Math.max(0, this.pb - b.p4) * this.speedMul / this.cross;
+    if (u > 1.05) { b.age = b.life + 1; return; }
+    this.net.lanePoint(b.p2 === 0 ? 'row' : 'col', b.p3, b.p0 > 0 ? u : 1 - u, b.pos);
   }
   warnUnplug(n) {
     const net = this.net, R = net.rider;
@@ -7708,14 +7716,14 @@ class PacketRouting extends Pattern {
     for (const t of this.tx) {
       if (t.kind !== E.kind || t.lane !== E.lane) continue;
       if (!t.fired && this.pb >= t.warnAt) st = Math.max(st, 1);                    // warning
-      else if (t.fired && this.pb < t.fireAt + this.cross + 0.2) st = 2;             // packets on it
+      else if (t.fired && this.pb < t.fireAt + this.cross / Math.min(1, this.speedMul) + 0.2) st = 2;   // packets on it
     }
     return st;
   }
   update(dt) {
     super.update(dt);
     const net = this.net, I = G.input;
-    if (this.tipT > 0) { this.tipT -= dt; if (this.tipT <= 0) G.ui.showPrompt(G.xr ? 'THUMBSTICK (OR HOLD GRIP + DRAG) TO MOVE YOUR HEART ALONG THE WIRES' : 'WASD / ARROW KEYS MOVE YOUR HEART ALONG THE WIRES', 3.2, '#2affd5'); }
+    if (this.tipT > 0) { this.tipT -= dt; if (this.tipT <= 0) this.say(G.xr ? 'MOVE: THUMBSTICK OR  GRIP + DRAG' : 'MOVE: WASD / ARROW KEYS', 3.2, '#2affd5'); }
     // steering: stick / keys at a fixed speed, or grip + drag (the heart follows your hand)
     let ix = 0, iy = 0, dist = 0;
     if (G.xr) {
@@ -7738,7 +7746,7 @@ class PacketRouting extends Pattern {
     const onEdge = net.atNode() < 0 ? net.rider.e : -1;
     for (let i = 0; i < net.edges.length && n < 48; i++) {
       const E = net.edges[i]; if (!E.alive) continue;
-      const st = this.laneState(E), w = st ? 0.024 : i === onEdge ? 0.026 : 0.017;
+      const st = this.laneState(E), w = st ? 0.024 : i === onEdge ? 0.021 : 0.017;
       const a = net.nodes[E.a], b = net.nodes[E.b];
       _v1.addVectors(a, b).multiplyScalar(0.5); _v2.subVectors(b, a).normalize();
       _q1.setFromUnitVectors(_v3.set(0, 0, 1), _v2); _s1.set(w, w, E.len);
@@ -7746,7 +7754,7 @@ class PacketRouting extends Pattern {
       if (E.warn >= 0) C.setColorAt(n, _c1.setRGB(1, 0.55, 0.1).multiplyScalar(0.35 + 0.65 * blink));
       else if (st === 2) C.setColorAt(n, _c1.setRGB(1, 1, 1));
       else if (st === 1) C.setColorAt(n, _c1.setRGB(1, 0.16, 0.29).multiplyScalar(0.35 + 0.65 * blink));
-      else if (i === onEdge) C.setColorAt(n, _c1.setRGB(0.75, 1, 0.95));
+      else if (i === onEdge) C.setColorAt(n, _c1.setRGB(0.2, 0.85, 0.72));      // a step up from idle, so the heart stands out on it
       else C.setColorAt(n, _c1.setRGB(0.1, 0.65, 0.55));
       n++;
     }
@@ -7762,10 +7770,11 @@ class PacketRouting extends Pattern {
       const len = _v2.distanceTo(_v1), dur = 2 * G.clock.beatDur;
       _v2.sub(_v1).normalize().multiplyScalar(len / dur);
       const ch = t.kind === 'row' ? (t.dir > 0 ? '>' : '<') : (t.dir > 0 ? '^' : 'v');
-      G.fx.glyphs.emit(_v1.x, _v1.y, _v1.z, _v2.x, _v2.y, _v2.z, dur, 0.09, 1, 0.16, 0.29, GlyphAtlas.of(ch), 0, 0);
+      G.fx.glyphs.emit(_v1.x, _v1.y, _v1.z, _v2.x, _v2.y, _v2.z, dur, 0.13, 1, 0.16, 0.29, GlyphAtlas.of(ch), 0, 0);
     }
     const at = net.atNode();
-    for (let i = 0; i < net.nodes.length; i++) { const p = net.nodes[i]; G.fx.glow.add(p.x, p.y, p.z, i === at ? 0.16 : 0.09, 0.16, 1, 0.84, i === at ? 0.9 : 0.5, 1); }
+    for (let i = 0; i < net.nodes.length; i++) { const p = net.nodes[i]; G.fx.glow.add(p.x, p.y, p.z, i === at ? 0.12 : 0.09, 0.16, 1, 0.84, 0.5, 1); }
+    const P = G.soul.pos; G.fx.glow.add(P.x, P.y, P.z, 0.26, 1, 1, 1, 0.5, 0);   // white halo: where your heart is
   }
   isIdle() { return !G.bullets.pools.glyph.active.some((b) => b.owner === this && !b.dying); }
   onEnd() {
