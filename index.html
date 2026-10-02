@@ -43,7 +43,7 @@
   .k { color: var(--teal); }
   .c-white { color: #fff; font-weight: bold; } .c-blue { color: var(--blue); font-weight: bold; }
   .c-orange { color: var(--orange); font-weight: bold; } .c-green { color: #3dff5a; font-weight: bold; }
-  .c-yellow { color: #ffe600; font-weight: bold; }
+  .c-yellow { color: #ffe600; font-weight: bold; } .c-red { color: #ff2a4a; font-weight: bold; }
   .setrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 7px 0; }
   .setrow label { letter-spacing: 1px; }
   .setrow select, .setrow input[type=range] { font: 15px "Courier New", monospace; background: #000; color: #fff;
@@ -103,7 +103,7 @@
       <li><b>FIGHT:</b> swing a controller through the glowing target when the sweeping line hits the center. On the beat = <b style="color:var(--gold)">CRITICAL</b>.</li>
       <li><span class="c-white">WHITE</span> = dodge &middot; <span class="c-blue">BLUE</span> = hold still &middot; <span class="c-orange">ORANGE</span> = keep moving &middot; <span class="c-green">GREEN</span> = heals &middot; <span class="c-yellow">YELLOW</span> guests loop around.</li>
       <li><b>GRAZE</b> bullets (pass close without touching) to build <b style="color:var(--orange)">TP</b>. TP powers special ACTs.</li>
-      <li><span class="c-yellow">YELLOW SOUL</span>: hold <span class="k">TRIGGER</span> (desktop: hold click) to shoot stars where your hand points. <b style="color:var(--teal)">CYAN SOUL</b>: your heart rides the cables &mdash; pull (or WASD/Q/E) along a cable, pull toward another cable at a junction to switch.</li>
+      <li><span class="c-yellow">YELLOW SOUL</span>: hold <span class="k">TRIGGER</span> (desktop: hold click) to shoot stars where your hand points. <b style="color:var(--teal)">CYAN SOUL</b>: your heart rides a grid of wires in front of you &mdash; thumbstick, or hold grip and drag (desktop: WASD / arrow keys); it turns at junctions by itself. A wire blinking <span class="c-red">red</span> is about to carry packets: hop to another one.</li>
       <li><b>GLITCH</b> bullets flip <span class="c-blue">BLUE</span>/<span class="c-orange">ORANGE</span> on every beat. Pop-up windows close when you <span class="k">POKE</span> their <b>[X]</b>.</li>
       <li><b>TYPE ATTACK</b> (boss 2's FIGHT): punch each glowing key on its beat (desktop: press that letter).</li>
       <li>Pause: <span class="k">Y / B button</span> (VR) or <span class="k">Esc</span> (desktop).</li>
@@ -157,7 +157,6 @@ const CONFIG = {
   GRAZE_HEAL_EVERY: 10,           // easy/normal: +1 HP per this many grazes
   BLUE_STILL_SPEED: 0.15, ORANGE_MOVE_SPEED: 0.6,
   YELLOW_FIRE_RATE: 6, YELLOW_SHOT_SPEED: 9.5, YELLOW_SHOT_LIFE: 0.85,
-  CYAN_MAX_SPEED: 3.2, CYAN_DAMPING: 3.5,
 
   // ---- locomotion ----
   PULL_MAX_SPEED: 7.0, PULL_DAMPING: 2.8, PULL_HISTORY: 6, WALL_RESTITUTION: 0.3,
@@ -4122,8 +4121,21 @@ class Shooter {
     dir.copy(Head.pos).addScaledVector(_v8, 9).sub(origin).normalize();
     return G.input.desk.mouseDown || G.input.key('KeyF');
   }
+  // aim assist: bend the shot toward the nearest open target inside a small cone
+  // around where you point (pointing precisely with a controller is hard)
+  assist(origin, dir) {
+    const cone = Math.cos((G.xr ? 12 : 8) * Math.PI / 180), open = Shooter.shieldOpen();
+    let best = null, bc = cone;
+    for (const b of G.bullets.shootables) {
+      if (b.dying || (b.shield && !open)) continue;
+      _v8.subVectors(b.pos, origin); const d = _v8.length(); if (d < 0.05 || d > 7) continue;
+      const c = _v8.dot(dir) / d; if (c > bc) { bc = c; best = b; }
+    }
+    if (best) dir.subVectors(best.pos, origin).normalize();
+  }
   fire(origin, dir) {
     const s = this.shots.find((x) => !x.on); if (!s) return;
+    this.assist(origin, dir);
     s.on = true; s.pos.copy(origin); s.vel.copy(dir).multiplyScalar(CONFIG.YELLOW_SHOT_SPEED); s.life = CONFIG.YELLOW_SHOT_LIFE; s.spin = rand(0, TAU);
     this.fired++;
     G.audio.sfx.shoot();
@@ -4139,13 +4151,17 @@ class Shooter {
     let n = 0;
     for (const s of this.shots) {
       if (!s.on) continue;
+      const p0 = _v5.copy(s.pos);
       s.life -= dt; s.pos.addScaledVector(s.vel, dt); s.spin += dt * 14;
       if (s.life <= 0 || !A.contains(s.pos, 0.4)) { s.on = false; continue; }
+      _v4.subVectors(s.pos, p0); const L2 = _v4.lengthSq();
       let hit = false;
       for (let i = 0; i < list.length && !hit; i++) {
         const b = list[i]; if (b.dying || !b.active) continue;
-        const r = b.r + 0.08;
-        if (s.pos.distanceToSquared(b.pos) > r * r) continue;
+        // swept test: closest point of this frame's path to the bullet (no tunnelling at low fps)
+        const t = L2 > 1e-9 ? clamp(_v3.subVectors(b.pos, p0).dot(_v4) / L2, 0, 1) : 1;
+        const r = b.r + 0.1;
+        if (_v3.copy(p0).addScaledVector(_v4, t).distanceToSquared(b.pos) > r * r) continue;
         hit = true;
         if (b.shield && !Shooter.shieldOpen()) { G.audio.sfx.deflect(); G.fx.sparkle(b.pos, 4); continue; }
         b.hp -= 1;
@@ -7403,68 +7419,98 @@ class LoadingBar extends Pattern {
 }
 
 // ---------------------------------------------------------------------------
-//  5. FIREWALL (YELLOW SOUL) - pixel-bug viruses crawl along the box walls toward
-//     you in waves on the beat, then leap; shoot them. Shielded ones only open
-//     on the off-beat.
+//  5. FIREWALL (YELLOW SOUL) - pixel-bug viruses crawl along the walls in front
+//     of you, one wave step per beat; each one winds up for a full beat (flashing,
+//     with its leap path drawn) and then leaps in a straight line on the beat.
+//     Shoot them first. Shielded ones only open on the off-beat. This is the
+//     shooting-gallery break, so it stays gentle: few viruses, never close to you.
 // ---------------------------------------------------------------------------
+const FW_SPAWN_MIN = 1.4;    // metres from the soul a virus may appear
+const FW_LEAP_FROM = 1.15;   // a crawling virus winds up once it is this close
 class Firewall extends Pattern {
   onStart() {
     this.hard = kidHard(this);
-    if (this.hard) this.intensity = Math.max(this.intensity, 1.6);
+    this.every = this.hard ? 1 : 2;                                  // a virus every 2 beats (B2: every beat)
+    this.maxAlive = this.hard ? 5 : this.intensity >= 1.3 ? 4 : 3;
+    this.shieldP = this.hard ? 0.25 : this.intensity >= 1.3 ? 0.12 : 0;
+    this.leapSpeed = (this.hard ? 1.8 : this.intensity >= 1.3 ? 1.5 : 1.3) * this.speedMul;
     G.soul.setMode('yellow'); G.shooter.enabled = true;
     G.ui.showPrompt('* Your SOUL is now in FIREWALL mode.', 2.8, '#ffe14a');
     const B = G.battle;
     if (B && !B.taught.shoot) { B.taught.shoot = true; this.tipT = 3.0; }
     this.kills = 0;
   }
+  mine() { return G.bullets.pools.glyph.active.filter((b) => b.owner === this && !b.dying); }
   onBeat(n, when) {
-    if (!this.spawning || n < 2 || n > this.beats - 6) return;
-    const per = this.hard ? 2 : (this.intensity >= 1.3 && n % 2 === 0 ? 2 : 1);
-    for (let k = 0; k < per; k++) this.spawnVirus();
+    // wound-up viruses leap on the beat
+    for (const b of this.mine()) if (b.p1 === 1 && n >= b.p4) this.leap(b);
+    if (!this.spawning || n < 3 || n > this.beats - 7 || (n - 3) % this.every) return;
+    if (this.mine().length >= this.maxAlive) return;
+    this.spawnVirus();
+  }
+  // a spot on a wall in front of you, well away from the soul
+  spawnSpot(out, nrm) {
+    const A = G.arena, s = G.soul.pos, m = 0.3, deep = A.min.z + Math.max(0.5, A.size.z * 0.4);
+    let best = -1;
+    for (let k = 0; k < 12; k++) {
+      const face = weightedPick([['far', 4], ['left', 1.2], ['right', 1.2], ['ceil', 0.8], ['floor', 0.8]]);
+      _v2.set(rand(A.min.x + m, A.max.x - m), rand(A.min.y + m, A.max.y - m), rand(A.min.z + 0.15, deep));
+      if (face === 'far') { _v2.z = A.min.z + 0.04; _v3.set(0, 0, 1); }
+      else if (face === 'left') { _v2.x = A.min.x + 0.04; _v3.set(1, 0, 0); }
+      else if (face === 'right') { _v2.x = A.max.x - 0.04; _v3.set(-1, 0, 0); }
+      else if (face === 'ceil') { _v2.y = A.max.y - 0.04; _v3.set(0, -1, 0); }
+      else { _v2.y = A.min.y + 0.04; _v3.set(0, 1, 0); }
+      const d = _v2.distanceTo(s);
+      if (d > best) { best = d; out.copy(_v2); nrm.copy(_v3); }
+      if (d >= FW_SPAWN_MIN) break;
+    }
+    return best;
   }
   spawnVirus() {
-    const A = G.arena, m = 0.3;
-    const face = weightedPick([['far', 3], ['left', 2], ['right', 2], ['ceil', 1.2], ['floor', 1.2]]);
-    let x = rand(A.min.x + m, A.max.x - m), y = rand(A.min.y + m, A.max.y - m), z = rand(A.min.z + m, A.max.z - 0.9);
-    const nrm = _v1;
-    if (face === 'far') { z = A.min.z + 0.04; nrm.set(0, 0, 1); }
-    else if (face === 'left') { x = A.min.x + 0.04; nrm.set(1, 0, 0); }
-    else if (face === 'right') { x = A.max.x - 0.04; nrm.set(-1, 0, 0); }
-    else if (face === 'ceil') { y = A.max.y - 0.04; nrm.set(0, -1, 0); }
-    else { y = A.min.y + 0.04; nrm.set(0, 1, 0); }
-    const b = glyphBullet('virusA', x, y, z, KC.term, 0.2); if (!b) return;
-    b.beh = BEH.OWNER; b.owner = this; b.life = 16; b.bounds = false; b.collide = false;
-    b.shootable = true; b.hp = this.hard && chance(0.3) ? 2 : 1; b.r = 0.09;
-    b.shield = chance(this.hard ? 0.4 : this.intensity >= 1.3 ? 0.28 : 0.18);
-    b.dir.copy(nrm); b.p1 = 0; b.p2 = rand(0.55, 0.8) * (this.hard ? 1.25 : 1) * this.speedMul; b.p3 = rand(0, 1);
-    G.fx.sparkle(b.pos, 4);
+    const d = this.spawnSpot(_v4, _v1);
+    if (d < FW_LEAP_FROM) return;                         // no room in front of you right now
+    const b = glyphBullet('virusA', _v4.x, _v4.y, _v4.z, KC.term, 0.2); if (!b) return;
+    b.beh = BEH.OWNER; b.owner = this; b.life = 12; b.bounds = false; b.collide = false;
+    b.shootable = true; b.hp = this.hard && chance(0.2) ? 2 : 1; b.r = 0.09;
+    b.shield = chance(this.shieldP);
+    b.dir.copy(_v1); b.p1 = 0; b.p2 = rand(0.3, 0.45) * this.speedMul; b.p3 = rand(0, 1); b.p4 = 0;
+    G.fx.sparkle(b.pos, 4); G.audio.sfx.popDing();
+  }
+  // wind-up: flashes and shows its leap path for a full beat, then leaps on the beat after
+  windUp(b) {
+    b.p1 = 1; b.p4 = Math.floor(this.pb) + 2;
+    G.audio.sfx.tone({ type: 'square', f: 520, f2: 760, dur: 0.1, vol: 0.045 });
+  }
+  leap(b) {
+    b.p1 = 2;
+    b.vel.subVectors(G.soul.pos, b.pos).normalize().multiplyScalar(this.leapSpeed);   // straight at where you are now
+    G.audio.sfx.tone({ type: 'square', f: 300, f2: 900, dur: 0.12, vol: 0.05 });
   }
   bulletUpdate(b, dt) {
-    const s = G.soul.pos, ph = G.clock.beatPhase;
+    const s = G.soul.pos;
     const closed = b.shield && !Shooter.shieldOpen();
     b.glyph = GlyphAtlas.of(closed ? 'shield' : ((G.clock.beatIndex + (b.p3 > 0.5 ? 1 : 0)) & 1) ? 'virusA' : 'virusB');
-    b.color.setHex(closed ? KC.cyan : b.hp > 1 ? KC.warn : KC.term);
     if (b.p1 === 0) {
       // crawl along the wall toward the point closest to the soul, lurching on each beat
+      b.color.setHex(closed ? KC.cyan : b.hp > 1 ? KC.warn : KC.term);
       _v2.subVectors(s, b.pos); _v2.addScaledVector(b.dir, -_v2.dot(b.dir));       // in-plane offset
       const d = _v2.length();
-      if (d < 0.2 || b.age > 7) {
-        b.p1 = 1; b.vel.subVectors(s, b.pos).normalize().multiplyScalar(2.0 * this.speedMul);
-        G.audio.sfx.tone({ type: 'square', f: 300, f2: 900, dur: 0.12, vol: 0.05 });
-      } else {
-        const lurch = ph < 0.3 ? 2.6 : 0.35;
-        b.pos.addScaledVector(_v2.divideScalar(d), Math.min(d, b.p2 * lurch * dt));
-      }
+      if (d < 0.25 || b.pos.distanceTo(s) < FW_LEAP_FROM || b.age > 4) this.windUp(b);
+      else b.pos.addScaledVector(_v2.divideScalar(d), Math.min(d, b.p2 * (G.clock.beatPhase < 0.3 ? 2.4 : 0.35) * dt));
+    } else if (b.p1 === 1) {
+      // telegraph: blink warning yellow, swell, and draw the path it is about to take
+      const blink = (Math.floor(this.pb * (Flash.reduced ? 2 : 4)) & 1) === 0;
+      b.color.setHex(closed ? KC.cyan : blink ? KC.warn : 0xff7a2a);
+      b.scale = 0.2 * (1 + 0.25 * (this.pb - (b.p4 - 2)) / 2);
+      G.tele.line(b.pos, s, 0.008, KC.warn, 0.05, { alpha: 0.55 });
     } else {
-      // leap at the soul (slight homing)
-      _v2.subVectors(s, b.pos).normalize();
-      b.vel.lerp(_v2.multiplyScalar(b.vel.length()), Math.min(1, dt * 1.2));
+      b.color.setHex(closed ? KC.cyan : 0xff7a2a);
       b.pos.addScaledVector(b.vel, dt);
       if (!G.arena.contains(b.pos, 0.3)) b.age = b.life + 1;
     }
     // a virus that reaches you: crunchy hit
     const soul = G.soul;
-    if (soul.active && soul.alive && b.pos.distanceTo(s) < soul.hitR + b.r) {
+    if (b.p1 === 2 && soul.active && soul.alive && b.pos.distanceTo(s) < soul.hitR + b.r) {
       if (soul.hurt(this.dmg)) { for (let k = 0; k < 3; k++) setTimeout(() => G.input.pulseAll(0.9, 25), k * 55); }
       G.audio.sfx.splat(); G.fx.burst(b.pos, 8, 0.24, 1, 0.43, 1.2, 0.05);
       b.die(); b.shootable = false;
@@ -7484,228 +7530,244 @@ class Firewall extends Pattern {
 }
 
 // ---------------------------------------------------------------------------
-//  CableNet - the CYAN soul's wire graph (a 3x3x2 lattice in front of you)
+//  CableNet - the CYAN soul's wires: a flat "circuit board" facing you, 3 rows x
+//  4 columns of junctions with every row and column wired. The heart rides it;
+//  you stay put and steer it like a cursor.
 // ---------------------------------------------------------------------------
+const NET_ROWS = 3, NET_COLS = 4;
 class CableNet {
-  constructor(origin) {
+  constructor() {
     const A = G.arena;
-    this.nodes = []; this.edges = []; this.adj = [];
-    const xs = [-0.9, 0, 0.9], ys = [-0.55, 0, 0.55], zs = [-0.5, -1.3];
-    for (const z of zs) for (const y of ys) for (const x of xs) {
-      const v = new THREE.Vector3(origin.x + x, origin.y + y, origin.z + z); A.clampPoint(v, 0.22);
-      this.nodes.push(v); this.adj.push([]);
+    Head.update();
+    // the board faces you like the rest of the box (the boss wall): across the box, ~1.1 m ahead, eye height
+    this.right = new THREE.Vector3(1, 0, 0); this.up = new THREE.Vector3(0, 1, 0); this.fwd = new THREE.Vector3(0, 0, -1);
+    this.sx = clamp((A.size.x - 0.6) / (NET_COLS - 1), 0.3, 0.6);
+    this.sy = clamp((A.size.y - 0.5) / (NET_ROWS - 1), 0.26, 0.42);
+    const hh = this.sy * (NET_ROWS - 1) / 2, yLo = A.min.y + hh + 0.18, zLo = A.min.z + 0.3;
+    const c = this.center = new THREE.Vector3(A.center.x,
+      clamp(Head.pos.y - (G.xr ? 0.12 : 0.05), yLo, Math.max(yLo, A.max.y - hh - 0.18)),
+      clamp(Head.pos.z - (G.xr ? 1.1 : 1.3), zLo, Math.max(zLo, Head.pos.z - 0.7)));
+    this.nodes = []; this.edges = []; this.nb = [];        // nb[node] = edge index toward L / R / U / D (or -1)
+    for (let r = 0; r < NET_ROWS; r++) for (let k = 0; k < NET_COLS; k++) {
+      const v = c.clone().addScaledVector(this.right, (k - (NET_COLS - 1) / 2) * this.sx).addScaledVector(this.up, (r - (NET_ROWS - 1) / 2) * this.sy);
+      A.clampPoint(v, 0.1);
+      this.nodes.push(v); this.nb.push({ L: -1, R: -1, U: -1, D: -1 });
     }
-    const id = (ix, iy, iz) => iz * 9 + iy * 3 + ix;
-    const cand = [];
-    for (let iz = 0; iz < 2; iz++) for (let iy = 0; iy < 3; iy++) for (let ix = 0; ix < 3; ix++) {
-      if (ix < 2) cand.push([id(ix, iy, iz), id(ix + 1, iy, iz)]);
-      if (iy < 2) cand.push([id(ix, iy, iz), id(ix, iy + 1, iz)]);
-      if (iz < 1) cand.push([id(ix, iy, iz), id(ix, iy, iz + 1)]);
-    }
-    // random spanning tree (always connected) + most of the remaining cables
-    shuffle(cand);
-    const par = this.nodes.map((_, i) => i), find = (i) => (par[i] === i ? i : (par[i] = find(par[i])));
-    const keep = [];
-    for (const e of cand) { const a = find(e[0]), b = find(e[1]); if (a !== b) { par[a] = b; keep.push(e); } }
-    for (const e of cand) if (!keep.includes(e) && chance(0.62)) keep.push(e);
-    for (const [a, b] of keep) {
-      const i = this.edges.length;
-      this.edges.push({ a, b, len: this.nodes[a].distanceTo(this.nodes[b]), alive: true, warn: -1, deadUntil: -1 });
-      this.adj[a].push(i); this.adj[b].push(i);
-    }
-    this.rider = { e: 0, t: 0, v: 0, pos: new THREE.Vector3() };
-    // start on the node closest to the soul (front-centre)
-    let bn = 0, bd = 1e9;
-    for (let i = 0; i < this.nodes.length; i++) { const d = this.nodes[i].distanceTo(G.soul.pos); if (d < bd) { bd = d; bn = i; } }
-    this.placeAtNode(bn);
+    const link = (a, b, kind, lane) => {
+      this.edges.push({ a, b, kind, lane, len: this.nodes[a].distanceTo(this.nodes[b]), alive: true, warn: -1, deadUntil: -1 });
+      return this.edges.length - 1;
+    };
+    for (let r = 0; r < NET_ROWS; r++) for (let k = 0; k < NET_COLS - 1; k++) { const i = link(this.id(r, k), this.id(r, k + 1), 'row', r); this.nb[this.id(r, k)].R = i; this.nb[this.id(r, k + 1)].L = i; }
+    for (let k = 0; k < NET_COLS; k++) for (let r = 0; r < NET_ROWS - 1; r++) { const i = link(this.id(r, k), this.id(r + 1, k), 'col', k); this.nb[this.id(r, k)].U = i; this.nb[this.id(r + 1, k)].D = i; }
+    // the heart starts on the middle row, at the junction closest to it
+    let bn = this.id(1, 1), bd = 1e9;
+    for (let k = 0; k < NET_COLS; k++) { const d = this.nodes[this.id(1, k)].distanceTo(G.soul.pos); if (d < bd) { bd = d; bn = this.id(1, k); } }
+    this.rider = { a: bn, b: bn, t: 0, e: -1, pos: this.nodes[bn].clone() };
   }
+  id(r, k) { return r * NET_COLS + k; }
   other(e, n) { return e.a === n ? e.b : e.a; }
-  placeAtNode(n) {
-    const R = this.rider;
-    const opts = this.adj[n].filter((i) => this.edges[i].alive);
-    const ei = opts.length ? opts[0] : this.adj[n][0];
-    R.e = ei; R.t = this.edges[ei].a === n ? 0 : 1; R.v = 0;
-    R.pos.copy(this.nodes[n]);
-  }
-  nodeAt() { const R = this.rider, e = this.edges[R.e]; return R.t <= 0.001 ? e.a : R.t >= 0.999 ? e.b : -1; }
-  nearestNode() { const R = this.rider, e = this.edges[R.e]; return R.t < 0.5 ? e.a : e.b; }
-  // move the rider by a world-space intent: displacement `d` (pulls, 1:1) or a direction `u` at speed
-  move(dt, d, u, grabbing) {
-    const R = this.rider;
-    for (let iter = 0; iter < 3; iter++) {
-      const e = this.edges[R.e], a = this.nodes[e.a], b = this.nodes[e.b];
-      _v7.subVectors(b, a).divideScalar(e.len);                       // unit a -> b
-      let s;
-      if (grabbing) { s = d.dot(_v7); if (dt > 1e-4) R.v = lerp(R.v, clamp(s / dt, -CONFIG.CYAN_MAX_SPEED, CONFIG.CYAN_MAX_SPEED), 0.5); }
-      else if (u.lengthSq() > 1e-6) { R.v = damp(R.v, u.dot(_v7) * 1.7, 10, dt); s = R.v * dt; }
-      else { R.v *= Math.exp(-CONFIG.CYAN_DAMPING * dt); s = R.v * dt; }
-      // at a junction: snap onto the cable you are pulling toward
-      const at = this.nodeAt();
-      const want = grabbing ? _v8.copy(d) : u.lengthSq() > 1e-6 ? _v8.copy(u) : _v8.copy(_v7).multiplyScalar(Math.sign(R.v));
-      if (at >= 0 && want.lengthSq() > 1e-8) {
-        want.normalize();
-        let best = -1, bs = 0.35;
-        for (const i of this.adj[at]) {
-          const E = this.edges[i]; if (!E.alive) continue;
-          _v6.subVectors(this.nodes[this.other(E, at)], this.nodes[at]).normalize();
-          const sc = _v6.dot(want); if (sc > bs + (i === R.e ? -0.05 : 0)) { bs = sc; best = i; }
-        }
-        if (best >= 0 && best !== R.e) {
-          const E = this.edges[best];
-          R.e = best; R.t = E.a === at ? 0 : 1; R.v = Math.abs(R.v) * (E.a === at ? 1 : -1);
-          continue;   // re-project on the new cable
-        }
+  // live edge leaving node n toward board direction 'L' / 'R' / 'U' / 'D', or -1
+  exit(n, dir) { const i = this.nb[n][dir]; return i >= 0 && this.edges[i].alive ? i : -1; }
+  atNode() { const R = this.rider; return R.t <= 1e-4 ? R.a : R.t >= 1 - 1e-4 ? R.b : -1; }
+  nearestNode() { const R = this.rider; return R.t < 0.5 ? R.a : R.b; }
+  riderRow() { return Math.floor(this.nearestNode() / NET_COLS); }
+  riderCol() { return this.nearestNode() % NET_COLS; }
+  // ride `dist` metres toward board direction (ix right, iy up). Input across the current
+  // cable carries you to the nearer junction and turns you there, so you can hold it early.
+  move(ix, iy, dist) {
+    const R = this.rider, ax = Math.abs(ix), ay = Math.abs(iy);
+    if (ax < 1e-3 && ay < 1e-3) return;
+    const prim = ax >= ay ? (ix > 0 ? 'R' : 'L') : (iy > 0 ? 'U' : 'D');
+    const sec = ax >= ay ? (ay > 0.3 * ax ? (iy > 0 ? 'U' : 'D') : null) : (ax > 0.3 * ay ? (ix > 0 ? 'R' : 'L') : null);
+    for (let iter = 0; iter < 6 && dist > 1e-6; iter++) {
+      const at = this.atNode();
+      if (at >= 0) {
+        const dir = this.exit(at, prim) >= 0 ? prim : sec && this.exit(at, sec) >= 0 ? sec : null;
+        if (!dir) { R.a = R.b = at; R.t = 0; break; }             // board edge or unplugged: wait at the junction
+        R.e = this.exit(at, dir); R.a = at; R.b = this.other(this.edges[R.e], at); R.t = 0;
       }
-      let t = R.t + s / e.len;
-      if (t > 1 || t < 0) {
-        const node = t > 1 ? e.b : e.a, over = (t > 1 ? t - 1 : -t) * e.len;
-        R.t = t > 1 ? 1 : 0;
-        // carry on through the junction along the best-aligned live cable
-        _v8.copy(_v7).multiplyScalar(t > 1 ? 1 : -1);
-        let best = -1, bs = 0.55;
-        for (const i of this.adj[node]) {
-          if (i === R.e) continue;
-          const E = this.edges[i]; if (!E.alive) continue;
-          _v6.subVectors(this.nodes[this.other(E, node)], this.nodes[node]).normalize();
-          const sc = _v6.dot(_v8); if (sc > bs) { bs = sc; best = i; }
-        }
-        if (best >= 0) {
-          const E = this.edges[best];
-          R.e = best; R.t = (E.a === node ? 0 : 1) + (E.a === node ? 1 : -1) * Math.min(over / E.len, 0.99);
-          R.v = Math.abs(R.v) * (E.a === node ? 1 : -1);
-        } else R.v = 0;
-      } else R.t = t;
-      break;
+      const E = this.edges[R.e], horiz = E.kind === 'row';
+      const along = _v7.subVectors(this.nodes[R.b], this.nodes[R.a]).dot(horiz ? this.right : this.up);   // > 0: a -> b goes right / up
+      const fits = (d) => d && (horiz ? d === 'L' || d === 'R' : d === 'U' || d === 'D');
+      const d = fits(prim) ? prim : fits(sec) ? sec : null;                 // input direction along this cable, if any
+      const toB = d ? (d === 'R' || d === 'U') === along > 0 : R.t >= 0.5;
+      if (!toB) { const a = R.a; R.a = R.b; R.b = a; R.t = 1 - R.t; }
+      const step = dist / E.len;
+      if (R.t + step >= 1) { dist -= (1 - R.t) * E.len; R.a = R.b; R.t = 0; }  // arrived at the junction R.a
+      else { R.t += step; dist = 0; }
     }
-    const e = this.edges[R.e];
-    R.pos.lerpVectors(this.nodes[e.a], this.nodes[e.b], R.t);
+    R.pos.lerpVectors(this.nodes[R.a], this.nodes[R.b], R.t);
+  }
+  // world position along a whole row / column lane (u = 0 .. 1 from its first to last junction)
+  lanePoint(kind, lane, u, out) {
+    const a = kind === 'row' ? this.nodes[this.id(lane, 0)] : this.nodes[this.id(0, lane)];
+    const b = kind === 'row' ? this.nodes[this.id(lane, NET_COLS - 1)] : this.nodes[this.id(NET_ROWS - 1, lane)];
+    return out.lerpVectors(a, b, u);
   }
 }
 
 // ---------------------------------------------------------------------------
-//  6. PACKET ROUTING (CYAN SOUL) - your heart rides the cables; light packets race
-//     along them on the beat; switch cables at junctions; some cables flicker for
-//     a beat and unplug with a spark. B2: packets go double-time on half-beats.
+//  6. PACKET ROUTING (CYAN SOUL) - your heart rides a wired circuit board. A wire
+//     about to carry a packet blinks red with arrows for 2 beats, then a packet
+//     train races along it: hop to another wire. Only one wire is ever dangerous
+//     at a time, so a single hop is always enough. Some horizontal cables flicker
+//     for 2 beats and unplug with a spark (the up/down links never do).
+//     B1: one transmission per bar. B2: double-time trains, landing on the half-beats.
 // ---------------------------------------------------------------------------
+const NET_SPEED = 1.6;    // m/s along the wires (stick / keys)
 class PacketRouting extends Pattern {
   onStart() {
     KidKit.init();
     this.hard = kidHard(this);
-    if (this.hard) this.intensity = Math.max(this.intensity, 1.6);
     const s = G.soul;
-    this.net = new CableNet(s.pos);
+    this.net = new CableNet();
     s.setMode('cyan'); s.attachWire(this.net.rider);
     G.loco.setMode('locked');
-    G.ui.showPrompt(G.xr ? 'YOUR SOUL IS ON THE WIRE!  PULL ALONG IT - PULL TOWARD A CABLE TO SWITCH' : 'YOUR SOUL IS ON THE WIRE!  WASD / Q E TO RIDE - STEER AT JUNCTIONS', 3.6, '#2affd5');
-    this.rate = this.hard ? 2 : 1;          // edges per beat
-    this.unplugs = [];
+    G.ui.showPrompt('* Your SOUL is now WIRED.', 2.4, '#2affd5');
+    this.tipT = 2.5;
+    // on the half-beat grid: warn 2 beats, then the train crosses; the next warning starts
+    // only once the wire is clear again, so one wire at a time is ever dangerous
+    this.everyH = this.hard ? 5 : 8;     // half-beats between transmissions (B2 alternates beat / half-beat)
+    this.cross = this.hard ? 0.5 : 1;    // beats a packet train takes to cross its wire
+    this.tx = []; this.unplugs = [];
+  }
+  onHalf(h, when) {
+    for (const t of this.tx) if (!t.fired && h >= t.fireHalf) this.fire(t, when);
+    if (this.spawning && h >= 4 && h <= this.beats * 2 - 10 && (h - 4) % this.everyH === 0) this.schedule(h);
+    this.tx = this.tx.filter((t) => !t.fired || this.pb < t.fireAt + this.cross + 1);
   }
   onBeat(n, when) {
-    if (this.spawning && n >= 2 && n <= this.beats - 4 && !this.hard) this.spawnPacket(n);
-    // unplug a cable every 2 bars (1-beat flicker warning first)
-    if (this.spawning && n % 8 === 5 && n <= this.beats - 4) this.warnUnplug(n);
-    for (const u of this.unplugs) if (!u.done && n >= u.at) this.unplug(u, when);
+    // unplug a horizontal cable every 2 bars (2-beat flicker warning first)
+    if (this.spawning && n % 8 === 5 && n <= this.beats - 5) this.warnUnplug(n);
+    for (const u of this.unplugs) if (!u.done && n >= u.at) this.unplug(u);
     for (const E of this.net.edges) if (!E.alive && E.deadUntil >= 0 && n >= E.deadUntil) { E.alive = true; E.deadUntil = -1; }
     if (n % 2 === 0) G.audio.sfx.packet(when);
   }
-  onHalf(h) {
-    if (this.hard && this.spawning && h >= 4 && h <= this.beats * 2 - 8) this.spawnPacket(h / 2);
+  // pick the wire for a transmission: usually the one you are on, so you have to move
+  schedule(h) {
+    const net = this.net, n = h / 2;
+    const cols = this.intensity >= 1.3 && n >= (this.hard ? 6 : 12) && chance(this.hard ? 0.35 : 0.25);
+    const kind = cols ? 'col' : 'row', count = cols ? NET_COLS : NET_ROWS;
+    const mine = cols ? net.riderCol() : net.riderRow();
+    let lane = chance(0.6) ? mine : randi(0, count - 1);
+    if (this.last && this.last.kind === kind && this.last.lane === lane && chance(0.5)) lane = (lane + randi(1, count - 1)) % count;
+    const t = { kind, lane, dir: chance(0.5) ? 1 : -1, warnAt: n, fireAt: n + 2, fireHalf: h + 4, fired: false };
+    this.tx.push(t); this.last = t;
+    G.audio.sfx.tone({ type: 'square', f: 1250, dur: 0.05, vol: 0.04 });
+    const B = G.battle;
+    if (B && !B.taught.cyanLane) { B.taught.cyanLane = true; G.ui.showPrompt('RED WIRE = PACKETS INCOMING!  HOP TO ANOTHER WIRE', 3.0, '#ff2a4a'); }
   }
-  spawnPacket(nb) {
-    const net = this.net, rn = net.nearestNode();
-    // spawn far from the rider (graph distance >= 2)
-    const near = new Set([rn]); for (const i of net.adj[rn]) near.add(net.other(net.edges[i], rn));
-    const cands = []; for (let i = 0; i < net.nodes.length; i++) if (!near.has(i)) cands.push(i);
-    if (!cands.length) return;
-    const node = pick(cands), opts = net.adj[node].filter((i) => net.edges[i].alive);
-    if (!opts.length) return;
-    const ei = pick(opts), E = net.edges[ei], p = net.nodes[node];
-    const b = glyphBullet('packet', p.x, p.y, p.z, 0xd8fff6, 0.15); if (!b) return;
-    b.beh = BEH.OWNER; b.owner = this; b.collide = false; b.bounds = false; b.life = (8 / this.rate + 1) * G.clock.beatDur / Math.min(1, this.speedMul); b.r = 0.07;
-    b.p0 = ei; b.p1 = E.a === node ? 1 : -1; b.p2 = E.a === node ? 0 : 1; b.p3 = nb + 1;   // glows at its node for a beat first
-    b.glowCol.setHex(KC.cyan); b.glowA = 0.6;
+  fire(t, when) {
+    t.fired = true;
+    for (let k = 0; k < 3; k++) {
+      const u0 = -0.09 * k;
+      this.net.lanePoint(t.kind, t.lane, t.dir > 0 ? u0 : 1 - u0, _v1);
+      const b = glyphBullet('packet', _v1.x, _v1.y, _v1.z, 0xd8fff6, 0.15); if (!b) break;
+      b.beh = BEH.OWNER; b.owner = this; b.bounds = false; b.r = 0.07; b.collide = true;
+      b.life = (this.cross + 1.2) * G.clock.beatDur / Math.min(1, this.speedMul);
+      b.p0 = t.dir; b.p1 = u0; b.p2 = t.kind === 'row' ? 0 : 1; b.p3 = t.lane;
+      b.glowCol.setHex(KC.cyan); b.glowA = 0.7;
+    }
+    G.audio.sfx.zap(when);
   }
   bulletUpdate(b, dt) {
-    const net = this.net;
-    let E = net.edges[b.p0];
-    if (this.pb < b.p3) { b.collide = false; b.glowA = 0.3 + 0.3 * Math.abs(Math.sin(this.pb * Math.PI * 2)); }
-    else {
-      b.collide = true; b.glowA = 0.6;
-      b.p2 += b.p1 * dt * this.rate * this.speedMul / (G.clock.beatDur * Math.max(0.5, E.len / 0.9));
-      if (b.p2 > 1 || b.p2 < 0) {
-        const node = b.p2 > 1 ? E.b : E.a;
-        const opts = net.adj[node].filter((i) => i !== b.p0 && net.edges[i].alive);
-        if (!opts.length) { b.p1 = -b.p1; b.p2 = clamp(b.p2, 0, 1); }
-        else { b.p0 = pick(opts); E = net.edges[b.p0]; b.p1 = E.a === node ? 1 : -1; b.p2 = E.a === node ? 0 : 1; }
-      }
-      if (!E.alive) { b.die(); b.collide = false; return; }
-    }
-    b.pos.lerpVectors(net.nodes[E.a], net.nodes[E.b], clamp(b.p2, 0, 1));
+    b.p1 += dt * this.speedMul / (this.cross * G.clock.beatDur);
+    if (b.p1 > 1.05) { b.age = b.life + 1; return; }
+    this.net.lanePoint(b.p2 === 0 ? 'row' : 'col', b.p3, b.p0 > 0 ? b.p1 : 1 - b.p1, b.pos);
   }
   warnUnplug(n) {
     const net = this.net, R = net.rider;
-    const live = net.edges.map((E, i) => i).filter((i) => net.edges[i].alive);
+    const live = []; for (let i = 0; i < net.edges.length; i++) if (net.edges[i].alive && net.edges[i].kind === 'row') live.push(i);
     if (live.length < 6) return;
-    const mine = chance(0.5) ? R.e : pick(net.adj[net.nearestNode()].filter((i) => net.edges[i].alive));
-    const ei = mine !== undefined && net.edges[mine] && net.edges[mine].alive ? mine : pick(live);
+    let ei = -1;
+    if (chance(0.5)) {
+      if (net.atNode() < 0) ei = R.e;
+      else { const n0 = net.atNode(), opts = ['L', 'R'].map((d) => net.exit(n0, d)).filter((i) => i >= 0); if (opts.length) ei = pick(opts); }
+    }
+    if (ei < 0 || !net.edges[ei].alive || net.edges[ei].kind !== 'row') ei = pick(live);
     net.edges[ei].warn = n;
-    this.unplugs.push({ e: ei, at: n + 1, done: false });
+    this.unplugs.push({ e: ei, at: n + 2, done: false });
     G.audio.sfx.tone({ type: 'square', f: 1800, dur: 0.05, vol: 0.05 });
   }
-  unplug(u, when) {
+  unplug(u) {
     u.done = true;
-    const net = this.net, E = net.edges[u.e];
-    E.alive = false; E.warn = -1; E.deadUntil = Math.floor(this.pb) + 6;
+    const net = this.net, E = net.edges[u.e], R = net.rider;
+    E.alive = false; E.warn = -1; E.deadUntil = Math.floor(this.pb) + 4;
     _v1.lerpVectors(net.nodes[E.a], net.nodes[E.b], 0.5);
     G.audio.sfx.spark(); G.fx.burst(_v1, 14, 1, 0.9, 0.4, 2.2, 0.05);
-    const R = net.rider;
-    if (R.e === u.e) {
-      // still on it: zapped, and thrown to the nearest junction
+    if (net.atNode() < 0 && R.e === u.e) {
+      // still on it: zapped, and bumped to the nearest junction
       G.soul.hurt(this.dmg);
-      const node = R.t < 0.5 ? E.a : E.b;
-      net.placeAtNode(node);
+      const node = net.nearestNode();
+      R.a = R.b = node; R.t = 0; R.pos.copy(net.nodes[node]);
     }
+  }
+  // which wires are live / warned right now (for drawing)
+  laneState(E) {
+    let st = 0;
+    for (const t of this.tx) {
+      if (t.kind !== E.kind || t.lane !== E.lane) continue;
+      if (!t.fired && this.pb >= t.warnAt) st = Math.max(st, 1);                    // warning
+      else if (t.fired && this.pb < t.fireAt + this.cross + 0.2) st = 2;             // packets on it
+    }
+    return st;
   }
   update(dt) {
     super.update(dt);
     const net = this.net, I = G.input;
-    // gather the player's intent: grip pulls (1:1, like flying), stick or WASD glide
-    const d = _v4.set(0, 0, 0), u = _v5.set(0, 0, 0);
-    let grabbing = false;
+    if (this.tipT > 0) { this.tipT -= dt; if (this.tipT <= 0) G.ui.showPrompt(G.xr ? 'THUMBSTICK (OR HOLD GRIP + DRAG) TO MOVE YOUR HEART ALONG THE WIRES' : 'WASD / ARROW KEYS MOVE YOUR HEART ALONG THE WIRES', 3.2, '#2affd5'); }
+    // steering: stick / keys at a fixed speed, or grip + drag (the heart follows your hand)
+    let ix = 0, iy = 0, dist = 0;
     if (G.xr) {
-      let nh = 0;
-      for (const h of I.hands) if (h.connected && h.b.grip) { _v3.copy(h.localDelta).applyQuaternion(rig.quaternion); d.sub(_v3); nh++; }
-      if (nh) { d.divideScalar(nh); grabbing = d.lengthSq() < 0.09; if (!grabbing) d.set(0, 0, 0); }
-      const L = I.left, Rh = I.right;
-      if (L) { const x = deadzone(L.stick.x), y = deadzone(L.stick.y); u.addScaledVector(Head.fwdFlat, -y).addScaledVector(Head.right, x); }
-      if (Rh) u.y -= deadzone(Rh.stick.y, 0.35);
+      let gx = 0, gy = 0, ng = 0;
+      for (const h of I.hands) if (h.connected && h.b.grip) { _v3.copy(h.localDelta).applyQuaternion(rig.quaternion); gx += _v3.dot(net.right); gy += _v3.dot(net.up); ng++; }
+      if (ng && Math.hypot(gx, gy) > 1e-4) { ix = gx / ng; iy = gy / ng; dist = Math.min(Math.hypot(ix, iy) * 2.2, NET_SPEED * 1.6 * dt); }
+      else {
+        for (const h of [I.left, I.right]) if (h) { ix += deadzone(h.stick.x); iy -= deadzone(h.stick.y); }
+        dist = NET_SPEED * Math.min(1, Math.hypot(ix, iy)) * dt;
+      }
     } else {
-      const yaw = I.desk.yaw, fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-      if (I.key('KeyW')) { u.x += fx; u.z += fz; } if (I.key('KeyS')) { u.x -= fx; u.z -= fz; }
-      if (I.key('KeyD')) { u.x += rx; u.z += rz; } if (I.key('KeyA')) { u.x -= rx; u.z -= rz; }
-      if (I.key('KeyE')) u.y += 1; if (I.key('KeyQ')) u.y -= 1;
+      if (I.key('KeyA') || I.key('ArrowLeft')) ix -= 1; if (I.key('KeyD') || I.key('ArrowRight')) ix += 1;
+      if (I.key('KeyW') || I.key('ArrowUp') || I.key('KeyE')) iy += 1; if (I.key('KeyS') || I.key('ArrowDown') || I.key('KeyQ')) iy -= 1;
+      dist = NET_SPEED * (ix || iy ? 1 : 0) * dt;
     }
-    if (u.lengthSq() > 1) u.normalize();
-    if (dt > 0) net.move(dt, d, u, grabbing);
-    // draw the cables (rider's cable bright, warned ones flicker red, unplugged ones gone)
+    if (dt > 0 && dist > 0) net.move(ix, iy, dist);
+    // draw: idle wires dim cyan, your wire bright, warned wires blink red, live wires flash white
     const C = KidKit.cables; let n = 0;
-    const pulse = Flash.reduced ? 0.5 + 0.5 * Math.cos(this.pb * Math.PI * 2) : (Math.floor(this.pb * 4) & 1 ? 1 : 0.25);
+    const blink = Flash.reduced ? 0.5 + 0.5 * Math.cos(this.pb * Math.PI * 2) : (Math.floor(this.pb * 4) & 1 ? 1 : 0.3);
+    const onEdge = net.atNode() < 0 ? net.rider.e : -1;
     for (let i = 0; i < net.edges.length && n < 48; i++) {
       const E = net.edges[i]; if (!E.alive) continue;
+      const st = this.laneState(E), w = st ? 0.024 : i === onEdge ? 0.026 : 0.017;
       const a = net.nodes[E.a], b = net.nodes[E.b];
       _v1.addVectors(a, b).multiplyScalar(0.5); _v2.subVectors(b, a).normalize();
-      _q1.setFromUnitVectors(_v3.set(0, 0, 1), _v2); _s1.set(i === net.rider.e ? 0.026 : 0.017, i === net.rider.e ? 0.026 : 0.017, E.len);
+      _q1.setFromUnitVectors(_v3.set(0, 0, 1), _v2); _s1.set(w, w, E.len);
       _m1.compose(_v1, _q1, _s1); C.setMatrixAt(n, _m1);
-      if (E.warn >= 0) C.setColorAt(n, _c1.setRGB(1, 0.16, 0.29).multiplyScalar(0.4 + 0.6 * pulse));
-      else if (i === net.rider.e) C.setColorAt(n, _c1.setRGB(0.75, 1, 0.95));
+      if (E.warn >= 0) C.setColorAt(n, _c1.setRGB(1, 0.55, 0.1).multiplyScalar(0.35 + 0.65 * blink));
+      else if (st === 2) C.setColorAt(n, _c1.setRGB(1, 1, 1));
+      else if (st === 1) C.setColorAt(n, _c1.setRGB(1, 0.16, 0.29).multiplyScalar(0.35 + 0.65 * blink));
+      else if (i === onEdge) C.setColorAt(n, _c1.setRGB(0.75, 1, 0.95));
       else C.setColorAt(n, _c1.setRGB(0.1, 0.65, 0.55));
       n++;
     }
     C.count = n; C.instanceMatrix.needsUpdate = true; if (C.instanceColor) C.instanceColor.needsUpdate = true;
-    const at = net.nodeAt();
+    // warned wires: arrows run along them in the direction the packets will travel
+    for (const t of this.tx) {
+      if (t.fired || this.pb < t.warnAt) continue;
+      t.arrowT = (t.arrowT || 0) - dt;
+      if (t.arrowT > 0) continue;
+      t.arrowT = G.clock.beatDur * 0.5;
+      const u0 = t.dir > 0 ? 0 : 1;
+      net.lanePoint(t.kind, t.lane, u0, _v1); net.lanePoint(t.kind, t.lane, 1 - u0, _v2);
+      const len = _v2.distanceTo(_v1), dur = 2 * G.clock.beatDur;
+      _v2.sub(_v1).normalize().multiplyScalar(len / dur);
+      const ch = t.kind === 'row' ? (t.dir > 0 ? '>' : '<') : (t.dir > 0 ? '^' : 'v');
+      G.fx.glyphs.emit(_v1.x, _v1.y, _v1.z, _v2.x, _v2.y, _v2.z, dur, 0.09, 1, 0.16, 0.29, GlyphAtlas.of(ch), 0, 0);
+    }
+    const at = net.atNode();
     for (let i = 0; i < net.nodes.length; i++) { const p = net.nodes[i]; G.fx.glow.add(p.x, p.y, p.z, i === at ? 0.16 : 0.09, 0.16, 1, 0.84, i === at ? 0.9 : 0.5, 1); }
   }
-  isIdle() { return true; }
+  isIdle() { return !G.bullets.pools.glyph.active.some((b) => b.owner === this && !b.dying); }
   onEnd() {
     const s = G.soul;
     s.detachWire(); s.setMode('red', true);

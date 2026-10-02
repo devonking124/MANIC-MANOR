@@ -46,7 +46,7 @@ lasts for the session.
 | TYPE ATTACK (boss 2 FIGHT) | punch each lit key on its beat | press that letter on its beat |
 | DANCE | punch the markers on the beat | arrow keys |
 | YELLOW soul | hold trigger to shoot where your hand points | hold click (or F) |
-| CYAN soul | grip-pull along the cable, pull toward another cable at a junction | WASD / Q E |
+| CYAN soul | thumbstick, or hold grip and drag (the heart follows your hand); it turns at junctions by itself | WASD / arrow keys |
 | TEACH HIM | grip-grab the code blocks and drop them into the slots, then RUN | click two blocks to swap |
 | Pause | B / Y | Esc |
 
