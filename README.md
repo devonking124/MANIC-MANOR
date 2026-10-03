@@ -51,17 +51,17 @@ lasts for the session.
 | | VR | Desktop |
 |---|---|---|
 | Fly | hold grip and pull the air, release to fling | WASD + Q/E, Space to dash |
-| Glide / turn | left stick glide, right stick snap turn and up/down | mouse look |
+| Turn | right stick (snap or smooth; the sticks never move you) | mouse look |
 | Menus, pop-up [X], [ACCEPT] | poke with either hand, or point and pull the trigger | crosshair + click, keys 1-9 |
 | Move a pop-up out of the way | grip it with either hand, drag, let go | - |
 | FIGHT (boss 1) | swing through the ring when the line hits center | click on the beat |
 | TYPE ATTACK (boss 2 FIGHT) | punch each lit key on its beat | press that letter on its beat |
 | DANCE | punch the markers on the beat | arrow keys |
 | YELLOW soul | hold trigger to shoot where your hand points | hold click (or F) |
-| CYAN soul | thumbstick, or hold grip and drag (the heart follows your hand); it turns at junctions by itself | WASD / arrow keys |
+| CYAN soul | hold grip and drag (the heart follows your hand); it turns at junctions by itself | WASD / arrow keys |
 | TEACH HIM | grip-grab the code blocks and drop them into the slots, then RUN | click two blocks to swap |
 | JUGGLE STRIKE (boss 3 FIGHT) | catch each pin (grip) as it reaches your hand on its beat, then really throw it at him | click as each pin arrives |
-| PINK soul (trapeze) | grip a bar when it glows, let go to fling; left stick steers in the air | Space lets go (with a hop), catching is automatic; WASD steer, A/D shimmy |
+| PINK soul (trapeze) | grip a bar when it glows, let go to fling; in the air you drift toward the nearest bar ahead | Space lets go (with a hop), catching is automatic; WASD steer, A/D shimmy |
 | APPLAUD | clap your controllers together on every beat for 2 bars | Space / click on the beat |
 | JUGGLE | grab a ball, toss it up, catch it again (6 catches, low gravity) | click as each ball reaches your hand |
 | TAKE A BOW | face him and bow (head below 70% of your height; seated 80%) | hold S or Space |

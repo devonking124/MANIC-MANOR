@@ -98,16 +98,16 @@
     <h3>HOW TO PLAY</h3>
     <ul>
       <li><span class="k">HOLD GRIP + PULL</span> the air toward you to fly. Let go mid-pull to <b>fling</b> and glide. Two hands = hand-over-hand.</li>
-      <li><span class="k">LEFT STICK</span> slow glide &middot; <span class="k">RIGHT STICK</span> &larr;&rarr; snap turn, &uarr;&darr; float up/down.</li>
+      <li>The thumbsticks never move you: only grab-and-pull does. <span class="k">RIGHT STICK</span> &larr;&rarr; turns you (snap or smooth, in Settings).</li>
       <li>Your <b style="color:var(--red)">SOUL</b> (the red heart) floats at your chest. Only the heart can be hit. Duck, lean and fly.</li>
       <li><span class="k">POKE</span> the big menu buttons with your hand, or <span class="k">POINT + TRIGGER</span>.</li>
       <li><b>FIGHT:</b> swing a controller through the glowing target when the sweeping line hits the center. On the beat = <b style="color:var(--gold)">CRITICAL</b>.</li>
       <li><span class="c-white">WHITE</span> = dodge &middot; <span class="c-blue">BLUE</span> = hold still &middot; <span class="c-orange">ORANGE</span> = keep moving &middot; <span class="c-green">GREEN</span> = heals &middot; <span class="c-yellow">YELLOW</span> guests loop around.</li>
       <li><b>GRAZE</b> bullets (pass close without touching) to build <b style="color:var(--orange)">TP</b>. TP powers special ACTs.</li>
-      <li><span class="c-yellow">YELLOW SOUL</span>: hold <span class="k">TRIGGER</span> (desktop: hold click) to shoot stars where your hand points. <b style="color:var(--teal)">CYAN SOUL</b>: your heart rides a grid of wires in front of you &mdash; thumbstick, or hold grip and drag (desktop: WASD / arrow keys); it turns at junctions by itself. A wire blinking <span class="c-red">red</span> is about to carry packets: hop to another one.</li>
+      <li><span class="c-yellow">YELLOW SOUL</span>: hold <span class="k">TRIGGER</span> (desktop: hold click) to shoot stars where your hand points. <b style="color:var(--teal)">CYAN SOUL</b>: your heart rides a grid of wires in front of you &mdash; hold grip and drag, and the heart follows your hand (desktop: WASD / arrow keys); it turns at junctions by itself. A wire blinking <span class="c-red">red</span> is about to carry packets: hop to another one.</li>
       <li><b>GLITCH</b> bullets flip <span class="c-blue">BLUE</span>/<span class="c-orange">ORANGE</span> on every beat. Pop-up windows close when you <span class="k">POKE</span> their <b>[X]</b>.</li>
       <li><b>TYPE ATTACK</b> (boss 2's FIGHT): punch each glowing key on its beat (desktop: press that letter).</li>
-      <li><b>JUGGLE STRIKE</b> (boss 3's FIGHT): <span class="k">GRIP</span> each glowing pin as it reaches your hand on its beat, then really <b>throw</b> it at the ringmaster (desktop: click as each pin arrives and it is thrown for you). <b style="color:#ff5fb4">PINK SOUL</b>: grip a swinging trapeze bar when it glows, let go to fling to the next one; the net catches you if you fall (desktop: Space lets go, catching is automatic).</li>
+      <li><b>JUGGLE STRIKE</b> (boss 3's FIGHT): <span class="k">GRIP</span> each glowing pin as it reaches your hand on its beat, then really <b>throw</b> it at the ringmaster (desktop: click as each pin arrives and it is thrown for you). <b style="color:#ff5fb4">PINK SOUL</b>: grip a swinging trapeze bar when it glows, let go to fling to the next one (in the air you drift toward the nearest bar ahead); the net catches you if you fall (desktop: Space lets go, catching is automatic).</li>
       <li>Boss 3's ACTs are physical: <b>APPLAUD</b> = clap your controllers together on every beat (desktop: Space) &middot; <b>JUGGLE</b> = catch and toss three balls (desktop: Space as each ball reaches your hand) &middot; <b>TAKE A BOW</b> = face him and bow deeply (desktop: hold S).</li>
       <li>Pause: <span class="k">Y / B button</span> (VR) or <span class="k">Esc</span> (desktop).</li>
       <li>Desktop: <span class="k">WASD + Q/E</span> move &middot; mouse look &middot; <span class="k">click</span> slash/select &middot; <span class="k">Space</span> pull-dash &middot; <span class="k">1-9</span> menu &middot; <span class="k">arrows</span> dance.</li>
@@ -170,7 +170,6 @@ const CONFIG = {
 
   // ---- locomotion ----
   PULL_MAX_SPEED: 7.0, PULL_DAMPING: 2.8, PULL_HISTORY: 6, WALL_RESTITUTION: 0.3,
-  GLIDE_SPEED: 1.5, SEATED_GLIDE_SPEED: 2.2,
   SNAP_TURN_DEG: 45, SMOOTH_TURN_DEG_S: 100,
   BLUE_GRAVITY: 9.8, BLUE_JUMP_BOOST: 1.3,
   DESKTOP_MOVE_SPEED: 1.9, DESKTOP_DASH_SPEED: 4.5, DESKTOP_EYE: 1.6,
@@ -1856,19 +1855,10 @@ class PullLocomotion {
         }
         this.vel.set(0, 0, 0); this.grabbing = true;
       } else if (this.grabbing) this.release();
-      // left stick: slow glide relative to head yaw
-      const L = inp.left, R = inp.right;
-      const glide = (Settings.data.seated ? CONFIG.SEATED_GLIDE_SPEED : CONFIG.GLIDE_SPEED) * this.boost;
-      if (L) {
-        const x = deadzone(L.stick.x), y = deadzone(L.stick.y);
-        if (x || y) {
-          _v3.copy(Head.fwdFlat).multiplyScalar(-y).addScaledVector(Head.right, x);
-          if (_v3.lengthSq() > 1) _v3.normalize();
-          rig.position.addScaledVector(_v3, glide * dt);
-        }
-      }
+      // the thumbsticks never move you (grab and pull only); the right stick still turns you
+      const R = inp.right;
       if (R) {
-        const x = R.stick.x, y = deadzone(R.stick.y, 0.35);
+        const x = R.stick.x;
         if (Settings.data.turn === 'snap') {
           if (Math.abs(x) > 0.72 && this.snapArmed) { this.turnBy((x > 0 ? -1 : 1) * THREE.MathUtils.degToRad(CONFIG.SNAP_TURN_DEG)); this.snapArmed = false; }
           else if (Math.abs(x) < 0.35) this.snapArmed = true;
@@ -1876,7 +1866,6 @@ class PullLocomotion {
           this.turnBy(-deadzone(x, 0.2) * THREE.MathUtils.degToRad(CONFIG.SMOOTH_TURN_DEG_S) * dt);
           this.turnRate = Math.abs(x);
         }
-        if (y && !blue && Math.abs(x) < 0.5) rig.position.y -= y * glide * dt;
       }
     } else {
       const d = inp.desk, yaw = d.yaw;
@@ -3019,12 +3008,14 @@ class Telegraphs {
 const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
 const UNIT_PLANE = new THREE.PlaneGeometry(1, 1);
 const BTN_PPM = 620; // canvas px per meter for buttons (consistent text size)
+const _tSpot = new THREE.Vector3(), _tFace = new THREE.Vector3();   // dialogue box placement scratch
 
 class TextPanel {
   constructor(o) {
     this.o = Object.assign({ w: 1, h: 0.3, cw: 512, ch: 0, bg: 'rgba(0,0,0,0.92)', border: '#ffffff', borderPx: 4, color: '#ffffff',
-      scale: 3, pad: 12, align: 'left', valign: 'top', lineH: 10, depthTest: true, renderOrder: 5, glitch: 0, shadow: null, drawBg: null }, o);
+      scale: 3, pad: 12, align: 'left', valign: 'top', lineH: 10, depthTest: true, renderOrder: 5, glitch: 0, shadow: null, drawBg: null, fit: 0 }, o);
     if (!this.o.ch) this.o.ch = Math.round(this.o.cw * this.o.h / this.o.w);
+    if (this.o.fit) this.o.scale = this.o.fit;
     this.tex = canvasTex(this.o.cw, this.o.ch);
     this.ctx = this.tex.userData.ctx;
     this.mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, depthTest: this.o.depthTest });
@@ -3036,10 +3027,23 @@ class TextPanel {
   dispose() { disposeObject(this.mesh); }
   setText(text, shown = Infinity) {
     this.text = PixelFont.norm(text);
-    this.lines = PixelFont.wrap(this.text, this.maxChars);
+    if (this.o.fit) this.fitText(); else this.lines = PixelFont.wrap(this.text, this.maxChars);
     this.total = 0; for (const l of this.lines) this.total += l.length;
     this.shown = shown; this.draw();
   }
+  // fit: the biggest pixel scale (up to o.fit) at which every wrapped line fits the panel, so long text
+  // takes more lines or smaller letters instead of being cut off at the edges
+  fitText() {
+    const o = this.o, avail = o.ch - 2 * (o.pad + o.borderPx);
+    for (let s = o.fit; s >= 1; s--) {
+      o.scale = s;
+      this.lines = PixelFont.wrap(this.text, this.maxChars);
+      if (this.blockPx() <= avail) return;
+    }
+  }
+  // height of the current text block in canvas pixels / in meters
+  blockPx() { const o = this.o; return this.lines.length ? this.lines.length * o.lineH * o.scale - (o.lineH - 7) * o.scale : 0; }
+  blockH() { return this.blockPx() * this.o.h / this.o.ch; }
   draw() {
     const o = this.o, g = this.ctx, W = o.cw, H = o.ch;
     g.clearRect(0, 0, W, H);
@@ -3049,8 +3053,7 @@ class TextPanel {
       if (o.border) { const b = o.borderPx; g.fillStyle = o.border; g.fillRect(0, 0, W, b); g.fillRect(0, H - b, W, b); g.fillRect(0, 0, b, H); g.fillRect(W - b, 0, b, H); }
     }
     const s = o.scale, lh = o.lineH * s;
-    const blockH = this.lines.length * lh - (o.lineH - 7) * s;
-    let y = o.valign === 'middle' ? Math.round((H - blockH) / 2) : o.pad + o.borderPx;
+    let y = o.valign === 'middle' ? Math.round((H - this.blockPx()) / 2) : o.pad + o.borderPx;
     let left = this.shown;
     for (const line of this.lines) {
       if (left <= 0) break;
@@ -3245,6 +3248,10 @@ const WIN_STYLES = {
   sys:     { bar: '#1a2a6a', barText: '#ffffff', body: '#c8c8c8', border: '#ffffff', text: '#101010' },
   term:    { bar: '#000000', barText: '#ff2a4a', body: '#000000', border: '#ff2a4a', text: '#ff2a4a' },
 };
+// height drawWrapped would use for this text (canvas px)
+function wrappedH(text, maxW, scale, lineH = 10) {
+  return PixelFont.wrap(PixelFont.norm(text), Math.max(1, Math.floor((maxW + scale) / (6 * scale)))).length * lineH * scale;
+}
 function drawWrapped(g, text, x, y, maxW, scale, color, o = {}) {
   const maxChars = Math.max(1, Math.floor((maxW + scale) / (6 * scale)));
   const lines = PixelFont.wrap(PixelFont.norm(text), maxChars);
@@ -3282,7 +3289,7 @@ class Window3D {
     this.title = O.title; this.style = O.style; this.text = ''; this.dot = null; this.drawBody = null;
     this.isOpen = false; this.popT = 1; this.fadeT = 0; this.onClose = null; this.glitch = 0; this.redrawT = 0;
     this.heldBy = null; this.grabOff = new THREE.Vector3();
-    this.data = {};
+    this.data = {}; this.sizeK = 1;   // sizeK: extra scale on top of the pop / fade animation
     WINDOWS.push(this);
   }
   get pos() { return this.root.position; }
@@ -3323,10 +3330,10 @@ class Window3D {
   }
   update(dt) {
     if (!this.root.visible) return;
-    if (this.popT < 1) { this.popT = Math.min(1, this.popT + dt / 0.13); this.root.scale.setScalar(Math.max(0.01, easeOut(this.popT))); }
+    if (this.popT < 1) { this.popT = Math.min(1, this.popT + dt / 0.13); this.root.scale.setScalar(this.sizeK * Math.max(0.01, easeOut(this.popT))); }
     if (this.fadeT > 0) {
       this.fadeT += dt / 0.25;
-      const a = Math.max(0, 1 - this.fadeT); this.mat.opacity = a; this.back.material.opacity = a; this.root.scale.setScalar(0.6 + 0.4 * a);
+      const a = Math.max(0, 1 - this.fadeT); this.mat.opacity = a; this.back.material.opacity = a; this.root.scale.setScalar(this.sizeK * (0.6 + 0.4 * a));
       if (this.fadeT >= 1) { this.root.visible = false; this.fadeT = 0; }
     }
     if (this.glitch > 0 && this.isOpen) { this.redrawT -= dt; if (this.redrawT <= 0) { this.redrawT = Flash.reduced ? 0.34 : 0.2; this.draw(); } }
@@ -3380,14 +3387,23 @@ class ChatTypewriter {
 // the boss-2 dialogue window: lowercase chat with a status dot (busy / online / offline)
 class ChatBox {
   constructor() {
-    this.win = new Window3D({ w: 2.3, h: 0.86, ppm: 300, title: 'SCR1PT_K1DD1E', closable: false, style: 'chat', barPx: 34 });
+    this.win = new Window3D({ w: 1.4, h: 1.4 * 258 / 690, ppm: 690 / 1.4, title: 'SCR1PT_K1DD1E', closable: false, style: 'chat', barPx: 34 });
     this.win.drawBody = (g, x, y, w, h, win, S) => this.drawBody(g, x, y, w, h, S);
+    this.win.panel.renderOrder = 2; this.win.back.renderOrder = 1;   // a solid sign: see UI.updateTalk
     this.tw = new ChatTypewriter(this);
     this.status = 'busy'; this.mood = 'smug'; this.prev = ''; this.name = 'SCR1PT_K1DD1E';
     this.blinkT = 0; this.cursorOn = true;
+    this.anchor = new THREE.Vector3(); this.k = 1; this.fresh = true; this.glide = false; this.pinned = false;
   }
   get visible() { return this.win.root.visible; }
-  place(pos, face) { this.win.root.position.copy(pos); this.win.root.lookAt(face); }
+  get w() { return this.win.o.w; }
+  get h() { return this.win.o.h; }
+  // UI.updateTalk keeps it in view; place() pins it somewhere else until it hides
+  setAnchor(pos, face, k) {
+    const W = this.win; W.root.position.copy(pos); W.root.lookAt(face); W.sizeK = k;
+    if (W.popT >= 1 && !(W.fadeT > 0)) W.root.scale.setScalar(k);
+  }
+  place(pos, face) { this.pinned = true; this.win.sizeK = 1; this.win.root.position.copy(pos); this.win.root.lookAt(face); }
   setStatus(st) { if (st !== this.status) { this.status = st; this.redraw(); } }
   say(text, o = {}) {
     const letters = text.replace(/[^a-zA-Z]/g, '');
@@ -3396,21 +3412,24 @@ class ChatBox {
     this.win.style = mood === 'angry' ? 'angry' : mood === 'sad' ? 'sad' : mood === 'cozy' ? 'cozy' : 'chat';
     if (this.tw.final) this.prev = this.tw.final;
     const speed = o.speed || (mood === 'sad' ? 9 : mood === 'angry' ? 34 : 28);
-    if (!this.win.root.visible) { this.win.root.visible = true; this.win.popT = 0; this.win.root.scale.setScalar(0.01); this.win.mat.opacity = 1; this.win.back.material.opacity = 1; this.win.fadeT = 0; }
+    if (!this.win.root.visible) { this.win.root.visible = true; this.win.popT = 0; this.win.root.scale.setScalar(0.01); this.win.mat.opacity = 1; this.win.back.material.opacity = 1; this.win.fadeT = 0; this.fresh = true; }
     this.tw.start(text, { speed });
     if (G.boss && G.boss.setMood) G.boss.setMood(mood);
     this.redraw();
   }
-  hide() { this.win.root.visible = false; this.win.glitch = 0; this.tw.done = true; this.prev = ''; this.tw.final = ''; }
+  hide() { this.win.root.visible = false; this.win.glitch = 0; this.tw.done = true; this.prev = ''; this.tw.final = ''; this.pinned = false; }
   redraw() {
     this.win.title = this.name;
     this.win.dot = this.status === 'online' ? '#3cff6e' : this.status === 'offline' ? '#6a6a6a' : '#ff2a4a';
     this.win.draw();
   }
   drawBody(g, x, y, w, h, S) {
-    const sc = 3;
+    // the new message as big as it fits (sized from the finished line, so it never jumps while typing);
+    // the previous one, small and grey, only if there is room left above it
+    const room = h - 18, fin = '> ' + (this.tw.final || this.tw.buf) + '█';
+    let sc = 4; while (sc > 2 && wrappedH(fin, w, sc) > room) sc--;
     let yy = y + 2;
-    if (this.prev) { yy += drawWrapped(g, '> ' + this.prev, x, yy, w, 2, '#4a6a70') + 6; }
+    if (this.prev && wrappedH('> ' + this.prev, w, 2) + 6 + wrappedH(fin, w, sc) <= room) yy += drawWrapped(g, '> ' + this.prev, x, yy, w, 2, '#4a6a70') + 6;
     const txt = '> ' + this.tw.buf + (this.cursorOn ? '█' : ' ');
     drawWrapped(g, txt, x, yy, w, sc, S.text);
     const st = this.status === 'online' ? 'online' : this.status === 'offline' ? 'offline' : 'busy - hacking';
@@ -3433,6 +3452,7 @@ class UI {
     this.hudDirty = true; this.hudT = 0;
     this.bossHpShown = G.def ? G.def.hp : 2200; this.bossShake = 0;
     this.bossMenus = {}; this.saveDrawT = 0;
+    this.talkWin = { uL: 0, uR: 0, vB: 0, vT: 0 };   // the arena wall's frame as seen from your head (updateTalk)
     // ---- boss-2 chat window (dialogue for bosses with dialogueStyle 'chat') ----
     this.chat = new ChatBox();
     // ---- player status row (below the box) ----
@@ -3446,19 +3466,26 @@ class UI {
     this.flavorTW = new Typewriter(this.flavor);
     scene.add(this.flavor.mesh); this.flavor.mesh.visible = false;
     // ---- boss speech bubble ----
-    this.bubble = new TextPanel({ w: 2.2, h: 1.0, cw: 640, scale: 4, pad: 22, color: '#000000', renderOrder: 7,
+    this.bubble = new TextPanel({ w: 1.34, h: 1.34 * 291 / 640, cw: 640, fit: 4, pad: 30, borderPx: 16, valign: 'middle', color: '#000000', renderOrder: 2,
       drawBg: (g, W, H) => {
-        g.fillStyle = '#000'; g.fillRect(28, 0, W - 28, H);
-        g.fillStyle = '#fff'; g.fillRect(32, 4, W - 36, H - 8);
-        // tail toward the boss (left)
-        g.fillStyle = '#000'; g.beginPath(); g.moveTo(0, 26); g.lineTo(36, 36); g.lineTo(36, 74); g.closePath(); g.fill();
-        g.fillStyle = '#fff'; g.beginPath(); g.moveTo(8, 30); g.lineTo(38, 40); g.lineTo(38, 68); g.closePath(); g.fill();
+        g.fillStyle = '#000'; g.fillRect(0, 30, W, H - 30);
+        g.fillStyle = '#fff'; g.fillRect(4, 34, W - 8, H - 38);
+        // tail up toward the boss's face (the box sits just under it)
+        const cx = W >> 1;
+        g.fillStyle = '#000'; g.beginPath(); g.moveTo(cx - 40, 32); g.lineTo(cx + 40, 32); g.lineTo(cx + 6, 0); g.closePath(); g.fill();
+        g.fillStyle = '#fff'; g.beginPath(); g.moveTo(cx - 31, 36); g.lineTo(cx + 31, 36); g.lineTo(cx + 5, 9); g.closePath(); g.fill();
       } });
-    this.bubble.o.pad = 26; this.bubble.o.borderPx = 14;
+    // a solid sign (writes depth; see updateTalk) whose empty corners stay see-through
+    this.bubble.mat.depthWrite = true; this.bubble.mat.alphaTest = 0.5;
     this.bubbleTW = new Typewriter(this.bubble);
     scene.add(this.bubble.mesh); this.bubble.mesh.visible = false;
+    const bub = this.bubble.mesh;
+    this.bubbleBox = { w: this.bubble.o.w, h: this.bubble.o.h, anchor: new THREE.Vector3(), k: 1, fresh: true, glide: false, pinned: false,
+      get visible() { return bub.visible; },
+      setAnchor(pos, face, k) { bub.position.copy(pos); bub.lookAt(face); bub.scale.setScalar(k); } };
     // ---- prompt (tutorial hints, "You feel heavy.") ----
-    this.prompt = new TextPanel({ w: 1.6, h: 0.32, cw: 640, bg: null, border: null, scale: 4, align: 'center', valign: 'middle', color: '#ffd23c', shadow: '#000000', renderOrder: 50, depthTest: false });
+    // 22 letters a line at full size, up to 7 lines (then smaller letters): long hints wrap, never clip
+    this.prompt = new TextPanel({ w: 1.04, h: 0.624, cw: 560, ch: 336, bg: null, border: null, fit: 4, align: 'center', valign: 'middle', color: '#ffd23c', shadow: '#000000', renderOrder: 50, depthTest: false });
     scene.add(this.prompt.mesh); this.prompt.mesh.visible = false; this.promptT = 0; this.promptLife = 0;
     // ---- big center text (GAME OVER, results, safety) ----
     this.big = new TextPanel({ w: 2.4, h: 1.3, cw: 720, scale: 3, pad: 22, align: 'center', valign: 'middle', renderOrder: 8 });
@@ -3544,10 +3571,7 @@ class UI {
     this.status.mesh.rotation.set(-0.5, 0, 0);
     this.bossBar.mesh.position.set(A.center.x, A.max.y + 0.3, A.min.z - 0.05);
     this.flavor.mesh.position.set(A.center.x, A.center.y + 0.05, A.min.z + 0.03);
-    this.bubble.mesh.position.set(A.center.x + 1.55, A.max.y + 0.5, A.min.z - 0.9);
-    this.bubble.mesh.lookAt(A.center.x, A.center.y + 0.3, A.center.z + 0.5);
-    this.chat.place(_v1.set(A.center.x + 1.75, A.max.y + 0.55, A.min.z - 0.95), _v2.set(A.center.x, A.center.y + 0.3, A.center.z + 0.5));
-    if (this.banner) this.banner.place(_v1.set(A.center.x + 2.0, A.max.y + 0.26, A.min.z - 1.15), _v2.set(A.center.x, A.center.y + 0.3, A.center.z + 0.6));
+    // (the boss's dialogue box places itself: updateTalk)
   }
   // per-boss ACT / ITEM menus (created on first use, then reused)
   menusFor(def) {
@@ -3670,8 +3694,72 @@ class UI {
   dialogueBox() {
     const s = G.def && G.def.dialogueStyle;
     if (s === 'chat') return this.chat;
-    if (s === 'banner') { if (!this.banner) { this.banner = new BannerBox(); this.placeArenaUI(); } return this.banner; }
+    if (s === 'banner') { if (!this.banner) this.banner = new BannerBox(); return this.banner; }
     return null;
+  }
+  // the dialogue box on screen right now (bubble, chat window or banner), if any
+  talkBox() {
+    const s = G.def && G.def.dialogueStyle, b = s === 'chat' ? this.chat : s === 'banner' ? this.banner : this.bubbleBox;
+    return b && b.visible ? b : null;
+  }
+  // ------------------------------------------------------------------ dialogue box placement
+  // The boss's dialogue box floats just past the arena's front wall, centred under the boss's face and a
+  // little below eye level, at reading distance. It stays inside the frame of that wall's edges as seen
+  // from your head, so no edge, bar or prop is ever between you and it, and it draws as a solid sign (it
+  // writes depth), so nothing behind it shows through or over it; only things really in front of it, like
+  // your hands and bullets, can pass over it. It holds still while you lean and look around, and glides
+  // to a new spot when you fly somewhere it would no longer fit.
+  // talkSpot: writes where the box belongs into out, returns its scale (bigger when it has to sit farther)
+  talkSpot(box, out) {
+    const A = G.arena, E = Head.pos, dRef = 2.0, W = this.talkWin;
+    const D = E.z - A.min.z;                         // your head to the front wall's plane
+    // past the wall, so bullets stay in front of it (in a very deep arena, like the hallway, 3.4 m inside it;
+    // inside the box no edge can be in front of it either)
+    const d = Math.min(Math.max(dRef, D + 0.2), 3.4);
+    const k = clamp(d / dRef, 1, 1.45);
+    const hw = box.w * k / 2 / d, hh = box.h * k / 2 / d;   // its half size as seen from your head (tangent units)
+    // the wall's frame as seen from your head (a margin for the edge poles), inside a comfortable view cone
+    W.uL = -0.7; W.uR = 0.7; W.vB = -0.42; W.vT = 0.36;
+    if (A.visible && D > 0.25) {
+      const m = 0.14;
+      W.uL = Math.max(W.uL, (A.min.x + m - E.x) / D); W.uR = Math.min(W.uR, (A.max.x - m - E.x) / D);
+      W.vB = Math.max(W.vB, (A.min.y + m - E.y) / D); W.vT = Math.min(W.vT, (A.max.y - m - E.y) / D);
+    }
+    // centred under the boss's face, a little below eye level (lower still under the GAME OVER text)
+    let u = 0, v = this.big.mesh.visible ? -0.11 : -0.07;
+    const B = G.boss;
+    if (B && B.root.visible && B.headWorldPos) {
+      const f = B.headWorldPos(_tFace), fd = E.z - f.z;
+      if (fd > 1) { u = (f.x - E.x) / fd; v = Math.min(v, (f.y - E.y) / fd - 0.09 - hh); }
+    }
+    u = W.uR - W.uL > 2 * hw ? clamp(u, W.uL + hw, W.uR - hw) : (W.uL + W.uR) / 2;
+    v = W.vT - W.vB > 2 * hh ? clamp(v, W.vB + hh, W.vT - hh) : (W.vB + W.vT) / 2;
+    out.set(E.x + u * d, E.y + v * d, E.z - d);
+    return k;
+  }
+  updateTalk(dt) {
+    const box = this.talkBox();
+    if (!box || box.pinned) return;
+    Head.update();
+    const k = this.talkSpot(box, _tSpot), a = box.anchor;
+    if (box.fresh) {
+      box.fresh = false; box.glide = false; a.copy(_tSpot); box.k = k;
+      if (this.prompt.mesh.visible) this.placePrompt();
+    } else if (!box.glide) {
+      // moved somewhere new, or it no longer fits the wall's frame from here -> glide over
+      const W = this.talkWin, E = Head.pos, dz = E.z - a.z;
+      if (a.distanceToSquared(_tSpot) > 0.09 || dz < 0.6) box.glide = true;
+      else {
+        const u = (a.x - E.x) / dz, v = (a.y - E.y) / dz, hw = box.w * box.k / 2 / dz, hh = box.h * box.k / 2 / dz, e = 0.03;
+        if (u - hw < W.uL - e || u + hw > W.uR + e || v - hh < W.vB - e || v + hh > W.vT + e) box.glide = true;
+      }
+    }
+    if (box.glide) {
+      const t = 1 - Math.exp(-5 * dt);
+      a.lerp(_tSpot, t); box.k += (k - box.k) * t;
+      if (a.distanceToSquared(_tSpot) < 0.0004) box.glide = false;
+    }
+    box.setAnchor(a, Head.pos, box.k);
   }
   get talkTW() { const b = this.dialogueBox(); return b ? b.tw : this.bubbleTW; }
   say(text, o = {}) {
@@ -3679,17 +3767,28 @@ class UI {
     if (box) { box.say(text, o); return; }
     this.bubble.o.glitch = o.glitch || 0;
     this.bubble.o.jitter = o.shake ? 1 : 0;
+    if (!this.bubble.mesh.visible) this.bubbleBox.fresh = true;
     this.bubble.mesh.visible = true;
     this.bubbleTW.start(text, { voice: 'boss', speed: o.speed || 30, onChar: () => G.boss && G.boss.talkBlip() });
   }
   hideBubble() { this.bubble.mesh.visible = false; this.bubbleTW.done = true; this.chat.hide(); if (this.banner) this.banner.hide(); }
   showPrompt(text, life = 2.5, color) {
-    Head.update();
-    Head.rel(this.prompt.mesh.position, 0, 0.28, 1.15);
-    this.prompt.mesh.lookAt(Head.pos);
     this.prompt.o.color = color || '#ffd23c';
     this.prompt.setText(text);
+    this.placePrompt();
     this.prompt.mesh.visible = true; this.promptT = 0; this.promptLife = life;
+  }
+  // a little above eye level in front of you, lifted clear of the boss's dialogue box when that is up
+  placePrompt() {
+    Head.update();
+    const P = this.prompt, d = 1.3, box = this.talkBox();
+    let y = 0.26;
+    if (box && !box.pinned && !box.fresh) {
+      const a = box.anchor, dist = Math.max(0.5, Math.hypot(a.x - Head.pos.x, a.z - Head.pos.z));
+      y = Math.max(y, (a.y + box.h * box.k / 2 - Head.pos.y) / dist * d + P.blockH() / 2 + 0.03);
+    }
+    Head.rel(P.mesh.position, 0, y, d);
+    P.mesh.lookAt(Head.pos);
   }
   showBig(text, o = {}) {
     Head.update();
@@ -3777,7 +3876,7 @@ class UI {
       g.strokeStyle = '#fff'; g.lineWidth = 3; g.strokeRect(bx, 80, 90, 90);
       PixelFont.drawIcon(g, 'heart', 120, 130, 3, '#ff0033');
       PixelFont.draw(g, 'PULL HAND IN -> YOU FLY OUT', 60, 250, 2, '#2affd5');
-      PixelFont.draw(g, 'L-STICK GLIDE  R-STICK TURN/UP-DOWN', 30, 278, 2, '#999');
+      PixelFont.draw(g, 'RIGHT STICK: TURN ONLY', 108, 278, 2, '#999');
     } else if (page === 1) {
       const press = ph > 0.4 && ph < 0.6;
       g.fillStyle = '#000'; g.strokeStyle = press ? '#ffe600' : '#ff9d1a'; g.lineWidth = 4; g.strokeRect(150, 120 + (press ? 6 : 0), 180, 60);
@@ -3902,6 +4001,7 @@ class UI {
     this.bossBar.mesh.position.set(A.center.x + (this.bossShake > 0 ? rand(-0.03, 0.03) : 0), A.max.y + 0.3 + (this.bossShake > 0 ? rand(-0.02, 0.02) : 0), A.min.z - 0.05);
     this.status.mesh.position.set(A.center.x, A.min.y - 0.12, A.min.z + 0.25);
     this.flavor.mesh.position.set(A.center.x, A.center.y + 0.05, A.min.z + 0.03);
+    this.updateTalk(rdt);
     if (!frozen) { this.flavorTW.update(rdt); this.bubbleTW.update(rdt); this.bigTW.update(rdt); this.chat.update(rdt); if (this.banner) this.banner.update(rdt); }
     for (let i = 0; i < WINDOWS.length; i++) WINDOWS[i].update(rdt);
     if (this.saveMenu.isOpen) { this.saveDrawT -= rdt; if (this.saveDrawT <= 0) { this.saveDrawT = Flash.reduced ? 0.34 : 0.12; this.refreshSaveCards(); } }
@@ -7995,7 +8095,7 @@ class CableNet {
 //     for 2 beats and unplug with a spark (the up/down links never do).
 //     B1: one transmission per bar. B2: double-time trains, landing on the half-beats.
 // ---------------------------------------------------------------------------
-const NET_SPEED = 1.6;    // m/s along the wires (stick / keys)
+const NET_SPEED = 1.6;    // m/s along the wires (keys)
 class PacketRouting extends Pattern {
   onStart() {
     KidKit.init();
@@ -8104,17 +8204,13 @@ class PacketRouting extends Pattern {
   update(dt) {
     super.update(dt);
     const net = this.net, I = G.input;
-    if (this.tipT > 0) { this.tipT -= dt; if (this.tipT <= 0) this.say(G.xr ? 'MOVE: THUMBSTICK OR  GRIP + DRAG' : 'MOVE: WASD / ARROW KEYS', 3.2, '#2affd5'); }
-    // steering: stick / keys at a fixed speed, or grip + drag (the heart follows your hand)
+    if (this.tipT > 0) { this.tipT -= dt; if (this.tipT <= 0) this.say(G.xr ? 'MOVE: HOLD GRIP AND DRAG  (THE HEART FOLLOWS YOUR HAND)' : 'MOVE: WASD / ARROW KEYS', 3.2, '#2affd5'); }
+    // steering: grip + drag (the heart follows your hand; the thumbsticks never move it), or keys at a fixed speed
     let ix = 0, iy = 0, dist = 0;
     if (G.xr) {
       let gx = 0, gy = 0, ng = 0;
       for (const h of I.hands) if (h.connected && h.b.grip) { _v3.copy(h.localDelta).applyQuaternion(rig.quaternion); gx += _v3.dot(net.right); gy += _v3.dot(net.up); ng++; }
       if (ng && Math.hypot(gx, gy) > 1e-4) { ix = gx / ng; iy = gy / ng; dist = Math.min(Math.hypot(ix, iy) * 2.2, NET_SPEED * 1.6 * dt); }
-      else {
-        for (const h of [I.left, I.right]) if (h) { ix += deadzone(h.stick.x); iy -= deadzone(h.stick.y); }
-        dist = NET_SPEED * Math.min(1, Math.hypot(ix, iy)) * dt;
-      }
     } else {
       if (I.key('KeyA') || I.key('ArrowLeft')) ix -= 1; if (I.key('KeyD') || I.key('ArrowRight')) ix += 1;
       if (I.key('KeyW') || I.key('ArrowUp') || I.key('KeyE')) iy += 1; if (I.key('KeyS') || I.key('ArrowDown') || I.key('KeyQ')) iy -= 1;
@@ -10509,17 +10605,21 @@ const CALLIOPE_MOTIF = [0, 2, 4, 2, 5, 4, 2, 1, 0, 4, 6, 4, 3, 2];
 // ----------------------------------------------------------------------------
 class BannerBox {
   constructor() {
-    this.W = 900; this.H = 310; this.w = 2.5; this.h = this.w * this.H / this.W;
+    this.W = 900; this.H = 310; this.w = 1.46; this.h = this.w * this.H / this.W;
     this.tex = canvasTex(this.W, this.H); this.g = this.tex.userData.ctx;
-    this.mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false });
+    // a solid sign (writes depth; see UI.updateTalk) whose cut-out edges stay see-through
+    this.mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, alphaTest: 0.5 });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(this.w, this.h), this.mat);
-    this.mesh.renderOrder = 7; this.mesh.visible = false; scene.add(this.mesh);
+    this.mesh.renderOrder = 2; this.mesh.visible = false; scene.add(this.mesh);
     this.tw = new ChatTypewriter(this);
     this.mood = 'comedy'; this.lines = []; this.scale = 5; this.popT = 1; this.shakeT = 0; this.baseScale = 1;
     this.pos = new THREE.Vector3(); this.face = new THREE.Vector3();
+    this.anchor = new THREE.Vector3(); this.k = 1; this.distK = 1; this.fresh = true; this.glide = false; this.pinned = false;
   }
   get visible() { return this.mesh.visible; }
-  place(pos, face) { this.pos.copy(pos); this.face.copy(face); this.mesh.position.copy(pos); this.mesh.lookAt(face); }
+  // UI.updateTalk keeps it in view; place() pins it somewhere else until it hides
+  setAnchor(pos, face, k) { this.pos.copy(pos); this.face.copy(face); this.distK = k; }
+  place(pos, face) { this.pinned = true; this.distK = 1; this.pos.copy(pos); this.face.copy(face); this.mesh.position.copy(pos); this.mesh.lookAt(face); }
   // mood: 'comedy' (booming, big), 'tragedy' / 'sad' (small and shaky), 'shout' (biggest, all caps)
   say(text, o = {}) {
     const m = o.mood || 'comedy';
@@ -10529,8 +10629,8 @@ class BannerBox {
     this.tw.start(text, { speed });
     this.layout(this.tw.final);
     this.baseScale = o.shrink || (tragic ? 0.9 : 1);
-    if (!this.mesh.visible) { this.mesh.visible = true; this.popT = 0; }
-    this.mesh.scale.setScalar(Math.max(0.01, this.baseScale * (this.popT < 1 ? 0.6 : 1)));
+    if (!this.mesh.visible) { this.mesh.visible = true; this.popT = 0; this.fresh = true; }
+    this.mesh.scale.setScalar(Math.max(0.01, this.distK * this.baseScale * (this.popT < 1 ? 0.6 : 1)));
     if (G.boss && G.boss.setMood) G.boss.setMood(tragic ? 'tragedy' : 'comedy');
     this.redraw();
   }
@@ -10543,7 +10643,7 @@ class BannerBox {
       if (lines.length * 10 * s - 3 * s <= availH || s === 2) { this.scale = s; this.lines = lines; return; }
     }
   }
-  hide() { this.mesh.visible = false; this.tw.done = true; this.tw.final = ''; }
+  hide() { this.mesh.visible = false; this.tw.done = true; this.tw.final = ''; this.pinned = false; }
   voice(c, i) {
     if (i & 1) return;   // one note every other letter
     const B = G.battle, major = B && B.phase >= 2 && this.mood !== 'tragedy';
@@ -10596,7 +10696,8 @@ class BannerBox {
   update(dt) {
     if (!this.mesh.visible) return;
     this.tw.update(dt);
-    if (this.popT < 1) { this.popT = Math.min(1, this.popT + dt / 0.18); this.mesh.scale.setScalar(this.baseScale * (0.6 + 0.4 * easeOut(this.popT))); }
+    if (this.popT < 1) this.popT = Math.min(1, this.popT + dt / 0.18);
+    this.mesh.scale.setScalar(this.distK * this.baseScale * (this.popT < 1 ? 0.6 + 0.4 * easeOut(this.popT) : 1));
     // sad text trembles: redraw a few times a second (gentle in reduced-flash mode)
     if (this.mood === 'tragedy') { this.shakeT -= dt; if (this.shakeT <= 0) { this.shakeT = Flash.reduced ? 0.3 : 0.12; this.redraw(); } }
     // a slow showman's sway
@@ -10800,6 +10901,20 @@ class Trapeze {
     }
     return best ? { b: best, off } : null;
   }
+  // VR air control: a sideways drift (at the same small acceleration WASD gives on desktop) toward the
+  // nearest bar ahead of your flight - or any bar once you have slowed down, e.g. bouncing up off the net -
+  // that stops with the bar at arm's length in front of you
+  drift(out) {
+    const H = Head.pos, vx = this.vel.x, vz = this.vel.z, slow = vx * vx + vz * vz < 0.16;
+    let best = null, bd = 2.4;
+    for (const b of this.bars) {
+      if (!b.on || (b === this.lastRelease.bar && G.time - this.lastRelease.t < 0.6)) continue;
+      const dx = b.pos.x - H.x, dz = b.pos.z - H.z, d = Math.hypot(dx, dz);
+      if (d < bd && (slow || vx * dx + vz * dz > 0)) { bd = d; best = b; }
+    }
+    if (!best || bd < 0.36) return out;
+    return out.set(best.pos.x - H.x, 0, best.pos.z - H.z).multiplyScalar(Math.min(1, (bd - 0.35) / 0.4) / bd);
+  }
   attach(h, hit) {
     this.att.push({ h, b: hit.b, off: hit.off });
     hit.b.held++;
@@ -10872,10 +10987,11 @@ class Trapeze {
       if (_v1.lengthSq() < 0.64) rig.position.add(_v1);
       this.vel.set(0, 0, 0);
     } else if (!this.hover) {
-      // flight: light gravity, a little air control (left stick / WASD), gentle drag
+      // flight: light gravity, a little air control (VR: a gentle drift toward the next bar, since the
+      // thumbsticks never move you; desktop: WASD), gentle drag
       this.vel.y -= TRAPEZE.GRAVITY * dt;
       _v3.set(0, 0, 0);
-      if (G.xr) { const L = inp.left; if (L) _v3.copy(Head.fwdFlat).multiplyScalar(-deadzone(L.stick.y)).addScaledVector(Head.right, deadzone(L.stick.x)); }
+      if (G.xr) this.drift(_v3);
       else { if (inp.key('KeyW')) _v3.add(Head.fwdFlat); if (inp.key('KeyS')) _v3.sub(Head.fwdFlat); if (inp.key('KeyD')) _v3.add(Head.right); if (inp.key('KeyA')) _v3.sub(Head.right); }
       if (_v3.lengthSq() > 1) _v3.normalize();
       this.vel.addScaledVector(_v3, TRAPEZE.AIR_ACCEL * dt);
