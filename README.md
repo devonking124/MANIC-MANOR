@@ -5,28 +5,36 @@ boss fights built for the Meta Quest 3S, with grab-and-pull locomotion. Everythi
 (models, textures, pixel font, SFX, fallback music) is procedural; three.js r160 from
 unpkg is the only dependency.
 
-Two bosses, picked from the SAVE FILES screen:
+Three bosses, picked from the SAVE FILES screen:
 
 - **FILE 1 - THE MANOR**: THE PROPRIETOR, a haunted mansion in a butler's body.
 - **FILE 2 - THE SERVER**: SCR1PT_K1DD1E, a smug script kiddie who copy-pastes other
   people's attacks (including the Proprietor's). Encrypted until you finish boss 1 with
   either ending (or turn on Settings > UNLOCK ALL BOSSES). Finishing boss 1 also gets
   hijacked straight into boss 2 ("lol wait dont leave yet"); RETURN TO TITLE skips it.
+- **FILE 3 - THE BIG TOP**: GRANDIOSO, Ringmaster of the Sky, a 7 m showman on stilts
+  whose circus floats above the clouds on hot-air balloons. Shows a torn SOLD OUT ticket
+  until you finish boss 2 with either ending. After boss 2's ending an ADMIT ONE ticket
+  flutters down: poke it to fly into the big top (RETURN TO TITLE skips it). Bosses 1 and
+  2 you spared watch from the front row and help once per fight (Settings > AUDIENCE
+  ASSISTS turns that off); a boss you defeated leaves an empty seat under a dusty
+  spotlight.
 
 ## Run it on Quest 3S
 
 1. Host `index.html` on any HTTPS server (GitHub Pages works: Settings > Pages > deploy
    from this branch). WebXR requires HTTPS.
 2. Open the page in the Quest Browser.
-3. Press **LOAD BOSS 1 MUSIC** and pick "M4N1C M4N0R", and **LOAD BOSS 2 MUSIC** and pick
-   "SCR1PT_KIDDIE" (for example from the headset's Downloads folder). A green check
-   appears next to each loaded track. Without a file, that boss plays its own
-   procedural fallback track.
+3. Press **LOAD BOSS 1 MUSIC** and pick "M4N1C M4N0R", **LOAD BOSS 2 MUSIC** and pick
+   "SCR1PT_KIDDIE", and **LOAD BOSS 3 MUSIC** and pick "THE CIRCUS IN THE SKY" (for
+   example from the headset's Downloads folder). A green check appears next to each
+   loaded track. Without a file, that boss plays its own procedural fallback track.
 4. Press **ENTER VR**, then START and pick a file.
 
 To skip step 3, paste a base64 data URI into `MUSIC_DATA_URI_PROPRIETOR` /
-`MUSIC_DATA_URI_KIDDIE`, or upload the MP3s next to `index.html` and set
-`MUSIC_URL_PROPRIETOR` / `MUSIC_URL_KIDDIE` (all at the top of the script).
+`MUSIC_DATA_URI_KIDDIE` / `MUSIC_DATA_URI_RINGMASTER`, or upload the MP3s next to
+`index.html` and set `MUSIC_URL_PROPRIETOR` / `MUSIC_URL_KIDDIE` / `MUSIC_URL_RINGMASTER`
+(all at the top of the script).
 
 Desktop testing: press **PLAY ON DESKTOP**.
 
@@ -48,6 +56,11 @@ lasts for the session.
 | YELLOW soul | hold trigger to shoot where your hand points | hold click (or F) |
 | CYAN soul | thumbstick, or hold grip and drag (the heart follows your hand); it turns at junctions by itself | WASD / arrow keys |
 | TEACH HIM | grip-grab the code blocks and drop them into the slots, then RUN | click two blocks to swap |
+| JUGGLE STRIKE (boss 3 FIGHT) | catch each pin (grip) as it reaches your hand on its beat, then really throw it at him | click as each pin arrives |
+| PINK soul (trapeze) | grip a bar when it glows, let go to fling; left stick steers in the air | Space lets go (with a hop), catching is automatic; WASD steer, A/D shimmy |
+| APPLAUD | clap your controllers together on every beat for 2 bars | Space / click on the beat |
+| JUGGLE | grab a ball, toss it up, catch it again (6 catches, low gravity) | click as each ball reaches your hand |
+| TAKE A BOW | face him and bow (head below 70% of your height; seated 80%) | hold S or Space |
 | Pause | B / Y | Esc |
 
 Debug keys (desktop): `H` hitboxes, `G` god mode, `N` next phase, `B` beat grid +
@@ -82,3 +95,31 @@ Phase changes for boss 2 seek into the song's own silences: on the next bar line
 jumps to one bar before GAP 1 (or GAP 2) and the gap carries the transition. The
 procedural fallback (117.5 BPM, D minor, bitcrushed 16th arp) follows the same bar map,
 so the transitions work without the MP3 too.
+
+**Boss 3, "THE CIRCUS IN THE SKY":** measured at 90.00 BPM (beat 0.6667 s), first
+downbeat at 0.032 s, with the phrases and section starts on 4/4 bar lines (bar k starts
+at 0.032 + 2.6667 k s). The brief's 89.1 BPM / 0.07 s grid drifts about 2.5 beats over the
+song, and its 3/4 bar lines miss the section starts. `RINGMASTER_MUSIC.beatsPerBar` is
+the single meter constant (set it to 3 to try the waltz grid). Sections (tunable):
+
+| Section | Bars | Time (s) | Use |
+|---|---|---|---|
+| Overture | 0-7 | 0.03-21.37 | plays once under the intro and the first turn |
+| A + A' | 8-31 | 21.37-85.37 | phase 1 loop ("THE OPENING ACT"); A' (from 53.37 s) uses the harder variants |
+| Interlude | 32-39 | 85.37-106.70 | phase 2 loop ("LIGHTS OUT"), free-time mode |
+| Finale | 40-55 | 106.70-149.37 | phase 3 loop ("THE GRAND FINALE") |
+| Outro | 56-63 | 149.37 to the end | under both endings, never combat |
+
+Lights out (below 55% HP or 40% mercy): on the next bar line the bulbs pop off every 2
+beats while the music crossfades over one bar into the interlude. The interlude runs in
+**free-time mode**: spawns follow note onsets detected from the music (spectral flux on an
+AnalyserNode, adaptive threshold, at least 250 ms apart) instead of the beat grid, and
+bullets born on an onset stay harmless for 350 ms. Finale (below 25% HP or 75% mercy): a
+drumroll swells over one bar, then the finale hits on the next bar line with the lights
+blasting on (a 0.5 s fade in Reduced flashing mode). Every bar-snapped value uses
+`beatsPerBar`, which every boss definition now carries (bosses 1 and 2 are 4).
+
+The procedural fallback is a chromatic F-minor calliope waltz in 3/4 at 89 BPM (steam
+organ lead, oom-pah-pah, glockenspiel) with a quiet music-box interlude and a brighter
+A-major finale, laid out on the same section names so every transition works without
+the MP3.
