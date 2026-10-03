@@ -3965,6 +3965,7 @@ class Bullet {
     this.armT = 0; this.faceVel = !!d.faceVel; this.bounds = true; this.collide = true; this.free = true; this.kind = 0;
     this.useQuat = false; this.faceSoul = false; this.used = false;
     this.glyph = 0; this.shootable = false; this.hp = 1; this.shield = false; this.bugT = 0; this.src = null; this.tag = 0; this.ring = null;
+    this.trail = null;   // boss 3: a ribbon trail following this bullet (CircusFX)
   }
   setRule(rule) { this.rule = rule; if (rule !== RULE.WHITE) { this.color.setHex(RULE_COL[rule]); this.glowCol.setHex(RULE_COL[rule]); this.glowA = 0.7; } return this; }
   kill() { this.pool.kill(this); }
@@ -4027,19 +4028,13 @@ class GlyphPool extends BulletPool {
     this.glyphArr = arr; this.glyphAttr = attr;
   }
 }
-// bake a soft top light into a merged geometry's vertex colors (unlit materials still read as round)
-function shadeGeo(geo, k = 0.4) {
-  const C = geo.attributes.color, N = geo.attributes.normal;
-  for (let i = 0; i < C.count; i++) { const f = 1 - k + k * (0.5 + 0.5 * N.getY(i)) + 0.12 * N.getZ(i); C.setXYZ(i, C.getX(i) * f, C.getY(i) * f, C.getZ(i) * f); }
-  return geo;
-}
 // a juggling pin (white club with red bands), 2 units tall: bullets, JUGGLE STRIKE, the ringmaster's hands
-function makePinGeo() {
+function makePinGeo(seg = 9) {
   const pts = [[0, -1], [0.13, -1], [0.15, -0.94], [0.1, -0.62], [0.13, -0.25], [0.3, 0.3], [0.34, 0.58], [0.25, 0.86], [0.1, 0.99], [0, 1]].map(([x, y]) => new THREE.Vector2(x, y));
   return mergeGeos([
-    { geo: new THREE.LatheGeometry(pts, 9), color: 0xfff4dc },
-    { geo: new THREE.CylinderGeometry(0.215, 0.18, 0.16, 9), matrix: M4(0, 0.06, 0), color: 0xe8283c },
-    { geo: new THREE.CylinderGeometry(0.17, 0.17, 0.08, 9), matrix: M4(0, -0.97, 0), color: 0xe8283c },
+    { geo: new THREE.LatheGeometry(pts, seg), color: 0xfff4dc },
+    { geo: new THREE.CylinderGeometry(0.215, 0.18, 0.16, seg), matrix: M4(0, 0.06, 0), color: 0xe8283c },
+    { geo: new THREE.CylinderGeometry(0.17, 0.17, 0.08, seg), matrix: M4(0, -0.97, 0), color: 0xe8283c },
   ]);
 }
 class BulletPools {
@@ -4073,9 +4068,6 @@ class BulletPools {
       { geo: new THREE.CylinderGeometry(0.03, 0.06, 0.12, 8), matrix: M4(0, -0.37, 0), color: 0xc8a040 },
       { geo: new THREE.ConeGeometry(0.03, 0.08, 6), matrix: M4(0, 0.29, 0), color: 0xffd23c },
     ]);
-    // boss 3: juggling balls / clown balls (tinted per bullet) and juggling pins (white club, red band)
-    const ballG = shadeGeo(mergeGeos([{ geo: new THREE.SphereGeometry(1, 12, 9) }, { geo: new THREE.TorusGeometry(0.98, 0.07, 4, 16), matrix: M4(0, 0, 0, Math.PI / 2, 0, 0), color: 0xfff4dc }]), 0.5);
-    const pinG = shadeGeo(makePinGeo(), 0.3);
     const tear = mergeGeos([
       { geo: new THREE.SphereGeometry(1, 8, 6), matrix: M4(0, 0, 0) },
       { geo: new THREE.ConeGeometry(0.98, 1.6, 8), matrix: M4(0, 1.1, 0) },
@@ -4089,9 +4081,17 @@ class BulletPools {
       candle: new BulletPool('candle', { r: 0.07, scale: 1, glow: 0.0, glowA: 0 }, candle, 20),
       tear: new BulletPool('tear', { r: 0.05, scale: 0.045, glow: 0.2, glowColor: C.sad, glowA: 0.4, color: C.sad }, tear, 160),
       glyph: new GlyphPool('glyph', { r: 0.06, scale: 0.13, glow: 0.2, glowA: 0.35 }, 320),
-      ball: new BulletPool('ball', { r: 0.09, scale: 0.09, glow: 0.24, glowA: 0.42, spin: 3 }, ballG, 140),
-      pin: new BulletPool('pin', { r: 0.085, scale: 0.17, glow: 0.2, glowColor: 0xffc83c, glowA: 0.35, spin: 7 }, pinG, 60),
+      // boss 3 (lit by CircusShade): juggling / clown balls (tinted, white band), pins, throwing knives,
+      // petals, confetti paper, raindrops, thread spools. Empty pools are hidden, so nothing compiles before boss 3.
+      ball: new BulletPool('ball', { r: 0.09, scale: 0.09, glow: 0.24, glowA: 0.42, spin: 3 }, CircusGeo.ball(), 140, CircusShade.material({ gloss: 0.9, shine: 60, rim: 0.55, emit: 0.42, decor: true })),
+      pin: new BulletPool('pin', { r: 0.085, scale: 0.17, glow: 0.2, glowColor: 0xffc83c, glowA: 0.35, spin: 7 }, CircusGeo.pin(), 60, CircusShade.material({ gloss: 0.8, shine: 50, rim: 0.5, emit: 0.42 })),
+      knife: new BulletPool('knife', { r: 0.055, scale: 0.155, glow: 0.24, glowColor: 0xb8c0ff, glowA: 0.45, faceVel: true, spin: 2.5 }, CircusGeo.knife(), 60, CircusShade.material({ gloss: 1.3, shine: 90, rim: 0.85, emit: 0.36 })),
+      petal: new BulletPool('petal', { r: 0.06, scale: 0.08, glow: 0.2, glowColor: 0xff5fb4, glowA: 0.35, spin: 4 }, CircusGeo.petal(), 120, CircusShade.material({ gloss: 0.55, shine: 30, rim: 0.65, emit: 0.46, side: THREE.DoubleSide })),
+      paper: new BulletPool('paper', { r: 0.06, scale: 0.13, glow: 0.2, glowA: 0.35, spin: 7 }, CircusGeo.paper(), 160, CircusShade.material({ gloss: 0.7, shine: 24, rim: 0.4, emit: 0.46, side: THREE.DoubleSide })),
+      drop: new BulletPool('drop', { r: 0.06, scale: 0.042, glow: 0.2, glowColor: 0x8aa0ff, glowA: 0.35, faceVel: true, color: 0xcfe0ff }, CircusGeo.drop(), 160, CircusShade.material({ gloss: 1.5, shine: 80, rim: 1.0, emit: 0.42 })),
+      spool: new BulletPool('spool', { r: 0.06, scale: 0.075, glow: 0.24, glowColor: 0xffc83c, glowA: 0.45, spin: 3 }, CircusGeo.spool(), 80, CircusShade.material({ gloss: 0.6, shine: 30, rim: 0.5, emit: 0.42, decor: true })),
     };
+    for (const k of ['ball', 'pin', 'knife', 'petal', 'paper', 'drop', 'spool']) this.pools[k].mesh.visible = false;
     this.list = Object.values(this.pools);
     this.total = 0;
     this.speedMul = 1;
@@ -4346,6 +4346,205 @@ class Shooter {
   // shielded viruses open up on the off-beat only
   static shieldOpen() { const p = G.clock.beatPhase; return p > 0.3 && p < 0.8; }
 }
+
+// ============================================================================
+//  CircusShade (boss 3) - one cheap lit look for GRANDIOSO's bullets and props:
+//  hemisphere ambient + a warm key light with a soft wrap, a glossy highlight,
+//  a rim light, up to 4 short point lights (muzzle flashes, fire walls,
+//  lightning) and up to 4 spotlight cones. All of it lives in one shared
+//  uniform block that CircusFX steers with the phase (sunset / lights out /
+//  storm). No scene lights are added, so nothing else in the game changes, and
+//  a minimum self-light keeps every bullet readable in the dark.
+//  Geometry parts flagged `decor` keep their own vertex color (a white band on
+//  a tinted ball) instead of taking the per-bullet / per-material tint.
+// ============================================================================
+const CIRCUS_SHADE_VS = `
+  varying vec3 vN; varying vec3 vW; varying vec3 vCol; varying vec3 vTint; varying float vDecor;
+  #ifdef HAS_MAP
+    uniform vec4 uMapST; varying vec2 vUv;
+  #endif
+  #ifdef HAS_DECOR
+    attribute float aDecor;
+  #endif
+  void main() {
+    vec4 lp = vec4(position, 1.0); vec3 ln = normal;
+    #ifdef USE_INSTANCING
+      lp = instanceMatrix * lp; ln = mat3(instanceMatrix) * ln;
+    #endif
+    vec4 wp = modelMatrix * lp;
+    vW = wp.xyz; vN = normalize(mat3(modelMatrix) * ln);
+    vCol = vec3(1.0); vTint = vec3(1.0); vDecor = 0.0;
+    #ifdef USE_COLOR
+      vCol = color.rgb;
+    #endif
+    #ifdef USE_INSTANCING_COLOR
+      vTint = instanceColor;
+    #endif
+    #ifdef HAS_DECOR
+      vDecor = aDecor;
+    #endif
+    #ifdef HAS_MAP
+      vUv = uv * uMapST.xy + uMapST.zw;
+    #endif
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }`;
+const CIRCUS_SHADE_FS = `
+  uniform vec3 uKeyDir; uniform vec3 uKeyCol; uniform vec3 uSky; uniform vec3 uGround; uniform vec3 uRimCol;
+  uniform int uPtN; uniform vec4 uPtPos[4]; uniform vec3 uPtCol[4];
+  uniform int uSpN; uniform vec4 uSpPos[4]; uniform vec4 uSpDir[4]; uniform vec3 uSpCol[4];
+  uniform vec3 uColor; uniform vec3 uGlow; uniform float uGloss; uniform float uShine; uniform float uRim; uniform float uEmit; uniform float uWrap; uniform float uOpacity;
+  varying vec3 vN; varying vec3 vW; varying vec3 vCol; varying vec3 vTint; varying float vDecor;
+  #ifdef HAS_MAP
+    uniform sampler2D uMap; varying vec2 vUv;
+  #endif
+  void main() {
+    vec3 base = vCol * mix(uColor * vTint, vec3(1.0), vDecor);
+    #ifdef HAS_MAP
+      vec4 tx = texture2D(uMap, vUv);
+      #ifdef MAP_MASK
+        base = mix(base, vec3(1.0), tx.r * (1.0 - vDecor));
+      #else
+        base *= tx.rgb;
+      #endif
+    #endif
+    vec3 N = normalize(vN);
+    #ifdef DOUBLE_SIDED
+      N = gl_FrontFacing ? N : -N;
+    #endif
+    vec3 V = normalize(cameraPosition - vW);
+    vec3 lig = mix(uGround, uSky, N.y * 0.5 + 0.5);
+    float nl = dot(N, uKeyDir);
+    lig += uKeyCol * clamp((nl + uWrap) / (1.0 + uWrap), 0.0, 1.0);
+    vec3 spec = uKeyCol * pow(max(dot(N, normalize(uKeyDir + V)), 0.0), uShine) * step(0.0, nl);
+    for (int i = 0; i < 4; i++) {
+      if (i >= uPtN) break;
+      vec3 L = uPtPos[i].xyz - vW; float d = length(L);
+      float att = clamp(1.0 - d / uPtPos[i].w, 0.0, 1.0); att *= att;
+      L /= max(d, 1e-4);
+      lig += uPtCol[i] * att * (max(dot(N, L), 0.0) * 0.8 + 0.2);
+      spec += uPtCol[i] * att * pow(max(dot(N, normalize(L + V)), 0.0), uShine);
+    }
+    for (int i = 0; i < 4; i++) {
+      if (i >= uSpN) break;
+      vec3 L = uSpPos[i].xyz - vW; L /= max(length(L), 1e-4);
+      float cone = smoothstep(uSpPos[i].w, uSpDir[i].w, dot(-L, uSpDir[i].xyz));
+      lig += uSpCol[i] * cone * (max(dot(N, L), 0.0) * 0.75 + 0.25);
+      spec += uSpCol[i] * cone * pow(max(dot(N, normalize(L + V)), 0.0), uShine);
+    }
+    float fr = 1.0 - clamp(dot(N, V), 0.0, 1.0);
+    vec3 col = base * lig + spec * uGloss + uRimCol * (pow(fr, 2.5) * uRim) * (0.4 + 0.6 * base) + uGlow;
+    col = max(col, base * uEmit);
+    gl_FragColor = vec4(col, uOpacity);
+    #include <colorspace_fragment>
+  }`;
+const CircusShade = {
+  U: null,
+  // the shared light block (linear colors); CircusFX writes it every frame of the fight
+  uniforms() {
+    if (this.U) return this.U;
+    const v4 = () => [0, 1, 2, 3].map(() => new THREE.Vector4()), v3 = () => [0, 1, 2, 3].map(() => new THREE.Vector3());
+    this.U = {
+      uKeyDir: { value: new THREE.Vector3(0.35, 0.85, 0.45).normalize() },
+      uKeyCol: { value: new THREE.Vector3(1.0, 0.86, 0.7) },
+      uSky: { value: new THREE.Vector3(0.48, 0.38, 0.52) },
+      uGround: { value: new THREE.Vector3(0.28, 0.18, 0.13) },
+      uRimCol: { value: new THREE.Vector3(1.0, 0.6, 0.38) },
+      uPtN: { value: 0 }, uPtPos: { value: v4() }, uPtCol: { value: v3() },
+      uSpN: { value: 0 }, uSpPos: { value: v4() }, uSpDir: { value: v4() }, uSpCol: { value: v3() },
+    };
+    return this.U;
+  },
+  // o: { color, map, mask (map's red paints white over the tint), mapST [sx, sy, ox, oy], gloss, shine, rim,
+  //      emit (self-light floor), wrap, glow (added self-light), opacity, transparent, side, decor, vertexColors }
+  material(o = {}) {
+    const u = Object.assign({}, this.uniforms(), {
+      uColor: { value: new THREE.Color(o.color !== undefined ? o.color : 0xffffff) },
+      uGlow: { value: new THREE.Color(o.glow !== undefined ? o.glow : 0x000000) },
+      uGloss: { value: o.gloss !== undefined ? o.gloss : 0.5 }, uShine: { value: o.shine || 40 },
+      uRim: { value: o.rim !== undefined ? o.rim : 0.45 }, uEmit: { value: o.emit !== undefined ? o.emit : 0.18 },
+      uWrap: { value: o.wrap !== undefined ? o.wrap : 0.4 }, uOpacity: { value: o.opacity !== undefined ? o.opacity : 1 },
+    });
+    const defines = {};
+    if (o.map) { u.uMap = { value: o.map }; u.uMapST = { value: new THREE.Vector4(...(o.mapST || [1, 1, 0, 0])) }; defines.HAS_MAP = ''; if (o.mask) defines.MAP_MASK = ''; }
+    if (o.decor) defines.HAS_DECOR = '';
+    if (o.side === THREE.DoubleSide) defines.DOUBLE_SIDED = '';
+    return new THREE.ShaderMaterial({
+      uniforms: u, defines, vertexShader: CIRCUS_SHADE_VS, fragmentShader: CIRCUS_SHADE_FS,
+      vertexColors: o.vertexColors !== false, side: o.side || THREE.FrontSide,
+      transparent: !!o.transparent, depthWrite: o.depthWrite !== undefined ? o.depthWrite : !o.transparent,
+    });
+  },
+};
+
+// ---- boss 3 bullet shapes (lit by CircusShade): juggling / clown balls, pins, throwing knives,
+// rose petals, confetti paper, raindrops, thread spools. All face +Y (faceVel points +Y along the flight).
+const CircusGeo = {
+  // merge parts and add the aDecor attribute (parts with decor: 1 keep their own color)
+  decor(parts) {
+    const g = mergeGeos(parts), a = new Float32Array(g.attributes.position.count);
+    let o = 0;
+    for (const p of parts) { const c = p.geo.attributes.position.count; if (p.decor) a.fill(1, o, o + c); o += c; }
+    g.setAttribute('aDecor', new THREE.BufferAttribute(a, 1));
+    return g;
+  },
+  // a grid surface from f(u in -1..1, v in 0..1) -> [x, y, z, shade]
+  sheet(nu, nv, f) {
+    const pos = [], col = [], idx = [];
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) { const q = f(i / nu * 2 - 1, j / nv); pos.push(q[0], q[1], q[2]); col.push(q[3], q[3], q[3]); }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1; idx.push(a, b, d, a, d, c); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  },
+  ball() {
+    return this.decor([
+      { geo: new THREE.SphereGeometry(1, 16, 12) },
+      { geo: new THREE.TorusGeometry(0.985, 0.09, 5, 22), matrix: M4(0, 0, 0, Math.PI / 2, 0, 0), color: 0xfff4dc, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.2, 8, 6), matrix: M4(0, 0.95, 0, 0, 0, 0, 1, 0.3, 1), color: 0xfff4dc, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.2, 8, 6), matrix: M4(0, -0.95, 0, 0, 0, 0, 1, 0.3, 1), color: 0xfff4dc, decor: 1 },
+    ]);
+  },
+  pin() { return makePinGeo(14); },
+  knife() {
+    const s = new THREE.Shape();
+    s.moveTo(-0.14, 0); s.lineTo(0.14, 0); s.quadraticCurveTo(0.17, 0.75, 0.0, 1.4); s.quadraticCurveTo(-0.07, 0.8, -0.14, 0);
+    const blade = new THREE.ExtrudeGeometry(s, { depth: 0.02, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.03, bevelSegments: 1, curveSegments: 6 });
+    blade.translate(0, 0, -0.01);
+    const g = mergeGeos([
+      { geo: blade, color: 0xe6edf7 },
+      { geo: new THREE.BoxGeometry(0.46, 0.07, 0.12), matrix: M4(0, -0.03, 0), color: 0xffc83c },
+      { geo: new THREE.CylinderGeometry(0.07, 0.085, 0.6, 8), matrix: M4(0, -0.36, 0), color: 0xb81828 },
+      { geo: new THREE.TorusGeometry(0.077, 0.02, 4, 10), matrix: M4(0, -0.18, 0, Math.PI / 2, 0, 0), color: 0xffc83c },
+      { geo: new THREE.TorusGeometry(0.085, 0.02, 4, 10), matrix: M4(0, -0.5, 0, Math.PI / 2, 0, 0), color: 0xffc83c },
+      { geo: new THREE.SphereGeometry(0.105, 8, 6), matrix: M4(0, -0.7, 0), color: 0xffc83c },
+    ]);
+    g.translate(0, -0.32, 0);
+    return g;
+  },
+  petal() {
+    return this.sheet(6, 8, (u, v) => {
+      const w = Math.pow(Math.sin(Math.PI * Math.min(1, v * 1.06)), 0.7) * (1 - 0.3 * v) * 0.6 + 0.03;
+      return [u * w, v * 1.5 - 0.75, u * u * w * 0.6 + Math.sin(v * Math.PI) * 0.16 - v * v * 0.12, 0.72 + 0.28 * v];
+    });
+  },
+  paper() { return this.sheet(4, 1, (u, v) => [u * 0.55, (v - 0.5) * 0.62, u * u * 0.14, 1]); },
+  drop() {
+    return mergeGeos([
+      { geo: new THREE.SphereGeometry(1, 12, 8) },
+      { geo: new THREE.ConeGeometry(0.97, 1.8, 12, 1, true), matrix: M4(0, -1.15, 0, Math.PI, 0, 0) },
+    ]);
+  },
+  spool() {
+    return this.decor([
+      { geo: new THREE.CylinderGeometry(0.55, 0.55, 0.82, 14) },
+      { geo: new THREE.CylinderGeometry(0.88, 0.88, 0.16, 16), matrix: M4(0, 0.49, 0), color: 0xc8925a, decor: 1 },
+      { geo: new THREE.CylinderGeometry(0.88, 0.88, 0.16, 16), matrix: M4(0, -0.49, 0), color: 0xc8925a, decor: 1 },
+      { geo: new THREE.CylinderGeometry(0.2, 0.2, 1.2, 8), color: 0x2a160a, decor: 1 },
+    ]);
+  },
+};
 
 // ============================================================================
 //  Patterns - data-driven, beat-synced attacks: start(bar) / update / onBeat / end
@@ -9735,6 +9934,26 @@ class CircusSky {
 //  rolled-up walls), lift balloons, striped rope box edges with marquee bulbs,
 //  spotlights, audience stands (+ cameo guests), the trapeze safety net
 // ----------------------------------------------------------------------------
+// spotlight beams: a soft volumetric cone (brightest where you look through its middle, drifting
+// dust) and a pool of light with a bright rim
+const SPOT_CONE_VS = `varying vec3 vN; varying vec3 vV; varying vec3 vW; varying float vH;
+  void main(){ vH = -position.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = -mv.xyz;
+    vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * mv; }`;
+const SPOT_CONE_FS = `uniform vec3 uColor; uniform float uAlpha; uniform float uTime; varying vec3 vN; varying vec3 vV; varying vec3 vW; varying float vH;
+  void main(){
+    float f = abs(dot(normalize(vN), normalize(vV)));
+    float along = smoothstep(0.0, 0.12, vH) * (0.45 + 0.55 * vH);
+    float dust = 0.8 + 0.2 * sin(vW.y * 6.0 + uTime * 1.1 + sin(vW.x * 5.0 + vW.z * 4.0 - uTime * 0.7) * 2.0);
+    gl_FragColor = vec4(uColor, clamp(uAlpha * pow(f, 1.5) * along * dust * 1.7, 0.0, 1.0));
+    #include <colorspace_fragment>
+  }`;
+const SPOT_POOL_VS = `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const SPOT_POOL_FS = `uniform vec3 uColor; uniform float uAlpha; varying vec2 vP;
+  void main(){ float d = length(vP); if (d > 1.0) discard;
+    float a = smoothstep(1.0, 0.8, d) * (0.55 + 0.45 * (1.0 - d * d)) + smoothstep(0.07, 0.0, abs(d - 0.93)) * 0.4;
+    gl_FragColor = vec4(uColor, uAlpha * a);
+    #include <colorspace_fragment>
+  }`;
 const BIGTOP = { DECK_R: 10.5, ROOF_Y: 9, ROOF_R: 11, APEX: 13.6, SEAT_R: 7.0, BOSS_Z: -6.4 };
 const BigTopKit = {
   ready: false,
@@ -9833,8 +10052,10 @@ const BigTopKit = {
     this.spots = [];
     const cone = new THREE.ConeGeometry(1, 1, 28, 1, true); cone.translate(0, -0.5, 0);
     for (let i = 0; i < 5; i++) {
-      const m = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color: 0xfff0d0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 28), new THREE.MeshBasicMaterial({ color: 0xfff0d0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      const m = new THREE.Mesh(cone, new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color(0xfff0d0) }, uAlpha: { value: 0 }, uTime: { value: 0 } },
+        vertexShader: SPOT_CONE_VS, fragmentShader: SPOT_CONE_FS, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 28), new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color(0xfff0d0) }, uAlpha: { value: 0 } },
+        vertexShader: SPOT_POOL_VS, fragmentShader: SPOT_POOL_FS, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
       pool.rotation.x = -Math.PI / 2;
       m.visible = pool.visible = false; root.add(m, pool);
       this.spots.push({ m, pool, src: new THREE.Vector3(), tgt: new THREE.Vector3(), r: 0.6, a: 0, aT: 0, col: new THREE.Color(0xfff0d0), dust: false });
@@ -9916,7 +10137,11 @@ const BigTopKit = {
   popBulbs(frac) {   // knock out a share of the remaining bulbs (lights going out / the show falling apart)
     const alive = []; for (let i = 0; i < this.bulbN; i++) if (!this.bulbDead[i]) alive.push(i);
     shuffle(alive); const n = Math.ceil(alive.length * frac);
-    for (let k = 0; k < n; k++) this.bulbDead[alive[k]] = 1;
+    this.root.updateMatrixWorld(true);
+    for (let k = 0; k < n; k++) {
+      this.bulbDead[alive[k]] = 1;
+      if (CircusFX.ready && k < 24) { this.bulbs.getMatrixAt(alive[k], _m1); _v1.setFromMatrixPosition(_m1).applyMatrix4(this.root.matrixWorld); CircusFX.sparks(_v1, 3, 0xffe0a0, 0.8, 0.5, 0.012, 3, 0.04); }
+    }
     if (n) G.audio.sfx.bulbPop();
     return n;
   },
@@ -10018,8 +10243,13 @@ const BigTopKit = {
       if (s.a < 0.004 && s.aT === 0) { s.m.visible = s.pool.visible = false; continue; }
       s.m.visible = s.pool.visible = true;
       this.aimSpot(s);
-      s.m.material.color.copy(s.col); s.pool.material.color.copy(s.col);
-      s.m.material.opacity = s.a; s.pool.material.opacity = Math.min(1, s.a * 2.4);
+      // standing in a beam you see its pool and what it lights, not a wall of haze
+      _v3.subVectors(s.tgt, s.src); const len = _v3.length() || 1; _v3.divideScalar(len);
+      _v4.subVectors(Head.pos, s.src); const al = _v4.dot(_v3) / len, rad = _v4.addScaledVector(_v3, -al * len).length();
+      s.camIn = damp(s.camIn || 0, al > 0 && al < 1.05 && rad < s.r * al * 1.15 ? 1 : 0, 6, dt);
+      const cu = s.m.material.uniforms, pu = s.pool.material.uniforms;
+      cu.uColor.value.copy(s.col); pu.uColor.value.copy(s.col);
+      cu.uAlpha.value = s.a * (1 - 0.72 * s.camIn); cu.uTime.value = G.time; pu.uAlpha.value = Math.min(1, s.a * 2.4);
       if (s.dust && chance(dt * 6)) G.fx.parts.emit(lerp(s.src.x, s.tgt.x, 0.7) + rand(-0.2, 0.2), lerp(s.src.y, s.tgt.y, 0.7) + rand(-0.4, 0.4), lerp(s.src.z, s.tgt.z, 0.7) + rand(-0.2, 0.2), rand(-0.05, 0.05), rand(-0.08, 0.02), rand(-0.05, 0.05), rand(2, 3.5), 0.012, 0.85, 0.8, 0.7, 0.5, 0, 1);
     }
     // safety net bounce ripple
@@ -10086,9 +10316,12 @@ function buildKiddieMini() {
 }
 
 // ----------------------------------------------------------------------------
-//  StormKit - slanted rain streaks around the ring and lightning bolts that are
-//  telegraphed by clouds glowing from inside for a beat (no full-field flash;
-//  reduced flashing: the bolt fades in instead of popping)
+//  StormKit - slanted rain streaks around the ring and branched lightning bolts.
+//  A strike is telegraphed for a beat: the clouds glow from inside, a faint leader
+//  crawls down the bolt's path and a ring marks the ground. Then the bolt (a
+//  white-hot core in a violet glow, with side branches) hits with sparks, smoke and
+//  a short local light (never a full-field flash; reduced flashing: the bolt fades
+//  in, the leader does not shimmer, the light is dimmer).
 // ----------------------------------------------------------------------------
 const StormKit = {
   ready: false,
@@ -10101,28 +10334,83 @@ const StormKit = {
     for (let i = 0; i < this.N; i++) this.drops.push({ x: rand(-7, 7), y: rand(-1, 10), z: rand(-8, 6), v: rand(8, 11) });
     this.wind = new THREE.Vector3(1.6, 0, 0.5);
     this.on = false;
-    // bolts: jagged segments (3 bolts x 12 segments)
-    this.SEG = 12;
-    this.boltMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xf0eaff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }), 3 * this.SEG);
-    this.boltMesh.frustumCulled = false; this.boltMesh.count = 0; scene.add(this.boltMesh);
-    this.bolts = [0, 1, 2].map(() => ({ on: false, t: 0, pts: [], tele: 0, pos: new THREE.Vector3(), cb: null }));
+    // bolts: a main channel (16 segments) + 3 branches (6 segments each) as camera-facing ribbons
+    this.SEG = 16; this.BR = 3; this.BSEG = 6;
+    const PPB = this.PPB = this.SEG + 1 + this.BR * (this.BSEG + 1), nV = 3 * PPB * 2;
+    this.bPos = new Float32Array(nV * 3); this.bCol = new Float32Array(nV * 4);
+    const side = new Float32Array(nV); for (let i = 0; i < nV; i++) side[i] = i & 1 ? 1 : -1;
+    const idx = [];
+    for (let k = 0; k < 3; k++) {
+      const strip = (start, n) => { for (let i = 0; i < n - 1; i++) { const v = (k * PPB + start + i) * 2; idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2); } };
+      strip(0, this.SEG + 1);
+      for (let r = 0; r < this.BR; r++) strip(this.SEG + 1 + r * (this.BSEG + 1), this.BSEG + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    this.bPosA = new THREE.BufferAttribute(this.bPos, 3).setUsage(THREE.DynamicDrawUsage);
+    this.bColA = new THREE.BufferAttribute(this.bCol, 4).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('position', this.bPosA); g.setAttribute('aCol', this.bColA); g.setAttribute('aSide', new THREE.BufferAttribute(side, 1)); g.setIndex(idx);
+    this.boltMesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: `attribute vec4 aCol; attribute float aSide; varying vec4 vCol; varying float vS;
+        void main(){ vCol = aCol; vS = aSide; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec4 vCol; varying float vS;
+        void main(){ float e = 1.0 - vS * vS, core = smoothstep(0.8, 1.0, e), glow = e * e;
+          gl_FragColor = vec4(mix(vCol.rgb, vec3(1.0), core), vCol.a * (core + glow * 0.55));
+          #include <colorspace_fragment>
+        }`,
+    }));
+    this.boltMesh.frustumCulled = false; this.boltMesh.visible = false; this.boltMesh.renderOrder = 23; scene.add(this.boltMesh);
+    const V = (n) => { const a = []; for (let i = 0; i < n; i++) a.push(new THREE.Vector3()); return a; };
+    this.bolts = [0, 1, 2].map(() => ({ on: false, t: 0, tele: 0, tele0: 1, pos: new THREE.Vector3(), cb: null, main: V(this.SEG + 1), br: [0, 1, 2].map(() => V(this.BSEG + 1)) }));
   },
   setRain(on) { this.on = on; if (this.rain) this.rain.visible = on; },
-  // telegraph for `tele` seconds (clouds glow from inside), then a bolt at p (ground point)
+  // telegraph for `tele` seconds (clouds glow from inside, a leader crawls down), then a bolt at p (ground point)
   strike(p, tele, onHit) {
     const b = this.bolts.find((x) => !x.on && x.tele <= 0); if (!b) return null;
-    b.pos.copy(p); b.tele = tele; b.cb = onHit || null;
+    b.pos.copy(p); b.tele = tele; b.tele0 = Math.max(0.05, tele); b.cb = onHit || null;
+    this.path(b);
     return b;
   },
-  fire(b) {
-    b.on = true; b.t = 0; b.pts.length = 0;
+  // the bolt's jagged path (fixed at the telegraph, so the leader shows exactly where it will fall)
+  path(b) {
     const top = 10, n = this.SEG;
     for (let k = 0; k <= n; k++) {
-      const f = k / n, j = k === 0 || k === n ? 0 : (1 - Math.abs(f - 0.5)) * 0.55;
-      b.pts.push(new THREE.Vector3(b.pos.x + rand(-j, j), lerp(top, b.pos.y, f), b.pos.z + rand(-j, j)));
+      const f = k / n, j = k === 0 || k === n ? 0 : (1 - Math.abs(f - 0.5)) * 0.6;
+      b.main[k].set(b.pos.x + rand(-j, j), lerp(top, b.pos.y, f), b.pos.z + rand(-j, j));
     }
+    for (const P of b.br) {
+      P[0].copy(b.main[randi(3, n - 5)]);
+      const a = rand(0, TAU), len = rand(0.25, 0.42);
+      for (let k = 1; k <= this.BSEG; k++) P[k].set(P[k - 1].x + Math.cos(a) * len * rand(0.5, 1.2), P[k - 1].y - len * rand(0.7, 1.3), P[k - 1].z + Math.sin(a) * len * rand(0.5, 1.2));
+    }
+  },
+  fire(b) {
+    b.on = true; b.t = 0;
     G.audio.sfx.thunder(rand(0.25, 0.7));
+    if (CircusFX.ready) {
+      const FX = CircusFX, p = b.pos;
+      FX.flash(_v1.set(p.x, p.y + 0.8, p.z), 0xdfe4ff, 3.5, 4.5, 0.35);
+      FX.ring(p, UP, 0xd8dcff, 0.1, 1.3, 0.45, 0.3);
+      FX.sparks(p, 22, 0xe0e4ff, 2.6, 0.55, 0.016, 3, 0.05, UP, 0.9);
+      FX.smoke(p, 4, { color: 0x4a4650, size: 0.2, speed: 0.4, alpha: 0.4, rise: 0.4 });
+      FX.pop('KRAK!', _v1.set(p.x, p.y + 1.4, p.z), 0.4, 1.1);
+    }
     if (b.cb) b.cb(b);
+  },
+  // one ribbon: the first `upto` of n points visible, width w (tapering to the end if taper)
+  strip(vtx, pts, n, upto, w, taper, r, g, bl, a) {
+    const P = this.bPos, C = this.bCol, hp = Head.pos;
+    for (let k = 0; k < n; k++) {
+      const live = k < upto, i = Math.max(0, Math.min(k, upto - 1)), p = pts[i];
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(Math.max(upto, 1) - 1, i + 1)];
+      const tx = p1.x - p0.x, ty = p1.y - p0.y, tz = p1.z - p0.z, vx = hp.x - p.x, vy = hp.y - p.y, vz = hp.z - p.z;
+      let sx = ty * vz - tz * vy, sy = tz * vx - tx * vz, sz = tx * vy - ty * vx;
+      const sl = Math.hypot(sx, sy, sz), k2 = live && sl > 1e-7 ? w * 0.5 * (taper ? 1 - 0.85 * k / (n - 1) : 1) / sl : 0;
+      sx *= k2; sy *= k2; sz *= k2;
+      const v = (vtx + k) * 2;
+      P[v * 3] = p.x - sx; P[v * 3 + 1] = p.y - sy; P[v * 3 + 2] = p.z - sz; P[v * 3 + 3] = p.x + sx; P[v * 3 + 4] = p.y + sy; P[v * 3 + 5] = p.z + sz;
+      C[v * 4] = C[v * 4 + 4] = r; C[v * 4 + 1] = C[v * 4 + 5] = g; C[v * 4 + 2] = C[v * 4 + 6] = bl; C[v * 4 + 3] = C[v * 4 + 7] = live ? a : 0;
+    }
   },
   update(dt) {
     if (!this.ready) return;
@@ -10137,39 +10425,44 @@ const StormKit = {
       }
       this.rain.instanceMatrix.needsUpdate = true;
     }
-    const sky = G.bg.circus, red = Flash.reduced;
-    let n = 0;
-    for (const b of this.bolts) {
+    const sky = G.bg.circus, red = Flash.reduced, S = this.SEG + 1, B = this.BSEG + 1;
+    let any = false;
+    this.bolts.forEach((b, k) => {
+      const base = k * this.PPB;
+      let main = 0, mw = 0, br = 0, a = 0, r = 0.78, g = 0.72, bl = 1;
       if (b.tele > 0) {
         b.tele -= dt;
         if (sky) sky.glowCloud(_v1.set(b.pos.x, 18, b.pos.z), 0.6 + 0.4 * Math.sin(G.time * 18));
         G.fx.glow.add(b.pos.x, b.pos.y + 0.05, b.pos.z, 0.5, 0.75, 0.7, 1, 0.35 + 0.3 * Math.sin(G.time * 14), 1);
+        if (CircusFX.ready) CircusFX.ringNow(b.pos, UP, 0.42, 0xc8c4ff, 0.45 + 0.25 * Math.sin(G.time * (red ? 6 : 12)), 0.16);
+        // the leader crawls down the bolt's path over the telegraph beat
+        main = Math.ceil(clamp(1 - b.tele / b.tele0, 0, 1) * S); mw = 0.05; a = (red ? 0.3 : 0.26 + 0.1 * Math.sin(G.time * 25)); r = 0.7; g = 0.7;
         if (b.tele <= 0) this.fire(b);
       }
-      if (!b.on) continue;
-      b.t += dt;
-      const life = 0.32, fadeIn = red ? 0.12 : 0.0;
-      let a = b.t < fadeIn ? b.t / fadeIn : 1 - Math.max(0, (b.t - fadeIn) / life);
-      if (b.t > fadeIn + life) { b.on = false; continue; }
-      a = clamp(a, 0, 1);
-      for (let k = 0; k < this.SEG; k++) {
-        const p0 = b.pts[k], p1 = b.pts[k + 1];
-        _v1.addVectors(p0, p1).multiplyScalar(0.5); _v2.subVectors(p1, p0); const len = _v2.length();
-        _q1.setFromUnitVectors(_v4.set(0, 1, 0), _v2.divideScalar(len));
-        _m1.compose(_v1, _q1, _v3.set(0.05 * a + 0.01, len, 0.05 * a + 0.01)); this.boltMesh.setMatrixAt(n++, _m1);
+      if (b.on) {
+        b.t += dt;
+        const life = 0.32, fadeIn = red ? 0.12 : 0.0;
+        a = clamp(b.t < fadeIn ? b.t / fadeIn : 1 - Math.max(0, (b.t - fadeIn) / life), 0, 1);
+        if (b.t > fadeIn + life) { b.on = false; main = 0; }
+        else {
+          main = S; mw = 0.34; br = B;
+          if (sky) sky.glowCloud(_v1.set(b.pos.x, 18, b.pos.z), a);
+          G.fx.glow.add(b.pos.x, b.pos.y + 0.1, b.pos.z, 0.9, 0.85, 0.8, 1, 0.6 * a, 1);
+        }
       }
-      if (sky) sky.glowCloud(_v1.set(b.pos.x, 18, b.pos.z), a);
-      G.fx.glow.add(b.pos.x, b.pos.y + 0.1, b.pos.z, 0.9, 0.85, 0.8, 1, 0.6 * a, 1);
-    }
-    this.boltMesh.count = n; this.boltMesh.visible = n > 0;
-    if (n) this.boltMesh.instanceMatrix.needsUpdate = true;
+      this.strip(base, b.main, S, main, mw, false, r, g, bl, a);
+      for (let i = 0; i < this.BR; i++) this.strip(base + S + i * B, b.br[i], B, br, 0.18, true, r, g, bl, a * 0.85);
+      if (main) any = true;
+    });
+    this.boltMesh.visible = any;
+    if (any) { this.bPosA.needsUpdate = true; this.bColA.needsUpdate = true; }
   },
   // is p inside a live bolt column (radius r)?
   hits(p, r = 0.3) {
     for (const b of this.bolts) if (b.on && Math.hypot(p.x - b.pos.x, p.z - b.pos.z) < r && p.y < 10) return true;
     return false;
   },
-  clear() { if (!this.ready) return; for (const b of this.bolts) { b.on = false; b.tele = 0; } this.boltMesh.count = 0; this.setRain(false); },
+  clear() { if (!this.ready) return; for (const b of this.bolts) { b.on = false; b.tele = 0; } this.boltMesh.visible = false; this.setRain(false); },
 };
 registerKit(StormKit, function () { this.drops = []; this.bolts = []; this.on = false; });
 // ============================================================================
@@ -10957,11 +11250,656 @@ class RingmasterModel {
     this.strings.visible = this.strAlpha > 0.01 && this.root.visible;
   }
 }
+
+// ============================================================================
+//  CircusFX (boss 3) - the effects layer of GRANDIOSO's acts: phase lighting
+//  for CircusShade, short point lights (muzzle flashes, fire walls, lightning),
+//  ribbon trails behind bullets, smoke and fire puffs, shockwave rings, streak
+//  sparks and embers, tumbling 3D paper confetti and balloon shreds, floor
+//  light pools, comic pop words and rocket fireworks. An attack kit: built when
+//  the boss loads, freed on leaving. Photosensitivity: point-light flashes are
+//  local (a few metres), rate-limited (3/s reduced, 8/s full) and in reduced
+//  mode dimmer and faded in; nothing here ever lights the whole view.
+// ============================================================================
+const CIRCUS_LOOK = {   // CircusShade light block per sky mode (linear RGB); show lights scale key + ambient
+  sunset: { key: [1.05, 0.86, 0.66], sky: [0.5, 0.37, 0.5], ground: [0.3, 0.19, 0.13], rim: [1.0, 0.56, 0.34] },
+  night: { key: [0.5, 0.5, 0.78], sky: [0.2, 0.2, 0.36], ground: [0.08, 0.07, 0.1], rim: [0.52, 0.58, 1.0] },
+  storm: { key: [0.98, 0.97, 1.08], sky: [0.34, 0.34, 0.45], ground: [0.18, 0.15, 0.16], rim: [0.62, 0.72, 1.0] },
+};
+const CIRCUS_PAPER = [0xe8283c, 0xffc83c, 0xfff4dc, 0xd23c8c, 0xff5fb4, 0xffe08a];   // party colors only (never a rule color)
+const POP_WORDS = ['BOOM!', 'HONK!', 'POP!', 'WHOOSH!', 'KRAK!', 'TWANG!', 'SNIP!', 'TA-DA!'];
+const easeBack = (k) => { const c = 1.70158, x = k - 1; return 1 + (c + 1) * x * x * x + c * x * x; };
+// swap-remove slot i with the last live slot j across a set of parallel typed arrays
+function fxSwap(S, keys, i, j) { for (const k of keys) S[k][i] = S[k][j]; }
+function fxInstGeo(cap, attrs) {
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  const out = {};
+  for (const [name, size] of attrs) { const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * size), size); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); out[name] = a; }
+  g.instanceCount = 0;
+  return { g, a: out };
+}
+function fxFlush(geo, attrs, n) {
+  geo.instanceCount = n;
+  for (const a of attrs) {
+    if (a.addUpdateRange) { a.clearUpdateRanges(); a.addUpdateRange(0, Math.max(1, n * a.itemSize)); }
+    else { a.updateRange.offset = 0; a.updateRange.count = Math.max(1, n * a.itemSize); }
+    a.needsUpdate = true;
+  }
+}
+const CircusFX = {
+  ready: false,
+  init() {
+    if (this.ready) return; this.ready = true;
+    this.lights = [];
+    for (let i = 0; i < 6; i++) this.lights.push({ on: false, key: null, pos: new THREE.Vector3(), r: 1, g: 1, b: 1, inten: 0, cur: 0, radius: 2, t: 0, life: 0, attack: 0.02, hold: 0 });
+    this.gates = {}; this.rockets = [];
+    this._q = new THREE.Quaternion(); this._m = new THREE.Matrix4(); this._s = new THREE.Vector3(); this._Z = new THREE.Vector3(0, 0, 1);
+    this.initTrails(); this.initPuffs(); this.initRings(); this.initSparks(); this.initPaper(); this.initFloor(); this.initPops();
+  },
+  // compile every boss 3 shader during the intro (in parallel where the browser can), not on an attack's first beat
+  prewarm() {
+    if (!this.ready) return;
+    const list = ['ball', 'pin', 'knife', 'petal', 'paper', 'drop', 'spool'].map((k) => G.bullets.pools[k].mesh);
+    for (const kit of [BigTopKit, StormKit, RingKit, JuggleKit, CircusFX]) if (kit.ready && kit.roots) list.push(...kit.roots);
+    const par = !!renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile');
+    for (const o of list) {
+      try { if (par) renderer.compileAsync(o, camera, scene).catch(() => {}); else renderer.compile(o, camera, scene); } catch { /* a shader that cannot prewarm compiles on first use */ }
+    }
+  },
+  clear() {
+    if (!this.ready) return;
+    for (const l of this.lights) l.on = false;
+    for (const t of this.TR.list) { t.on = false; t.b = null; }
+    this.PF.n = 0; this.SP.n = 0; this.PP.n = 0; this.RG.list.length = 0; this.RG.now.length = 0; this.FL.list.length = 0;
+    for (const p of this.PO.list) p.on = false;
+    this.rockets.length = 0;
+    this.update(0);
+  },
+  update(dt) {
+    if (!this.ready) return;
+    this.updateLook();
+    this.updateLights(dt);
+    this.updateSpots();
+    this.updateRockets(dt);
+    this.updateTrails();
+    this.updatePuffs(dt);
+    this.updateRings(dt);
+    this.updateSparks(dt);
+    this.updatePaper(dt);
+    this.updateFloor();
+    this.updatePops(dt);
+  },
+  gate(name, sec) { const t = G.time; if (t - (this.gates[name] || -99) < sec) return false; this.gates[name] = t; return true; },
+
+  // ------------------------------------------------------------------ lighting
+  updateLook() {
+    const U = CircusShade.uniforms(), sky = G.bg.circus;
+    const night = sky ? sky.night : 0, storm = sky ? sky.storm : 0;
+    const m = 0.55 + 0.45 * (BigTopKit.ready ? BigTopKit.lightLevel : 1);
+    const set = (v, k, mul) => {
+      const a = CIRCUS_LOOK.sunset[k], b = CIRCUS_LOOK.night[k], c = CIRCUS_LOOK.storm[k];
+      v.set(lerp(lerp(a[0], b[0], night), c[0], storm) * mul, lerp(lerp(a[1], b[1], night), c[1], storm) * mul, lerp(lerp(a[2], b[2], night), c[2], storm) * mul);
+    };
+    set(U.uKeyCol.value, 'key', m); set(U.uSky.value, 'sky', m); set(U.uGround.value, 'ground', m); set(U.uRimCol.value, 'rim', 1);
+  },
+  slot(key) {
+    let s = this.lights.find((l) => !l.on);
+    if (!s) { let best = null; for (const l of this.lights) if (!l.key && (!best || l.t > best.t)) best = l; s = best; }   // steal the oldest flash
+    if (s) { s.on = true; s.key = key; s.t = 0; s.cur = 0; s.hold = 0; }
+    return s;
+  },
+  // a short local light burst (muzzle flash, lightning, a firework close by)
+  flash(p, hex, inten = 2.5, radius = 2.5, life = 0.25) {
+    if (!this.ready || !Flash.allow('circusFlash', G.time)) return;
+    const red = Flash.reduced, s = this.slot(null); if (!s) return;
+    _c1.setHex(hex); s.r = _c1.r; s.g = _c1.g; s.b = _c1.b; s.pos.copy(p);
+    s.inten = inten * (red ? 0.45 : 1); s.radius = radius; s.life = life * (red ? 1.6 : 1); s.attack = red ? 0.14 : 0.025;
+  },
+  // a light that stays while it is refreshed every frame (fire walls, the music box, a lit fuse)
+  hold(key, p, hex, inten, radius) {
+    if (!this.ready) return;
+    let s = this.lights.find((l) => l.on && l.key === key);
+    if (!s) { s = this.slot(key); if (!s) return; }
+    _c1.setHex(hex); s.r = _c1.r; s.g = _c1.g; s.b = _c1.b; s.pos.copy(p); s.inten = inten; s.radius = radius; s.hold = 0.1;
+  },
+  updateLights(dt) {
+    const U = CircusShade.uniforms();
+    let n = 0;
+    for (const s of this.lights) {
+      if (!s.on) continue;
+      s.t += dt;
+      let k;
+      if (s.key) {
+        s.hold -= dt; s.cur = damp(s.cur, s.hold > 0 ? s.inten : 0, 9, dt);
+        if (s.hold <= 0 && s.cur < 0.01) { s.on = false; continue; }
+        k = s.cur;
+      } else {
+        if (s.t >= s.life) { s.on = false; continue; }
+        const f = s.t < s.attack ? s.t / s.attack : 1 - (s.t - s.attack) / Math.max(1e-3, s.life - s.attack);
+        k = s.inten * f * f;
+      }
+      if (n < 4) { U.uPtPos.value[n].set(s.pos.x, s.pos.y, s.pos.z, s.radius); U.uPtCol.value[n].set(s.r * k, s.g * k, s.b * k); n++; }
+    }
+    U.uPtN.value = n;
+  },
+  // the big top's spotlights also light the acts (knives glint as they cross a beam)
+  updateSpots() {
+    const U = CircusShade.uniforms(), K = BigTopKit;
+    let n = 0;
+    if (K.ready) for (const s of K.spots) {
+      if (n >= 4 || !s.m.visible || s.a < 0.008) continue;
+      _v1.subVectors(s.tgt, s.src); const len = _v1.length(); if (len < 0.01) continue;
+      _v1.divideScalar(len);
+      const half = Math.atan(s.r / len), k = Math.min(1.5, s.a / 0.12) * 1.5;
+      U.uSpPos.value[n].set(s.src.x, s.src.y, s.src.z, Math.cos(half * 1.08));
+      U.uSpDir.value[n].set(_v1.x, _v1.y, _v1.z, Math.cos(half * 0.7));
+      U.uSpCol.value[n].set(s.col.r * k, s.col.g * k, s.col.b * k);
+      n++;
+    }
+    U.uSpN.value = n;
+  },
+
+  // ------------------------------------------------------------------ ribbon trails
+  initTrails() {
+    const T = this.TR = { cap: 44, K: 14, list: [] }, K = T.K, nV = T.cap * K * 2;
+    T.pos = new Float32Array(nV * 3); T.col = new Float32Array(nV * 4);
+    const side = new Float32Array(nV); for (let i = 0; i < nV; i++) side[i] = i & 1 ? 1 : -1;
+    const idx = new Uint16Array(T.cap * (K - 1) * 6);
+    for (let s = 0, o = 0; s < T.cap; s++) for (let i = 0; i < K - 1; i++, o += 6) { const v = (s * K + i) * 2; idx[o] = v; idx[o + 1] = v + 1; idx[o + 2] = v + 2; idx[o + 3] = v + 1; idx[o + 4] = v + 3; idx[o + 5] = v + 2; }
+    const g = T.geo = new THREE.BufferGeometry();
+    T.posA = new THREE.BufferAttribute(T.pos, 3).setUsage(THREE.DynamicDrawUsage);
+    T.colA = new THREE.BufferAttribute(T.col, 4).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('position', T.posA); g.setAttribute('aCol', T.colA); g.setAttribute('aSide', new THREE.BufferAttribute(side, 1));
+    g.setIndex(new THREE.BufferAttribute(idx, 1)); g.setDrawRange(0, 0);
+    T.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: `attribute vec4 aCol; attribute float aSide; varying vec4 vCol; varying float vS;
+        void main(){ vCol = aCol; vS = aSide; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec4 vCol; varying float vS;
+        void main(){ float e = 1.0 - vS * vS; gl_FragColor = vec4(vCol.rgb * (0.55 + 0.6 * e * e), vCol.a * e * 0.85);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    T.mesh.frustumCulled = false; T.mesh.renderOrder = 19; T.mesh.visible = false; scene.add(T.mesh);
+    for (let s = 0; s < T.cap; s++) T.list.push({ on: false, b: null, dead: false, n: 0, px: new Float32Array(K * 3), pt: new Float32Array(K), r: 1, g: 1, bl: 1, w: 0.04, age: 0.3, a: 1 });
+  },
+  // a glowing ribbon that follows bullet b until it dies (and then fades out)
+  trail(b, hex, w = 0.05, age = 0.3, a = 0.9) {
+    if (!this.ready || !b) return null;
+    const tr = this.TR.list.find((x) => !x.on); if (!tr) return null;
+    _c1.setHex(hex);
+    tr.on = true; tr.b = b; tr.dead = false; tr.n = 1; tr.r = _c1.r; tr.g = _c1.g; tr.bl = _c1.b; tr.w = w; tr.age = age; tr.a = a;
+    tr.px[0] = b.pos.x; tr.px[1] = b.pos.y; tr.px[2] = b.pos.z; tr.pt[0] = G.time;
+    b.trail = tr;
+    return tr;
+  },
+  updateTrails() {
+    const T = this.TR, K = T.K, now = G.time, P = T.pos, C = T.col, hp = Head.pos;
+    let slot = 0;
+    for (const tr of T.list) {
+      if (!tr.on) continue;
+      const b = tr.b, px = tr.px, pt = tr.pt;
+      if (!tr.dead && (!b.active || b.trail !== tr || b.dying)) tr.dead = true;
+      if (!tr.dead) {
+        // the newest point rides the bullet and is committed once it has moved 3.5 cm
+        let h = tr.n - 1;
+        if (h < 1) h = tr.n++;
+        else {
+          const q = (h - 1) * 3, dx = b.pos.x - px[q], dy = b.pos.y - px[q + 1], dz = b.pos.z - px[q + 2];
+          if (dx * dx + dy * dy + dz * dz > 0.0012) {
+            if (tr.n === K) { px.copyWithin(0, 3); pt.copyWithin(0, 1); tr.n--; }
+            h = tr.n++;
+          }
+        }
+        px[h * 3] = b.pos.x; px[h * 3 + 1] = b.pos.y; px[h * 3 + 2] = b.pos.z; pt[h] = now;
+      }
+      let drop = 0; while (drop < tr.n && now - pt[drop] > tr.age) drop++;
+      if (drop) { px.copyWithin(0, drop * 3, tr.n * 3); pt.copyWithin(0, drop, tr.n); tr.n -= drop; }
+      if (tr.n < 2) { if (tr.dead || tr.n === 0) { tr.on = false; tr.b = null; } continue; }
+      const n = tr.n, base = slot * K * 2;
+      for (let j = 0; j < K; j++) {
+        const live = j < n, i = live ? j : n - 1, o = i * 3;
+        const x = px[o], y = px[o + 1], z = px[o + 2];
+        const i0 = Math.max(0, i - 1) * 3, i1 = Math.min(n - 1, i + 1) * 3;
+        const tx = px[i1] - px[i0], ty = px[i1 + 1] - px[i0 + 1], tz = px[i1 + 2] - px[i0 + 2];
+        const vx = hp.x - x, vy = hp.y - y, vz = hp.z - z;
+        let sx = ty * vz - tz * vy, sy = tz * vx - tx * vz, sz = tx * vy - ty * vx;
+        const f = live ? i / (n - 1) : 1, life = live ? Math.max(0, 1 - (now - pt[i]) / tr.age) : 0;
+        const sl = Math.hypot(sx, sy, sz), k = live && sl > 1e-7 ? tr.w * 0.5 * (0.15 + 0.85 * f) / sl : 0;
+        sx *= k; sy *= k; sz *= k;
+        const v = base + j * 2, a = tr.a * f * Math.sqrt(life);
+        P[v * 3] = x - sx; P[v * 3 + 1] = y - sy; P[v * 3 + 2] = z - sz;
+        P[v * 3 + 3] = x + sx; P[v * 3 + 4] = y + sy; P[v * 3 + 5] = z + sz;
+        C[v * 4] = C[v * 4 + 4] = tr.r; C[v * 4 + 1] = C[v * 4 + 5] = tr.g; C[v * 4 + 2] = C[v * 4 + 6] = tr.bl; C[v * 4 + 3] = C[v * 4 + 7] = live ? a : 0;
+      }
+      slot++;
+    }
+    T.geo.setDrawRange(0, slot * (K - 1) * 6);
+    T.mesh.visible = slot > 0;
+    if (slot) { T.posA.needsUpdate = true; T.colA.needsUpdate = true; }
+  },
+
+  // ------------------------------------------------------------------ puffs: smoke (soft, alpha) + fire (glowing, additive)
+  PUFF_KEYS: ['px', 'py', 'pz', 'vx', 'vy', 'vz', 'age', 'life', 's0', 's1', 'cr', 'cg', 'cb', 'ca', 'em', 'rot', 'vr', 'seed', 'rise', 'drag'],
+  initPuffs() {
+    const P = this.PF = { cap: 220, n: 0 };
+    for (const k of this.PUFF_KEYS) P[k] = new Float32Array(P.cap);
+    const { g, a } = fxInstGeo(P.cap, [['iPos', 4], ['iCol', 4], ['iMisc', 4]]);
+    P.geo = g; P.attrs = [a.iPos, a.iCol, a.iMisc]; P.iPos = a.iPos.array; P.iCol = a.iCol.array; P.iMisc = a.iMisc.array;
+    P.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+      vertexShader: `attribute vec4 iPos; attribute vec4 iCol; attribute vec4 iMisc; varying vec4 vCol; varying vec2 vUv; varying vec2 vM;
+        void main(){ float c = cos(iMisc.x), s = sin(iMisc.x);
+          vUv = position.xy; vCol = iCol; vM = iMisc.yz;
+          vec4 mv = modelViewMatrix * vec4(iPos.xyz, 1.0); mv.xy += vec2(c * position.x - s * position.y, s * position.x + c * position.y) * iPos.w;
+          gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying vec4 vCol; varying vec2 vUv; varying vec2 vM;
+        void main(){
+          float ang = atan(vUv.y, vUv.x), d = length(vUv);
+          float edge = 0.8 + (0.11 * sin(ang * 5.0 + vM.y * 40.0) + 0.07 * sin(ang * 3.0 - vM.y * 17.0)) * (1.0 - 0.75 * vM.x);   // smoke is lumpy, flame is round
+          float a = smoothstep(edge, edge * 0.4, d);
+          if (a < 0.01) discard;
+          vec3 smoke = vCol.rgb * (0.74 + 0.3 * vUv.y + 0.14 * (1.0 - d));
+          vec3 fire = vCol.rgb * (1.0 + 0.9 * (1.0 - d) * (1.0 - d));
+          vec3 col = linearToOutputTexel(vec4(mix(smoke, fire, vM.x), 1.0)).rgb;
+          float al = a * vCol.a;
+          gl_FragColor = vec4(col * al, al * (1.0 - vM.x));
+        }`,
+    }));
+    P.mesh.frustumCulled = false; P.mesh.renderOrder = 18; P.mesh.visible = false; scene.add(P.mesh);
+  },
+  puff(x, y, z, vx, vy, vz, life, s0, s1, r, g, b, a, em = 0, rise = 0.3, drag = 2) {
+    if (!this.ready) return;
+    const P = this.PF; let i = P.n; if (i >= P.cap) i = (Math.random() * P.cap) | 0; else P.n++;
+    P.px[i] = x; P.py[i] = y; P.pz[i] = z; P.vx[i] = vx; P.vy[i] = vy; P.vz[i] = vz; P.age[i] = 0; P.life[i] = life;
+    P.s0[i] = s0; P.s1[i] = s1; P.cr[i] = r; P.cg[i] = g; P.cb[i] = b; P.ca[i] = a; P.em[i] = em;
+    P.rot[i] = Math.random() * TAU; P.vr[i] = rand(-1.2, 1.2); P.seed[i] = Math.random(); P.rise[i] = rise; P.drag[i] = drag;
+  },
+  // soft smoke: o { color, size, speed, dir (Vector3), push, rise, life, alpha, spread }
+  smoke(p, n, o = {}) {
+    _c2.setHex(o.color !== undefined ? o.color : 0xd8cfc4);
+    const sp = o.speed !== undefined ? o.speed : 0.35, s = o.size || 0.16, sd = o.spread || 0.04;
+    for (let i = 0; i < n; i++) {
+      _v8.set(rand(-1, 1), rand(-0.3, 1), rand(-1, 1)).normalize().multiplyScalar(sp * rand(0.3, 1));
+      if (o.dir) _v8.addScaledVector(o.dir, (o.push || 0) * rand(0.6, 1.2));
+      const k = rand(0.85, 1.1);
+      this.puff(p.x + rand(-sd, sd), p.y + rand(-sd, sd), p.z + rand(-sd, sd), _v8.x, _v8.y, _v8.z, rand(0.9, 1.6) * (o.life || 1),
+        s * rand(0.6, 1), s * rand(2.2, 3.4), _c2.r * k, _c2.g * k, _c2.b * k, (o.alpha || 0.5) * rand(0.7, 1), 0, o.rise !== undefined ? o.rise : 0.35, 1.8);
+    }
+  },
+  // glowing fire puffs (muzzle blasts, flame tongues): o { size, speed, dir, push, life, rise, hot (0..1 whiter) }
+  fire(p, n, o = {}) {
+    const sp = o.speed !== undefined ? o.speed : 0.6, s = o.size || 0.12, hot = o.hot || 0;
+    for (let i = 0; i < n; i++) {
+      _v8.set(rand(-1, 1), rand(-0.5, 1), rand(-1, 1)).normalize().multiplyScalar(sp * rand(0.3, 1));
+      if (o.dir) _v8.addScaledVector(o.dir, (o.push || 0) * rand(0.6, 1.2));
+      const t = Math.pow(Math.random(), 1.6) * (1 - hot) + hot;
+      this.puff(p.x, p.y, p.z, _v8.x, _v8.y, _v8.z, rand(0.2, 0.42) * (o.life || 1), s * rand(0.8, 1.2), s * rand(0.25, 0.6),
+        1, lerp(0.32, 0.9, t), lerp(0.06, 0.55, t), o.alpha || 0.9, 1, o.rise !== undefined ? o.rise : 0.9, 2.5);
+    }
+  },
+  updatePuffs(dt) {
+    const P = this.PF, pos = P.iPos, col = P.iCol, mi = P.iMisc;
+    for (let i = 0; i < P.n; i++) {
+      P.age[i] += dt;
+      if (P.age[i] >= P.life[i]) { fxSwap(P, this.PUFF_KEYS, i, --P.n); i--; continue; }
+      const k = Math.exp(-P.drag[i] * dt);
+      P.vx[i] *= k; P.vy[i] = P.vy[i] * k + P.rise[i] * dt; P.vz[i] *= k;
+      P.px[i] += P.vx[i] * dt; P.py[i] += P.vy[i] * dt; P.pz[i] += P.vz[i] * dt;
+      const t = P.age[i] / P.life[i], e = P.em[i];
+      const s = P.s0[i] + (P.s1[i] - P.s0[i]) * (1 - (1 - t) * (1 - t));
+      const fade = e > 0.5 ? (1 - t) * (1 - t) : Math.min(1, t * 7) * (1 - t) * (1 - 0.4 * t);
+      const o = i * 4;
+      pos[o] = P.px[i]; pos[o + 1] = P.py[i]; pos[o + 2] = P.pz[i]; pos[o + 3] = s;
+      col[o] = P.cr[i]; col[o + 1] = P.cg[i]; col[o + 2] = P.cb[i]; col[o + 3] = P.ca[i] * fade;
+      mi[o] = P.rot[i] + P.vr[i] * P.age[i]; mi[o + 1] = e; mi[o + 2] = P.seed[i]; mi[o + 3] = t;
+    }
+    fxFlush(P.geo, P.attrs, P.n);
+    P.mesh.visible = P.n > 0;
+  },
+
+  // ------------------------------------------------------------------ shockwave rings
+  initRings() {
+    const R = this.RG = { cap: 40, list: [], free: [], now: [] };
+    const geo = new THREE.PlaneGeometry(2, 2);
+    R.aT = new THREE.InstancedBufferAttribute(new Float32Array(R.cap * 2), 2); R.aT.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aT', R.aT);
+    R.mesh = new THREE.InstancedMesh(geo, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: `attribute vec2 aT; varying vec2 vUv; varying vec2 vT; varying vec3 vCol;
+        void main(){ vUv = position.xy; vT = aT; vCol = vec3(1.0);
+          #ifdef USE_INSTANCING_COLOR
+            vCol = instanceColor;
+          #endif
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec2 vUv; varying vec2 vT; varying vec3 vCol;
+        void main(){ float d = length(vUv); if (d > 1.0) discard;
+          float x = (d - (1.0 - vT.y)) / vT.y; if (x < 0.0) discard;
+          float a = x * x * smoothstep(1.0, 0.78, x);
+          gl_FragColor = vec4(vCol * (1.0 + a), a * vT.x);
+          #include <colorspace_fragment>
+        }`,
+    }), R.cap);
+    R.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); R.mesh.setColorAt(0, _c1.setRGB(1, 1, 1)); R.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    R.mesh.count = 0; R.mesh.frustumCulled = false; R.mesh.renderOrder = 19; R.mesh.visible = false; scene.add(R.mesh);
+    for (let i = 0; i < R.cap; i++) R.free.push({ p: new THREE.Vector3(), n: new THREE.Vector3(), face: false, c: new THREE.Color(), r0: 0, r1: 1, t: 0, life: 1, thick: 0.3, a: 1 });
+  },
+  // an expanding ring: n = plane normal (null = faces you), radius r0 -> r1 over life
+  ring(p, n, hex, r0, r1, life, thick = 0.3, a = 1) {
+    if (!this.ready) return;
+    const R = this.RG, o = R.free.pop() || R.list.shift();
+    o.p.copy(p); o.face = !n; if (n) o.n.copy(n); o.c.setHex(hex); o.r0 = r0; o.r1 = r1; o.t = 0; o.life = life; o.thick = thick; o.a = a;
+    R.list.push(o);
+  },
+  // a ring drawn for this frame only (markers that follow something)
+  ringNow(p, n, r, hex, a = 1, thick = 0.18) {
+    if (!this.ready || this.RG.now.length >= 12) return;
+    this.RG.now.push({ x: p.x, y: p.y, z: p.z, nx: n ? n.x : 0, ny: n ? n.y : 0, nz: n ? n.z : 0, face: !n, r, hex, a, thick });
+  },
+  updateRings(dt) {
+    const R = this.RG, M = R.mesh, at = R.aT.array, q = this._q, mm = this._m, sc = this._s;
+    let k = 0;
+    const put = (x, y, z, face, nx, ny, nz, r, a, thick) => {
+      _v8.set(x, y, z);
+      if (face) { mm.lookAt(Head.pos, _v8, UP); q.setFromRotationMatrix(mm); }
+      else q.setFromUnitVectors(this._Z, _v7.set(nx, ny, nz));
+      mm.compose(_v8, q, sc.set(r, r, r)); M.setMatrixAt(k, mm);
+      at[k * 2] = a; at[k * 2 + 1] = thick;
+    };
+    for (let i = 0; i < R.list.length; i++) {
+      const o = R.list[i];
+      o.t += dt;
+      if (o.t >= o.life) { R.free.push(o); R.list.splice(i, 1); i--; continue; }
+      if (k >= R.cap) continue;
+      const u = o.t / o.life, r = lerp(o.r0, o.r1, easeOut(u));
+      put(o.p.x, o.p.y, o.p.z, o.face, o.n.x, o.n.y, o.n.z, r, o.a * (1 - u) * (1 - u), Math.min(0.95, o.thick * (1 - 0.45 * u)));
+      M.setColorAt(k, o.c); k++;
+    }
+    for (const o of R.now) {
+      if (k >= R.cap) break;
+      put(o.x, o.y, o.z, o.face, o.nx, o.ny, o.nz, o.r, o.a, o.thick);
+      M.setColorAt(k, _c1.setHex(o.hex)); k++;
+    }
+    R.now.length = 0;
+    M.count = k; M.visible = k > 0;
+    if (k) { M.instanceMatrix.needsUpdate = true; M.instanceColor.needsUpdate = true; R.aT.needsUpdate = true; }
+  },
+
+  // ------------------------------------------------------------------ streak sparks (embers, fuse sparks, fireworks)
+  SPARK_KEYS: ['px', 'py', 'pz', 'vx', 'vy', 'vz', 'age', 'life', 'size', 'cr', 'cg', 'cb', 'grav', 'drag', 'str', 'kind'],
+  initSparks() {
+    const S = this.SP = { cap: 900, n: 0 };
+    for (const k of this.SPARK_KEYS) S[k] = new Float32Array(S.cap);
+    const { g, a } = fxInstGeo(S.cap, [['iPos', 4], ['iVel', 4], ['iCol', 4]]);
+    S.geo = g; S.attrs = [a.iPos, a.iVel, a.iCol]; S.iPos = a.iPos.array; S.iVel = a.iVel.array; S.iCol = a.iCol.array;
+    S.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `attribute vec4 iPos; attribute vec4 iVel; attribute vec4 iCol; varying vec4 vCol; varying vec2 vQ; varying float vHL; varying float vS;
+        void main(){
+          vec4 h = modelViewMatrix * vec4(iPos.xyz, 1.0), t = modelViewMatrix * vec4(iPos.xyz - iVel.xyz * iVel.w, 1.0);
+          vec2 d = h.xy - t.xy; float L = length(d);
+          vec2 dir = L > 1e-5 ? d / L : vec2(1.0, 0.0), nr = vec2(-dir.y, dir.x);
+          float s = iPos.w, hl = L * 0.5 + s;
+          vec3 p = (h.xyz + t.xyz) * 0.5 + vec3(dir * (position.x * hl) + nr * (position.y * s), 0.0);
+          vQ = vec2(position.x * hl, position.y * s); vHL = hl; vS = s; vCol = iCol;
+          gl_Position = projectionMatrix * vec4(p, 1.0); }`,
+      fragmentShader: `varying vec4 vCol; varying vec2 vQ; varying float vHL; varying float vS;
+        void main(){ float ax = max(abs(vQ.x) - (vHL - vS), 0.0); float d = length(vec2(ax, vQ.y)) / vS;
+          float a = clamp(1.0 - d, 0.0, 1.0); a *= a; if (a < 0.003) discard;
+          gl_FragColor = vec4(vCol.rgb * (1.0 + 1.6 * a), vCol.a * a);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    S.mesh.frustumCulled = false; S.mesh.renderOrder = 22; S.mesh.visible = false; scene.add(S.mesh);
+  },
+  // kind 0 plain, 1 glitter star (leaves a sparkling trail), 2 crossette star (splits in four)
+  spark(x, y, z, vx, vy, vz, life, size, r, g, b, grav = 0, drag = 1, str = 0.05, kind = 0) {
+    if (!this.ready) return;
+    const S = this.SP; let i = S.n; if (i >= S.cap) i = (Math.random() * S.cap) | 0; else S.n++;
+    S.px[i] = x; S.py[i] = y; S.pz[i] = z; S.vx[i] = vx; S.vy[i] = vy; S.vz[i] = vz; S.age[i] = 0; S.life[i] = life; S.size[i] = size;
+    S.cr[i] = r; S.cg[i] = g; S.cb[i] = b; S.grav[i] = grav; S.drag[i] = drag; S.str[i] = str; S.kind[i] = kind;
+  },
+  sparks(p, n, hex, speed = 1.5, life = 0.6, size = 0.018, grav = 2, str = 0.05, dir = null, cone = 1) {
+    _c2.setHex(hex);
+    for (let i = 0; i < n; i++) {
+      _v8.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize();
+      if (dir) _v8.multiplyScalar(cone).add(dir).normalize();
+      _v8.multiplyScalar(speed * rand(0.35, 1));
+      this.spark(p.x, p.y, p.z, _v8.x, _v8.y, _v8.z, life * rand(0.6, 1.2), size * rand(0.7, 1.3), _c2.r, _c2.g, _c2.b, grav, 1.2, str);
+    }
+  },
+  updateSparks(dt) {
+    const S = this.SP, pos = S.iPos, vel = S.iVel, col = S.iCol, red = Flash.reduced;
+    for (let i = 0; i < S.n; i++) {
+      S.age[i] += dt;
+      if (S.age[i] >= S.life[i]) {
+        if (S.kind[i] === 2) for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + rand(-0.3, 0.3); this.spark(S.px[i], S.py[i], S.pz[i], Math.cos(a) * 1.1, rand(-0.3, 0.5), Math.sin(a) * 1.1, 0.6, S.size[i] * 0.8, S.cr[i], S.cg[i], S.cb[i], 1.2, 1.4, 0.06, 0); }
+        fxSwap(S, this.SPARK_KEYS, i, --S.n); i--; continue;
+      }
+      const k = Math.exp(-S.drag[i] * dt);
+      S.vx[i] *= k; S.vy[i] = S.vy[i] * k - S.grav[i] * dt; S.vz[i] *= k;
+      S.px[i] += S.vx[i] * dt; S.py[i] += S.vy[i] * dt; S.pz[i] += S.vz[i] * dt;
+      if (S.kind[i] === 1 && Math.random() < dt * 4.5) this.spark(S.px[i], S.py[i], S.pz[i], rand(-0.05, 0.05), rand(-0.1, 0), rand(-0.05, 0.05), rand(0.25, 0.45), S.size[i] * 0.55, S.cr[i] * 0.6 + 0.4, S.cg[i] * 0.6 + 0.35, S.cb[i] * 0.6 + 0.2, 0.6, 2, 0, 0);
+      const t = S.age[i] / S.life[i], o = i * 4;
+      let a = (1 - t) * (1 - t * 0.5);
+      if (S.kind[i] === 1 && !red) a *= 0.75 + 0.25 * Math.sin(S.age[i] * 40 + i);
+      pos[o] = S.px[i]; pos[o + 1] = S.py[i]; pos[o + 2] = S.pz[i]; pos[o + 3] = S.size[i];
+      vel[o] = S.vx[i]; vel[o + 1] = S.vy[i]; vel[o + 2] = S.vz[i]; vel[o + 3] = S.str[i];
+      col[o] = S.cr[i]; col[o + 1] = S.cg[i]; col[o + 2] = S.cb[i]; col[o + 3] = a;
+    }
+    fxFlush(S.geo, S.attrs, S.n);
+    S.mesh.visible = S.n > 0;
+  },
+
+  // ------------------------------------------------------------------ 3D paper confetti and balloon shreds
+  PAPER_KEYS: ['px', 'py', 'pz', 'vx', 'vy', 'vz', 'ax', 'ay', 'az', 'ang', 'spin', 'sx', 'sy', 'age', 'life', 'cr', 'cg', 'cb', 'ph', 'kind'],
+  initPaper() {
+    const D = this.PP = { cap: 280, n: 0 };
+    for (const k of this.PAPER_KEYS) D[k] = new Float32Array(D.cap);
+    D.mesh = new THREE.InstancedMesh(CircusGeo.paper(), CircusShade.material({ side: THREE.DoubleSide, gloss: 0.8, shine: 22, rim: 0.3, emit: 0.34 }), D.cap);
+    D.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); D.mesh.setColorAt(0, _c1.setRGB(1, 1, 1)); D.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    D.mesh.count = 0; D.mesh.frustumCulled = false; D.mesh.visible = false; scene.add(D.mesh);
+  },
+  bit(x, y, z, vx, vy, vz, sx, sy, hex, kind, life) {
+    if (!this.ready) return;
+    const D = this.PP; let i = D.n; if (i >= D.cap) i = (Math.random() * D.cap) | 0; else D.n++;
+    _v8.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(); _c2.setHex(hex);
+    D.px[i] = x; D.py[i] = y; D.pz[i] = z; D.vx[i] = vx; D.vy[i] = vy; D.vz[i] = vz;
+    D.ax[i] = _v8.x; D.ay[i] = _v8.y; D.az[i] = _v8.z; D.ang[i] = rand(0, TAU); D.spin[i] = rand(5, 12) * (chance(0.5) ? 1 : -1);
+    D.sx[i] = sx; D.sy[i] = sy; D.age[i] = 0; D.life[i] = life; D.cr[i] = _c2.r; D.cg[i] = _c2.g; D.cb[i] = _c2.b; D.ph[i] = rand(0, TAU); D.kind[i] = kind;
+  },
+  // a burst of paper confetti that flutters down
+  paper(p, n, speed = 1.4, cols = CIRCUS_PAPER, dir = null) {
+    for (let i = 0; i < n; i++) {
+      _v7.set(rand(-1, 1), rand(-0.2, 1), rand(-1, 1)).normalize().multiplyScalar(speed * rand(0.35, 1));
+      if (dir) _v7.addScaledVector(dir, speed * rand(0.5, 1.1));
+      const w = rand(0.035, 0.06);
+      this.bit(p.x, p.y, p.z, _v7.x, _v7.y, _v7.z, w, w * rand(0.45, 0.8), cols[i % cols.length], 0, rand(1.6, 2.6));
+    }
+  },
+  // torn rubber from a popped balloon
+  shreds(p, n, hex, speed = 1.6) {
+    for (let i = 0; i < n; i++) {
+      _v7.set(rand(-1, 1), rand(-0.4, 1), rand(-1, 1)).normalize().multiplyScalar(speed * rand(0.5, 1));
+      this.bit(p.x, p.y, p.z, _v7.x, _v7.y, _v7.z, rand(0.05, 0.1), rand(0.03, 0.07), hex, 1, rand(0.9, 1.4));
+    }
+  },
+  updatePaper(dt) {
+    const D = this.PP, M = D.mesh, q = this._q, mm = this._m, sc = this._s;
+    for (let i = 0; i < D.n; i++) {
+      D.age[i] += dt;
+      if (D.age[i] >= D.life[i]) { fxSwap(D, this.PAPER_KEYS, i, --D.n); i--; continue; }
+      const paper = D.kind[i] === 0, k = Math.exp(-(paper ? 2.6 : 1.4) * dt);
+      D.vx[i] *= k; D.vz[i] *= k; D.vy[i] = D.vy[i] * k - (paper ? 2.2 : 4.5) * dt;
+      if (paper) { const f = Math.sin(D.age[i] * 6 + D.ph[i]) * 0.9 * dt; D.vx[i] += f * Math.cos(D.ph[i]); D.vz[i] += f * Math.sin(D.ph[i]); }
+      D.px[i] += D.vx[i] * dt; D.py[i] += D.vy[i] * dt; D.pz[i] += D.vz[i] * dt;
+      D.ang[i] += D.spin[i] * dt * (paper ? 1 : 0.6);
+    }
+    for (let i = 0; i < D.n; i++) {
+      const left = D.life[i] - D.age[i], s = left < 0.35 ? left / 0.35 : 1;
+      q.setFromAxisAngle(_v8.set(D.ax[i], D.ay[i], D.az[i]), D.ang[i]);
+      mm.compose(_v7.set(D.px[i], D.py[i], D.pz[i]), q, sc.set(D.sx[i] * s * 2, D.sy[i] * s * 1.6, s)); M.setMatrixAt(i, mm);
+      M.setColorAt(i, _c1.setRGB(D.cr[i], D.cg[i], D.cb[i]));
+    }
+    M.count = D.n; M.visible = D.n > 0;
+    if (D.n) { M.instanceMatrix.needsUpdate = true; M.instanceColor.needsUpdate = true; }
+  },
+
+  // ------------------------------------------------------------------ floor light pools (requested every frame)
+  initFloor() {
+    const F = this.FL = { cap: 16, list: [] };
+    const geo = new THREE.PlaneGeometry(2, 2); geo.rotateX(-Math.PI / 2);
+    F.aA = new THREE.InstancedBufferAttribute(new Float32Array(F.cap), 1); F.aA.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('aA', F.aA);
+    F.mesh = new THREE.InstancedMesh(geo, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `attribute float aA; varying vec2 vUv; varying float vA; varying vec3 vCol;
+        void main(){ vUv = position.xz; vA = aA; vCol = vec3(1.0);
+          #ifdef USE_INSTANCING_COLOR
+            vCol = instanceColor;
+          #endif
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec2 vUv; varying float vA; varying vec3 vCol;
+        void main(){ float d = length(vUv); if (d > 1.0) discard; float a = (1.0 - d * d); a *= a;
+          gl_FragColor = vec4(vCol, a * vA);
+          #include <colorspace_fragment>
+        }`,
+    }), F.cap);
+    F.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); F.mesh.setColorAt(0, _c1.setRGB(1, 1, 1)); F.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    F.mesh.count = 0; F.mesh.frustumCulled = false; F.mesh.renderOrder = 2; F.mesh.visible = false; scene.add(F.mesh);
+  },
+  // a soft pool of light on the ground (or any y), for this frame; sx/sz stretch it
+  floorLight(x, y, z, r, hex, a, sx = 1, sz = 1) { if (this.ready && this.FL.list.length < this.FL.cap) this.FL.list.push({ x, y, z, r, hex, a, sx, sz }); },
+  updateFloor() {
+    const F = this.FL, M = F.mesh, mm = this._m;
+    let k = 0;
+    for (const o of F.list) {
+      mm.makeScale(o.r * o.sx, 1, o.r * o.sz); mm.setPosition(o.x, o.y, o.z); M.setMatrixAt(k, mm);
+      M.setColorAt(k, _c1.setHex(o.hex)); F.aA.array[k] = o.a; k++;
+    }
+    F.list.length = 0;
+    M.count = k; M.visible = k > 0;
+    if (k) { M.instanceMatrix.needsUpdate = true; M.instanceColor.needsUpdate = true; F.aA.needsUpdate = true; }
+  },
+
+  // ------------------------------------------------------------------ comic pop words (BOOM! HONK! POP!)
+  initPops() {
+    const W = 1024, H = 512, C = 256;
+    const style = [['#ffc83c', '#e8283c', '#ff7a7a'], ['#ff8fd0', '#fff4dc', '#ffffff'], ['#fff4dc', '#d23c8c', '#ff7ac0'], ['#ff9a3c', '#fff4dc', '#ffffff'],
+      ['#e6e2ff', '#3a1e5a', '#7a5aa8'], ['#fff4dc', '#8a4a1a', '#c8803a'], ['#e8283c', '#fff4dc', '#ffffff'], ['#ffc83c', '#6a1a3a', '#b0406a']];
+    const tex = canvasTex(W, H, (g) => {
+      g.clearRect(0, 0, W, H);
+      POP_WORDS.forEach((w, i) => {
+        const cx = (i % 4) * C + C / 2, cy = Math.floor(i / 4) * C + C / 2, st = style[i];
+        const burst = (ox, oy, fill, stroke) => {
+          g.beginPath();
+          for (let k = 0; k < 28; k++) { const a = k / 28 * TAU + 0.11, r = k % 2 ? 80 : 117 - (k % 4) * 3; g.lineTo(cx + ox + Math.cos(a) * r, cy + oy + Math.sin(a) * r * 0.78); }
+          g.closePath(); g.fillStyle = fill; g.fill();
+          if (stroke) { g.lineWidth = 7; g.strokeStyle = stroke; g.stroke(); }
+        };
+        burst(6, 8, 'rgba(20,4,10,0.55)', null);
+        burst(0, 0, st[0], '#2a0a14');
+        const s = Math.max(3, Math.min(8, Math.floor(196 / SerifFont.width(w, 1))));
+        const tw = SerifFont.width(w, s), th = 7 * s, x = Math.round(cx - tw / 2), y = Math.round(cy - th / 2);
+        for (const [ox, oy] of [[-5, 0], [5, 0], [0, -5], [0, 5], [-4, -4], [4, -4], [-4, 4], [4, 4], [3, 7], [6, 6]]) SerifFont.draw(g, w, x + ox, y + oy, s, '#2a0a14');
+        SerifFont.draw(g, w, x, y, s, st[1]);
+        g.save(); g.beginPath(); g.rect(x - 8, y - 8, tw + 16, Math.round(th * 0.42) + 8); g.clip(); SerifFont.draw(g, w, x, y, s, st[2]); g.restore();
+      });
+    });
+    tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true; tex.needsUpdate = true;
+    const PO = this.PO = { cap: 10, list: [] };
+    const { g, a } = fxInstGeo(PO.cap, [['iPos', 4], ['iMisc', 4]]);
+    PO.geo = g; PO.attrs = [a.iPos, a.iMisc]; PO.iPos = a.iPos.array; PO.iMisc = a.iMisc.array;
+    PO.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      uniforms: { uMap: { value: tex } }, transparent: true, depthWrite: false,
+      vertexShader: `attribute vec4 iPos; attribute vec4 iMisc; varying vec2 vUv; varying float vA; varying float vCell;
+        void main(){ float c = cos(iMisc.z), s = sin(iMisc.z);
+          vUv = position.xy * 0.5 + 0.5; vA = iMisc.y; vCell = iMisc.x;
+          vec4 mv = modelViewMatrix * vec4(iPos.xyz, 1.0); mv.xy += vec2(c * position.x - s * position.y, s * position.x + c * position.y) * iPos.w;
+          gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `uniform sampler2D uMap; varying vec2 vUv; varying float vA; varying float vCell;
+        void main(){ float col = mod(vCell, 4.0), row = floor(vCell / 4.0);
+          vec4 t = texture2D(uMap, vec2((col + vUv.x) / 4.0, 1.0 - (row + 1.0 - vUv.y) / 2.0));
+          float a = t.a * vA; if (a < 0.02) discard;
+          gl_FragColor = vec4(t.rgb, a);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    PO.mesh.frustumCulled = false; PO.mesh.renderOrder = 30; PO.mesh.visible = false; scene.add(PO.mesh);
+    for (let i = 0; i < PO.cap; i++) PO.list.push({ on: false, cell: 0, pos: new THREE.Vector3(), t: 0, life: 0.85, size: 0.36, rot: 0, vr: 0, a: 1 });
+  },
+  // a comic word that pops at p (each word at most once per `gate` seconds)
+  pop(word, p, size = 0.36, gate = 0.3, alpha = 1) {
+    if (!this.ready) return;
+    const cell = POP_WORDS.indexOf(word); if (cell < 0 || !this.gate('pop' + word, gate)) return;
+    const L = this.PO.list;
+    let o = L.find((x) => !x.on); if (!o) { o = L[0]; for (const x of L) if (x.t > o.t) o = x; }
+    o.on = true; o.cell = cell; o.pos.copy(p); o.t = 0; o.life = 0.85; o.size = size; o.rot = rand(-0.28, 0.28); o.vr = rand(-0.35, 0.35); o.a = alpha;
+  },
+  updatePops(dt) {
+    const PO = this.PO, pos = PO.iPos, mi = PO.iMisc;
+    let n = 0;
+    for (const o of PO.list) {
+      if (!o.on) continue;
+      o.t += dt; if (o.t >= o.life) { o.on = false; continue; }
+      const k = o.t / 0.17, s = o.size * (k < 1 ? Math.max(0.05, easeBack(k)) : 1 + 0.035 * Math.sin(o.t * 15) * (1 - o.t / o.life));
+      o.pos.y += 0.22 * dt; o.rot += o.vr * dt;
+      const a = (o.t > o.life - 0.25 ? (o.life - o.t) / 0.25 : 1) * o.a, q = n * 4;
+      pos[q] = o.pos.x; pos[q + 1] = o.pos.y; pos[q + 2] = o.pos.z; pos[q + 3] = s * 0.5;
+      mi[q] = o.cell; mi[q + 1] = a; mi[q + 2] = o.rot; mi[q + 3] = 0;
+      n++;
+    }
+    fxFlush(PO.geo, PO.attrs, n);
+    PO.mesh.visible = n > 0;
+  },
+
+  // ------------------------------------------------------------------ fireworks: rockets with spark tails, then a shell
+  // kinds: 'peony' (glitter sphere), 'ring', 'willow' (drooping gold), 'crossette' (stars split in four)
+  rocket(from, to, hex, kind = 'peony', dur = 0.7, scale = 1, onBurst = null) {
+    if (!this.ready) return;
+    this.rockets.push({ from: from.clone(), to: to.clone(), hex, kind, t: 0, dur: Math.max(0.2, dur), scale, onBurst });
+  },
+  updateRockets(dt) {
+    for (let i = 0; i < this.rockets.length; i++) {
+      const R = this.rockets[i];
+      R.t += dt;
+      const u = Math.min(1, R.t / R.dur), e = 1 - (1 - u) * (1 - u);
+      _v8.lerpVectors(R.from, R.to, e); _v8.x += Math.sin(u * 9 + i) * 0.04 * (1 - u);
+      R.acc = (R.acc || 0) + dt * 70;   // ~70 tail sparks a second, whatever the frame rate
+      for (; R.acc >= 1; R.acc--) this.spark(_v8.x, _v8.y, _v8.z, rand(-0.15, 0.15), rand(-0.9, -0.3), rand(-0.15, 0.15), rand(0.25, 0.45), 0.022 * R.scale, 1, 0.78, 0.45, 1.2, 1.5, 0.05, 0);
+      if (u >= 1) { this.rockets.splice(i, 1); i--; this.burst(R.to, R.hex, R.kind, R.scale); if (R.onBurst) R.onBurst(); }
+    }
+  },
+  burst(p, hex, kind = 'peony', scale = 1) {
+    if (!this.ready) return;
+    _c2.setHex(hex); const r = _c2.r, g = _c2.g, b = _c2.b, sp = 2.2 * scale, sz = 0.045 * scale;
+    if (kind === 'ring') {
+      _v6.set(rand(-1, 1), rand(-0.4, 1), rand(-1, 1)).normalize(); _v5.set(0, 1, 0).cross(_v6).normalize(); if (_v5.lengthSq() < 0.1) _v5.set(1, 0, 0);
+      _v4.crossVectors(_v6, _v5);
+      for (let i = 0; i < 30; i++) { const a = i / 30 * TAU; _v7.copy(_v5).multiplyScalar(Math.cos(a)).addScaledVector(_v4, Math.sin(a)).multiplyScalar(sp); this.spark(p.x, p.y, p.z, _v7.x, _v7.y, _v7.z, rand(1.0, 1.3), sz, r, g, b, 0.8, 1.3, 0.07, 1); }
+    } else if (kind === 'willow') {
+      for (let i = 0; i < 26; i++) { _v7.set(rand(-1, 1), rand(-0.2, 1), rand(-1, 1)).normalize().multiplyScalar(sp * rand(0.6, 0.9)); this.spark(p.x, p.y, p.z, _v7.x, _v7.y, _v7.z, rand(1.8, 2.4), sz * 0.9, 1, 0.76, 0.36, 0.9, 1.6, 0.08, 1); }
+    } else if (kind === 'crossette') {
+      for (let i = 0; i < 12; i++) { _v7.set(rand(-1, 1), rand(-0.6, 1), rand(-1, 1)).normalize().multiplyScalar(sp * 0.8); this.spark(p.x, p.y, p.z, _v7.x, _v7.y, _v7.z, rand(0.45, 0.6), sz * 1.1, r, g, b, 0.7, 1, 0.06, 2); }
+    } else {
+      for (let i = 0; i < 34; i++) { _v7.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize().multiplyScalar(sp * rand(0.85, 1)); this.spark(p.x, p.y, p.z, _v7.x, _v7.y, _v7.z, rand(1.0, 1.5), sz, r, g, b, 1.2, 1.4, 0.07, 1); }
+    }
+    // a soft glowing core (never a flash) and a little smoke that lingers
+    this.puff(p.x, p.y, p.z, 0, 0, 0, 0.35, 0.5 * scale, (Flash.reduced ? 0.5 : 0.9) * scale, r * 0.6 + 0.4, g * 0.6 + 0.4, b * 0.6 + 0.4, Flash.reduced ? 0.45 : 0.8, 1, 0, 0);
+    this.smoke(p, 2, { color: 0x6a5a6a, size: 0.35 * scale, speed: 0.2, alpha: 0.18, rise: 0.05 });
+  },
+};
+registerKit(CircusFX, function () { this.lights = []; this.rockets = []; this.TR = null; this.PF = null; this.RG = null; this.SP = null; this.PP = null; this.FL = null; this.PO = null; });
 // ============================================================================
 //  BOSS 3 - GRANDIOSO's acts (10 patterns + the opening tutorial + the encore)
 //  Every pattern telegraphs >= 1 beat ahead (>= 350 ms in free-time sections),
 //  uses the shared bullet pools and color rules, and always leaves a way out.
 //  Meter-aware: bars are this.bpb beats (beat 1 of each bar is the big hit).
+//  The look: props and bullets are lit (CircusShade) and every act carries its
+//  own effects (CircusFX) - trails, smoke, sparks, shockwaves, pop words.
+//  Effects never change what hurts, when, or where.
 // ============================================================================
 const RM = {
   // A' (the theme variation, second half of the phase-1 loop): harder variants
@@ -10976,121 +11914,425 @@ const RM = {
   // evenly spread directions on a sphere (radial bursts)
   dirs(n, out) { out.length = 0; const ga = Math.PI * (3 - Math.sqrt(5)); for (let i = 0; i < n; i++) { const y = 1 - (i + 0.5) / n * 2, r = Math.sqrt(1 - y * y), a = i * ga; out.push([Math.cos(a) * r, y, Math.sin(a) * r]); } return out; },
   _dirs: [],
+  Z: new THREE.Vector3(0, 0, 1), DOWN: new THREE.Vector3(0, -1, 0),
 };
 Pattern.prototype.skip = function () { return this.sloppy < 1 && Math.random() > this.sloppy; };   // HECKLE: a sloppy act drops 20% of its bullets
 
 // ----------------------------------------------------------------------------
 //  RingKit - props for the acts (built when the boss loads, freed on leaving)
 // ----------------------------------------------------------------------------
-const CURTAIN_VS = `varying vec2 vUv; uniform float uTime; uniform float uMode;
-  void main(){ vUv = uv; vec3 p = position; if (uMode > 0.5) p.z += sin(p.x * 3.0 + uTime * 6.0) * 0.012 + sin(p.y * 4.0 - uTime * 5.0) * 0.008;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
-const CURTAIN_FS = `uniform vec2 uSize; uniform vec4 uHole[2]; uniform float uTime; uniform float uAlpha; uniform float uMode; varying vec2 vUv;
+function smoothTex(t) { t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.needsUpdate = true; return t; }
+// a tiling mask of diagonal stripes (white on black): spirals on lathes and tori (n even)
+function diagMaskTex(n = 4, size = 64) {
+  return smoothTex(canvasTex(size, size, (g) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, size, size); g.fillStyle = '#fff';
+    const w = size / n;
+    for (let k = -n; k <= n; k++) { const x0 = k * 2 * w; g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0 + w, 0); g.lineTo(x0 + w + size, size); g.lineTo(x0 + size, size); g.closePath(); g.fill(); }
+  }, { repeat: true }));
+}
+const CURTAIN_VS = `uniform float uTime; uniform float uMode; uniform vec2 uSize;
+  varying vec2 vUv; varying vec3 vN; varying vec3 vW;
   void main(){
-    vec2 p = (vUv - 0.5) * uSize; float edge = 1e3;
-    for (int i = 0; i < 2; i++) { if (uHole[i].w > 0.5) { float d = length(p - uHole[i].xy) - uHole[i].z; if (d < 0.0) discard; edge = min(edge, d); } }
+    vUv = uv; vec3 p = position; vec3 n = vec3(0.0, 0.0, 1.0);
+    if (uMode > 0.5) {
+      // the torn canvas billows: travelling waves (metres) and their slope for the lighting
+      vec2 q = (uv - 0.5) * uSize; float amp = 0.75 + 0.25 * sin(uTime * 0.9);
+      float a1 = q.x * 2.2 + uTime * 3.1, a2 = q.y * 2.8 - uTime * 2.3 + q.x * 0.7, a3 = (q.x + q.y) * 4.5 + uTime * 5.0;
+      p.z += (sin(a1) * 0.05 + sin(a2) * 0.035 + sin(a3) * 0.01) * amp;
+      float dx = (cos(a1) * 0.11 + cos(a2) * 0.0245 + cos(a3) * 0.045) * amp, dy = (cos(a2) * 0.098 + cos(a3) * 0.045) * amp;
+      n = normalize(vec3(-dx * 4.0, -dy * 4.0, 1.0));   // folds exaggerated for the light
+    }
+    vec4 w = modelMatrix * vec4(p, 1.0); vW = w.xyz; vN = n;
+    gl_Position = projectionMatrix * viewMatrix * w; }`;
+const CURTAIN_FS = `uniform vec2 uSize; uniform vec4 uHole[2]; uniform float uTime; uniform float uAlpha; uniform float uMode;
+  uniform vec3 uKeyDir; uniform vec3 uKeyCol; uniform vec3 uSky; uniform vec3 uGround;
+  uniform int uPtN; uniform vec4 uPtPos[4]; uniform vec3 uPtCol[4];
+  varying vec2 vUv; varying vec3 vN; varying vec3 vW;
+  float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+  float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 3; i++) { s += a * vnoise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }
+  void main(){
+    vec2 p = (vUv - 0.5) * uSize; float edge = 1e3; float film = 0.0;
+    for (int i = 0; i < 2; i++) { if (uHole[i].w > 0.5) { float d = length(p - uHole[i].xy) - uHole[i].z;
+      if (d < 0.0) { if (uHole[i].w > 1.5 && uMode < 0.5) film = 1.0; else discard; } edge = min(edge, abs(d)); } }
     vec3 col; float a;
     if (uMode < 0.5) {
-      float n = sin(p.x * 9.0 + uTime * 5.0) * sin(p.y * 7.0 - uTime * 6.5) * 0.5 + 0.5;
-      col = mix(vec3(1.0, 0.22, 0.05), vec3(1.0, 0.82, 0.25), clamp(n * 0.6 + (1.0 - smoothstep(0.0, 0.22, edge)) * 0.8, 0.0, 1.0));
-      a = uAlpha * (0.36 + 0.24 * n + (1.0 - smoothstep(0.0, 0.12, edge)) * 0.3);
+      if (film > 0.5) {
+        // an ORANGE hoop is filled with a thin orange swirl: cross it while moving
+        float sw = sin(atan(p.y, p.x) * 3.0 + length(p) * 14.0 - uTime * 6.0) * 0.5 + 0.5;
+        gl_FragColor = vec4(vec3(1.0, 0.55, 0.12) * (0.8 + 0.4 * sw), uAlpha * (0.2 + 0.14 * sw));
+        #include <colorspace_fragment>
+        return;
+      }
+      // rising, domain-warped flames; white-hot where the hoops burn through
+      vec2 q = vec2(p.x * 2.3, p.y * 1.5 - uTime * 2.4);
+      float n = fbm(q + vec2(vnoise(q * 0.6 + uTime * 0.35) * 1.1, 0.0));
+      float rim = 1.0 - smoothstep(0.0, 0.2, edge);
+      float heat = clamp(n * 1.5 - 0.12 + rim * 0.95 + 0.1 * sin(p.x * 3.0 + uTime * 2.0), 0.0, 1.45);
+      col = mix(vec3(0.5, 0.05, 0.02), vec3(1.0, 0.34, 0.05), smoothstep(0.12, 0.55, heat));
+      col = mix(col, vec3(1.0, 0.78, 0.26), smoothstep(0.62, 1.0, heat));
+      col = mix(col, vec3(1.0, 0.97, 0.86), smoothstep(1.05, 1.4, heat));
+      float top = uSize.y * 0.5 - p.y;
+      a = uAlpha * clamp(0.3 + 0.72 * smoothstep(0.18, 0.78, n) + rim * 0.45, 0.0, 1.0) * smoothstep(0.0, 0.05 + 0.04 * n, top);
+      a *= mix(0.3, 1.0, smoothstep(0.15, 0.75, length(vW - cameraPosition)));   // see through the wall you are passing
     } else {
-      float s = step(0.5, fract(p.x * 1.6));
-      col = mix(vec3(0.91, 0.16, 0.24), vec3(1.0, 0.96, 0.86), s) * (0.75 + 0.25 * sin(p.y * 2.0 + uTime));
+      // red-and-cream canvas, rain running down it, a gold rope + grommets along the top; lit by the storm
+      float s = step(0.5, fract(p.x * 2.4 + 0.25));
+      vec3 base = mix(vec3(0.91, 0.16, 0.24), vec3(1.0, 0.96, 0.86), s);
+      float wet = smoothstep(0.55, 1.0, vnoise(vec2(p.x * 9.0, p.y * 1.3 + uTime * 0.9)));
+      base *= 1.0 - 0.28 * wet;
+      float top = uSize.y * 0.5 - p.y;
+      if (top < 0.06) base = vec3(1.0, 0.78, 0.26) * (0.75 + 0.25 * sin(p.x * 70.0 + p.y * 30.0));
+      float gr = length(vec2(mod(p.x + 0.16, 0.32) - 0.16, top - 0.11));
+      if (gr < 0.032) base = gr < 0.018 ? vec3(0.08) : vec3(1.0, 0.82, 0.32);
+      base *= 0.5 + 0.5 * smoothstep(0.0, 0.14, edge);   // scorched, frayed tears
+      vec3 N = normalize(vN); N = gl_FrontFacing ? N : -N;
+      vec3 lig = mix(uGround, uSky, N.y * 0.5 + 0.5) + uKeyCol * clamp((dot(N, uKeyDir) + 0.5) / 1.5, 0.0, 1.0);
+      for (int i = 0; i < 4; i++) { if (i >= uPtN) break; vec3 L = uPtPos[i].xyz - vW; float d = length(L);
+        float att = clamp(1.0 - d / uPtPos[i].w, 0.0, 1.0); lig += uPtCol[i] * att * att * (abs(dot(N, L / max(d, 1e-4))) * 0.7 + 0.3); }
+      col = base * lig;
       float rag = smoothstep(0.0, 0.05, edge + 0.02 * sin(p.x * 40.0 + p.y * 33.0));
-      a = uAlpha * 0.82 * rag;
+      a = uAlpha * 0.92 * rag * mix(0.45, 1.0, smoothstep(0.15, 0.75, length(vW - cameraPosition)));
     }
     gl_FragColor = vec4(col, a);
     #include <colorspace_fragment>
   }`;
+// marionette strings: glowing silk ribbons (camera-facing, they sway and twang)
+const SILK_VS = `attribute vec4 iA; attribute vec4 iB; attribute vec4 iC; uniform float uTime;
+  varying vec2 vUv; varying vec4 vC; varying float vY;
+  void main(){
+    float v = position.y; vec3 A = iA.xyz, B = iB.xyz, P = mix(A, B, v);
+    vec3 D = normalize(B - A), S = normalize(cross(D, cameraPosition - P)), W = cross(D, S);
+    float sway = sin(uTime * 1.7 + iA.w * 6.0) * 0.014 * v;
+    float vib = iB.w * sin(3.14159 * v) * sin(uTime * 48.0 + iA.w * 10.0) * 0.045;
+    P += S * (sway + vib) + W * sway * 0.6 + S * position.x * 0.016;
+    vUv = vec2(position.x, v); vC = iC; vY = P.y + iA.w * 3.0;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0); }`;
+const SILK_FS = `uniform float uTime; varying vec2 vUv; varying vec4 vC; varying float vY;
+  void main(){
+    float e = 1.0 - abs(vUv.x), core = smoothstep(0.55, 1.0, e), glow = e * e * 0.5;
+    float sh = smoothstep(0.9, 1.0, sin(vY * 2.6 + uTime * 4.0) * 0.5 + 0.5);
+    gl_FragColor = vec4(vC.rgb * (core * (1.0 + sh * 1.8) + glow), vC.a * (core + glow));
+    #include <colorspace_fragment>
+  }`;
+// a white cartoon glove, palm up, fingers along +x (open) or curled (fist)
+function gloveGeo(fist) {
+  const W = 0xf8f4ec, parts = [
+    { geo: new THREE.SphereGeometry(0.06, 14, 10), matrix: M4(0, 0, 0, 0, 0, 0, 1.15, 0.55, 1.0), color: W },
+    { geo: new THREE.CylinderGeometry(0.045, 0.05, 0.07, 12), matrix: M4(-0.08, -0.004, 0, 0, 0, Math.PI / 2), color: W },
+    { geo: new THREE.TorusGeometry(0.053, 0.011, 6, 16), matrix: M4(-0.112, -0.004, 0, 0, Math.PI / 2, 0), color: 0xffc83c },
+    { geo: new THREE.CylinderGeometry(0.062, 0.052, 0.04, 14), matrix: M4(-0.134, -0.004, 0, 0, 0, Math.PI / 2), color: 0xfff4dc },
+  ];
+  for (let i = 0; i < 4; i++) {
+    const z = (i - 1.5) * 0.027, len = i === 0 || i === 3 ? 0.04 : 0.05;
+    if (!fist) parts.push({ geo: new THREE.CapsuleGeometry(0.0135, len, 3, 8), matrix: M4(0.08 + len * 0.3, 0.012, z, 0, -z * 1.4, Math.PI / 2 - 0.22), color: W });
+    else parts.push({ geo: new THREE.CapsuleGeometry(0.015, 0.03, 3, 8), matrix: M4(0.055, 0.03, z, 0, 0, -0.75), color: W });
+  }
+  parts.push(fist ? { geo: new THREE.CapsuleGeometry(0.015, 0.035, 3, 8), matrix: M4(0.03, 0.035, 0.05, 0.5, 0, -1.2), color: W }
+    : { geo: new THREE.CapsuleGeometry(0.015, 0.04, 3, 8), matrix: M4(0.02, 0.018, 0.07, -0.9, 0, 0.3), color: W });
+  return mergeGeos(parts);
+}
+// a jewel-box music box: lacquered body with gold trim, velvet, a brass cylinder and comb
+function musicBoxGeo() {
+  const LQ = 0x6a1a3a, GD = 0xffc83c, parts = [
+    { geo: new THREE.BoxGeometry(0.62, 0.24, 0.46), matrix: M4(0, 0.14, 0), color: LQ },
+    { geo: new THREE.BoxGeometry(0.58, 0.012, 0.42), matrix: M4(0, 0.262, 0), color: 0x8a0a24 },
+    { geo: new THREE.CylinderGeometry(0.11, 0.12, 0.022, 20), matrix: M4(0, 0.274, -0.02), color: GD },
+    { geo: new THREE.CylinderGeometry(0.035, 0.035, 0.3, 12), matrix: M4(0, 0.29, 0.165, 0, 0, Math.PI / 2), color: 0xd8a040 },
+    { geo: new THREE.BoxGeometry(0.3, 0.012, 0.05), matrix: M4(0, 0.276, 0.205), color: GD },
+  ];
+  for (const y of [0.262, 0.02]) for (const z of [-0.23, 0.23]) parts.push({ geo: new THREE.BoxGeometry(0.64, 0.025, 0.025), matrix: M4(0, y, z), color: GD });
+  for (const y of [0.262, 0.02]) for (const x of [-0.31, 0.31]) parts.push({ geo: new THREE.BoxGeometry(0.025, 0.025, 0.48), matrix: M4(x, y, 0), color: GD });
+  for (const x of [-0.31, 0.31]) for (const z of [-0.23, 0.23]) {
+    parts.push({ geo: new THREE.SphereGeometry(0.038, 10, 8), matrix: M4(x, 0.0, z), color: GD });
+    parts.push({ geo: new THREE.BoxGeometry(0.025, 0.24, 0.025), matrix: M4(x, 0.14, z), color: GD });
+  }
+  for (let i = 0; i < 9; i++) parts.push({ geo: new THREE.BoxGeometry(0.014, 0.01, 0.05), matrix: M4(-0.12 + i * 0.03, 0.284, 0.2), color: 0xffe08a });   // comb teeth
+  // a gold scroll with a pink jewel on the front panel
+  parts.push({ geo: new THREE.TorusGeometry(0.06, 0.009, 5, 18), matrix: M4(0, 0.14, 0.232), color: GD });
+  parts.push({ geo: new THREE.SphereGeometry(0.02, 8, 6), matrix: M4(0, 0.14, 0.235), color: 0xff5fb4 });
+  return mergeGeos(parts);
+}
+function tutuGeo(r0, r1, waves, droop) {
+  const seg = 48, rings = 3, pos = [], col = [], idx = [];
+  for (let j = 0; j <= rings; j++) {
+    const t = j / rings, r = lerp(r0, r1, t);
+    for (let i = 0; i <= seg; i++) {
+      const a = i / seg * TAU;
+      pos.push(Math.cos(a) * r, -droop * t * t + Math.sin(a * waves) * 0.024 * t, Math.sin(a) * r);
+      col.push(1, lerp(1, 0.7, t), lerp(1, 0.86, t));
+    }
+  }
+  for (let j = 0; j < rings; j++) for (let i = 0; i < seg; i++) { const a = j * (seg + 1) + i, b = a + 1, c = a + seg + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+function ballerinaGeo() {
+  const SK = 0xf6e2d6, TI = 0xffd8e4, SH = 0xff8fd0, BO = 0xff5fb4;
+  const arm = (s) => new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(s * 0.05, 0.6, 0), new THREE.Vector3(s * 0.14, 0.6, 0.035), new THREE.Vector3(s * 0.235, 0.64, 0.01)]), 10, 0.011, 6);
+  const bodice = new THREE.LatheGeometry([[0, 0.4], [0.048, 0.41], [0.058, 0.47], [0.052, 0.53], [0.064, 0.575], [0.046, 0.61], [0, 0.62]].map(([x, y]) => new THREE.Vector2(x, y)), 14);
+  return mergeGeos([
+    { geo: new THREE.CylinderGeometry(0.018, 0.011, 0.38, 8), matrix: M4(0, 0.21, 0), color: TI },
+    { geo: new THREE.ConeGeometry(0.016, 0.05, 8), matrix: M4(0, 0.035, 0, Math.PI, 0, 0), color: SH },
+    { geo: new THREE.CylinderGeometry(0.016, 0.011, 0.3, 8), matrix: M4(0, 0.44, -0.145, -1.31, 0, 0), color: TI },
+    { geo: new THREE.ConeGeometry(0.015, 0.05, 8), matrix: M4(0, 0.475, -0.31, -1.31 + Math.PI, 0, 0), color: SH },
+    { geo: bodice, color: BO },
+    { geo: new THREE.CylinderGeometry(0.016, 0.018, 0.05, 8), matrix: M4(0, 0.64, 0), color: SK },
+    { geo: new THREE.SphereGeometry(0.056, 14, 10), matrix: M4(0, 0.7, 0), color: SK },
+    { geo: new THREE.SphereGeometry(0.036, 10, 8), matrix: M4(0, 0.745, -0.035), color: 0x3a2418 },
+    { geo: new THREE.TorusGeometry(0.03, 0.006, 5, 14), matrix: M4(0, 0.748, -0.012, 1.2, 0, 0), color: 0xffd23c },
+    { geo: new THREE.SphereGeometry(0.008, 6, 4), matrix: M4(-0.02, 0.705, 0.05), color: 0x3a2418 },
+    { geo: new THREE.SphereGeometry(0.008, 6, 4), matrix: M4(0.02, 0.705, 0.05), color: 0x3a2418 },
+    { geo: new THREE.SphereGeometry(0.01, 6, 4), matrix: M4(0, 0.685, 0.054), color: 0xff7aa8 },
+    { geo: arm(-1), color: SK }, { geo: arm(1), color: SK },
+    { geo: new THREE.SphereGeometry(0.014, 6, 5), matrix: M4(-0.238, 0.642, 0.01), color: SK },
+    { geo: new THREE.SphereGeometry(0.014, 6, 5), matrix: M4(0.238, 0.642, 0.01), color: SK },
+  ]);
+}
+// a theatre spotlight: black can with brass fins, a yoke and barn doors; the beam leaves along -Y
+function fixtureGeo() {
+  const K = 0x1c1a22, B = 0xc8a040, parts = [
+    { geo: new THREE.CylinderGeometry(0.16, 0.2, 0.44, 16), color: K },
+    { geo: new THREE.SphereGeometry(0.16, 14, 6, 0, TAU, 0, Math.PI / 2), matrix: M4(0, 0.22, 0), color: K },
+    { geo: new THREE.TorusGeometry(0.205, 0.024, 6, 20), matrix: M4(0, -0.22, 0, Math.PI / 2, 0, 0), color: B },
+    { geo: new THREE.BoxGeometry(0.03, 0.36, 0.07), matrix: M4(-0.235, 0.06, 0), color: 0x2a2830 },
+    { geo: new THREE.BoxGeometry(0.03, 0.36, 0.07), matrix: M4(0.235, 0.06, 0), color: 0x2a2830 },
+    { geo: new THREE.BoxGeometry(0.5, 0.03, 0.07), matrix: M4(0, 0.25, 0), color: 0x2a2830 },
+    { geo: new THREE.CylinderGeometry(0.02, 0.02, 0.3, 6), matrix: M4(0, 0.4, 0), color: 0x2a2830 },
+  ];
+  for (const y of [-0.06, 0.04, 0.14]) parts.push({ geo: new THREE.TorusGeometry(0.172 + (0.1 - y) * 0.09, 0.012, 4, 18), matrix: M4(0, y, 0, Math.PI / 2, 0, 0), color: B });
+  for (let k = 0; k < 4; k++) { const a = k / 4 * TAU; parts.push({ geo: new THREE.BoxGeometry(0.3, 0.012, 0.15), matrix: M4(Math.sin(a) * 0.25, -0.28, Math.cos(a) * 0.25, Math.cos(a) * 0.55, a, -Math.sin(a) * 0.55), color: K }); }
+  return mergeGeos(parts);
+}
+// balloon animals (twisted capsules with little eyes): dog, giraffe, swan + a round balloon
+function balloonGeos() {
+  const cap = (r, len, x, y, z, rx, ry, rz) => ({ geo: new THREE.CapsuleGeometry(r, len, 5, 10), matrix: M4(x, y, z, rx, ry, rz) });
+  const knot = (x, y, z) => ({ geo: new THREE.SphereGeometry(0.035, 8, 6), matrix: M4(x, y, z, 0, 0, 0, 1, 0.8, 1) });
+  const eyes = (x, y, dz) => [
+    { geo: new THREE.SphereGeometry(0.013, 8, 6), matrix: M4(x, y, dz), color: 0x140608, decor: 1 }, { geo: new THREE.SphereGeometry(0.013, 8, 6), matrix: M4(x, y, -dz), color: 0x140608, decor: 1 },
+    { geo: new THREE.SphereGeometry(0.0045, 5, 4), matrix: M4(x + 0.007, y + 0.006, dz + 0.009), color: 0xffffff, decor: 1 }, { geo: new THREE.SphereGeometry(0.0045, 5, 4), matrix: M4(x + 0.007, y + 0.006, -dz - 0.009), color: 0xffffff, decor: 1 },
+  ];
+  return [
+    CircusGeo.decor([cap(0.07, 0.22, 0, 0.3, 0, 0, 0, Math.PI / 2), cap(0.06, 0.12, 0.2, 0.42, 0, 0, 0, 0.5), cap(0.05, 0.1, 0.27, 0.52, 0, 0, 0, Math.PI / 2),
+      cap(0.04, 0.12, -0.12, 0.14, 0.05, 0, 0, 0), cap(0.04, 0.12, -0.12, 0.14, -0.05, 0, 0, 0), cap(0.04, 0.12, 0.12, 0.14, 0.05, 0, 0, 0), cap(0.04, 0.12, 0.12, 0.14, -0.05, 0, 0, 0),
+      cap(0.035, 0.1, -0.2, 0.4, 0, 0, 0, 0.7), cap(0.03, 0.07, 0.22, 0.6, 0.035, 0.3, 0, -0.3), cap(0.03, 0.07, 0.22, 0.6, -0.035, -0.3, 0, -0.3), knot(0, 0.06, 0), ...eyes(0.31, 0.555, 0.03)]),
+    CircusGeo.decor([cap(0.07, 0.2, 0, 0.32, 0, 0, 0, Math.PI / 2), cap(0.045, 0.42, 0.14, 0.62, 0, 0, 0, -0.35), cap(0.05, 0.1, 0.24, 0.86, 0, 0, 0, Math.PI / 2),
+      cap(0.04, 0.16, -0.1, 0.13, 0.05, 0, 0, 0), cap(0.04, 0.16, -0.1, 0.13, -0.05, 0, 0, 0), cap(0.04, 0.16, 0.1, 0.13, 0.05, 0, 0, 0), cap(0.04, 0.16, 0.1, 0.13, -0.05, 0, 0, 0),
+      cap(0.018, 0.05, 0.21, 0.94, 0.03, 0, 0, 0), cap(0.018, 0.05, 0.21, 0.94, -0.03, 0, 0, 0), knot(0, 0.04, 0), ...eyes(0.27, 0.895, 0.03)]),
+    CircusGeo.decor([cap(0.09, 0.16, 0, 0.25, 0, 0, 0, Math.PI / 2), cap(0.045, 0.18, 0.13, 0.38, 0, 0, 0, -0.3), cap(0.04, 0.14, 0.17, 0.55, 0, 0, 0, 0.5), cap(0.035, 0.08, 0.12, 0.63, 0, 0, 0, Math.PI / 2 + 0.3),
+      cap(0.06, 0.1, -0.1, 0.33, 0.08, 0.6, 0, 0.8), cap(0.06, 0.1, -0.1, 0.33, -0.08, -0.6, 0, 0.8), knot(0, 0.12, 0), ...eyes(0.11, 0.665, 0.026)]),
+    CircusGeo.decor([{ geo: new THREE.SphereGeometry(0.11, 16, 12), matrix: M4(0, 0.21, 0, 0, 0, 0, 1, 1.2, 1) }, { geo: new THREE.ConeGeometry(0.03, 0.05, 8), matrix: M4(0, 0.085, 0, Math.PI, 0, 0) }, knot(0, 0.06, 0)]),
+  ];
+}
 const RingKit = {
   ready: false,
   init() {
     if (this.ready) return; this.ready = true;
-    // ---- cannons (striped barrel on a little carriage)
-    this.cannonTex = stripeTex('#e8283c', '#ffc83c', 8, false, 16, 32);
-    const barrel = new THREE.CylinderGeometry(0.11, 0.15, 0.62, 12, 1, true); barrel.rotateX(Math.PI / 2);
-    const carriage = mergeGeos([
-      { geo: new THREE.BoxGeometry(0.34, 0.12, 0.42), matrix: M4(0, -0.17, 0.02), color: 0x5a3020 },
-      { geo: new THREE.TorusGeometry(0.11, 0.025, 5, 12), matrix: M4(-0.19, -0.2, 0.08, 0, Math.PI / 2, 0), color: 0xffc83c },
-      { geo: new THREE.TorusGeometry(0.11, 0.025, 5, 12), matrix: M4(0.19, -0.2, 0.08, 0, Math.PI / 2, 0), color: 0xffc83c },
-      { geo: new THREE.TorusGeometry(0.115, 0.02, 4, 12), matrix: M4(0, 0, 0.31), color: 0xffc83c },
-    ]);
+    const CS = CircusShade;
+    const inst = (geo, mat, cap, order) => {
+      const m = new THREE.InstancedMesh(geo, mat, cap);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      for (let i = 0; i < cap; i++) m.setColorAt(i, _c1.setRGB(1, 1, 1));   // every instance starts white (untinted)
+      m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0; m.frustumCulled = false; m.visible = false; if (order) m.renderOrder = order; scene.add(m); return m;
+    };
+    this.diagMask = diagMaskTex(4);
+    // ---- cannons: a candy-striped barrel with brass bands on a red carriage with spoked gold wheels, standing
+    // on a striped circus drum (each part is one instanced draw for all three; dummy groups give the poses)
+    const prof = [[0, -0.46], [0.05, -0.47], [0.075, -0.44], [0.065, -0.4], [0.12, -0.37], [0.165, -0.33], [0.175, -0.25], [0.16, 0.0], [0.135, 0.22], [0.13, 0.26], [0.155, 0.3], [0.175, 0.35], [0.165, 0.39], [0.115, 0.39], [0.105, 0.33]].map(([x, y]) => new THREE.Vector2(x, y));
+    const lathe = new THREE.LatheGeometry(prof, 18); lathe.rotateX(Math.PI / 2);
+    const bore = new THREE.CircleGeometry(0.106, 16); bore.translate(0, 0, 0.335);
+    const barrelParts = [{ geo: lathe }, { geo: bore, color: 0x120406, decor: 1 }];
+    for (const [z, r] of [[-0.33, 0.171], [-0.12, 0.165], [0.235, 0.135], [0.372, 0.176]]) barrelParts.push({ geo: new THREE.TorusGeometry(r, 0.017, 5, 18), matrix: M4(0, 0, z), color: 0xffc83c, decor: 1 });
+    barrelParts.push({ geo: new THREE.CylinderGeometry(0.009, 0.009, 0.09, 5), matrix: M4(0, 0.2, -0.36, -0.5, 0, 0), color: 0x2a1a10, decor: 1 });
+    barrelParts.push({ geo: new THREE.SphereGeometry(0.032, 10, 8), matrix: M4(0, 0, -0.475), color: 0xffc83c, decor: 1 });
+    this.cannonBarrel = inst(CircusGeo.decor(barrelParts), CS.material({ color: 0xe8283c, map: this.diagMask, mask: true, mapST: [3, 2, 0, 0], gloss: 1.0, shine: 55, rim: 0.4, emit: 0.14, decor: true }), 3);
+    const propMat = CS.material({ gloss: 0.6, shine: 36, rim: 0.4, emit: 0.14 });
+    this.cannonCarriage = inst(mergeGeos([
+      { geo: new THREE.BoxGeometry(0.05, 0.18, 0.5), matrix: M4(-0.2, -0.13, -0.05), color: 0xb81828 },
+      { geo: new THREE.BoxGeometry(0.05, 0.18, 0.5), matrix: M4(0.2, -0.13, -0.05), color: 0xb81828 },
+      { geo: new THREE.BoxGeometry(0.056, 0.022, 0.5), matrix: M4(-0.2, -0.035, -0.05), color: 0xffc83c },
+      { geo: new THREE.BoxGeometry(0.056, 0.022, 0.5), matrix: M4(0.2, -0.035, -0.05), color: 0xffc83c },
+      { geo: new THREE.BoxGeometry(0.4, 0.06, 0.36), matrix: M4(0, -0.2, -0.12), color: 0x8a1420 },
+      { geo: new THREE.BoxGeometry(0.12, 0.05, 0.34), matrix: M4(0, -0.3, -0.38, 0.35, 0, 0), color: 0xb81828 },
+      { geo: new THREE.CylinderGeometry(0.025, 0.025, 0.56, 8), matrix: M4(0, -0.24, 0.04, 0, 0, Math.PI / 2), color: 0x3a2010 },
+      { geo: new THREE.SphereGeometry(0.032, 8, 6), matrix: M4(-0.2, 0, 0), color: 0xffc83c },
+      { geo: new THREE.SphereGeometry(0.032, 8, 6), matrix: M4(0.2, 0, 0), color: 0xffc83c },
+    ]), propMat, 3);
+    const wheel = [];
+    for (const sx of [-0.28, 0.28]) {
+      wheel.push({ geo: new THREE.TorusGeometry(0.15, 0.022, 6, 24), matrix: M4(sx, 0, 0, 0, Math.PI / 2, 0), color: 0xffc83c });
+      wheel.push({ geo: new THREE.CylinderGeometry(0.042, 0.042, 0.07, 12), matrix: M4(sx, 0, 0, 0, 0, Math.PI / 2), color: 0xe8283c });
+      for (let k = 0; k < 8; k++) wheel.push({ geo: new THREE.BoxGeometry(0.014, 0.28, 0.014), matrix: M4(sx, 0, 0, k / 8 * Math.PI, 0, 0), color: 0xfff4dc });
+    }
+    this.cannonWheels = inst(mergeGeos(wheel), propMat, 3);
+    const drum = new THREE.CylinderGeometry(0.36, 0.4, 1, 28, 1, true); drum.translate(0, -0.5, 0);
+    this.drumMask = smoothTex(stripeTex('#000000', '#ffffff', 2, true, 16, 4));
+    this.cannonDrum = inst(drum, CS.material({ color: 0xe8283c, map: this.drumMask, mask: true, mapST: [8, 1, 0, 0], gloss: 0.5, shine: 30, rim: 0.35, emit: 0.12 }), 3);
+    this.cannonCap = inst(mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.39, 0.39, 0.05, 28), matrix: M4(0, -0.02, 0), color: 0xffc83c },
+      { geo: new THREE.TorusGeometry(0.385, 0.02, 5, 28), matrix: M4(0, -0.05, 0, Math.PI / 2, 0, 0), color: 0xffc83c },
+    ]), propMat, 3);
     this.cannons = [];
     for (let i = 0; i < 3; i++) {
-      const g = new THREE.Group(), aim = new THREE.Group(); g.add(aim);
-      aim.add(new THREE.Mesh(barrel, new THREE.MeshBasicMaterial({ map: this.cannonTex, side: THREE.DoubleSide })));
-      g.add(new THREE.Mesh(carriage, new THREE.MeshBasicMaterial({ vertexColors: true })));
-      g.visible = false; scene.add(g);
-      this.cannons.push({ g, aim, muzzle: new THREE.Vector3(), smoke: 0, recoil: 0 });
+      const g = new THREE.Group(), aim = new THREE.Group(), wheels = new THREE.Group();
+      g.add(aim, wheels); wheels.position.set(0, -0.24, 0.04);
+      this.cannons.push({ g, aim, wheels, muzzle: new THREE.Vector3(), fuse: new THREE.Vector3(), smoke: 0, recoil: 0, rock: 0, slide: 0, bulge: 0, visible: false, owner: null, loaded: false, base: new THREE.Vector3() });
     }
-    // ---- curtains (fire walls with hoops / torn canvas with holes)
+    // ---- curtains (fire walls with candy-striped hoops / torn canvas with rope rings)
     this.curtains = [];
-    const rimGeo = new THREE.TorusGeometry(1, 0.055, 6, 36);
     for (let i = 0; i < 2; i++) {
-      const u = { uSize: { value: new THREE.Vector2(1, 1) }, uHole: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uTime: { value: 0 }, uAlpha: { value: 1 }, uMode: { value: 0 } };
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 16, 12), new THREE.ShaderMaterial({ uniforms: u, vertexShader: CURTAIN_VS, fragmentShader: CURTAIN_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+      const u = Object.assign({}, CS.uniforms(), { uSize: { value: new THREE.Vector2(1, 1) }, uHole: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uTime: { value: 0 }, uAlpha: { value: 1 }, uMode: { value: 0 } });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 24, 18), new THREE.ShaderMaterial({ uniforms: u, vertexShader: CURTAIN_VS, fragmentShader: CURTAIN_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
       m.visible = false; m.renderOrder = 3; scene.add(m);
-      const rims = [0, 1].map(() => { const r = new THREE.Mesh(rimGeo, new THREE.MeshBasicMaterial({ color: 0xffc83c })); r.visible = false; scene.add(r); return r; });
-      this.curtains.push({ m, u, rims, active: false, owner: null, holes: [], z: 0, key: null, reward: false });
+      this.curtains.push({ m, u, active: false, owner: null, holes: [], z: 0, key: null, reward: false, mode: 0 });
     }
-    // ---- balloon animals (chains of capsules): dog, giraffe, swan + a small round balloon
-    const cap = (r, len, x, y, z, rx, ry, rz) => ({ geo: new THREE.CapsuleGeometry(r, len, 4, 8), matrix: M4(x, y, z, rx, ry, rz) });
-    const knot = (x, y, z) => ({ geo: new THREE.SphereGeometry(0.035, 6, 4), matrix: M4(x, y, z) });
-    this.balloonGeos = [
-      mergeGeos([cap(0.07, 0.22, 0, 0.3, 0, 0, 0, Math.PI / 2), cap(0.06, 0.12, 0.2, 0.42, 0, 0, 0, 0.5), cap(0.05, 0.1, 0.27, 0.52, 0, 0, 0, Math.PI / 2),
-        cap(0.04, 0.12, -0.12, 0.14, 0.05, 0, 0, 0), cap(0.04, 0.12, -0.12, 0.14, -0.05, 0, 0, 0), cap(0.04, 0.12, 0.12, 0.14, 0.05, 0, 0, 0), cap(0.04, 0.12, 0.12, 0.14, -0.05, 0, 0, 0),
-        cap(0.035, 0.1, -0.2, 0.4, 0, 0, 0, 0.7), knot(0, 0.06, 0)]),
-      mergeGeos([cap(0.07, 0.2, 0, 0.32, 0, 0, 0, Math.PI / 2), cap(0.045, 0.42, 0.14, 0.62, 0, 0, 0, -0.35), cap(0.05, 0.1, 0.24, 0.86, 0, 0, 0, Math.PI / 2),
-        cap(0.04, 0.16, -0.1, 0.13, 0.05, 0, 0, 0), cap(0.04, 0.16, -0.1, 0.13, -0.05, 0, 0, 0), cap(0.04, 0.16, 0.1, 0.13, 0.05, 0, 0, 0), cap(0.04, 0.16, 0.1, 0.13, -0.05, 0, 0, 0), knot(0, 0.04, 0)]),
-      mergeGeos([cap(0.09, 0.16, 0, 0.25, 0, 0, 0, Math.PI / 2), cap(0.045, 0.18, 0.13, 0.38, 0, 0, 0, -0.3), cap(0.04, 0.14, 0.17, 0.55, 0, 0, 0, 0.5), cap(0.035, 0.08, 0.12, 0.63, 0, 0, 0, Math.PI / 2 + 0.3),
-        cap(0.06, 0.1, -0.1, 0.33, 0.08, 0.6, 0, 0.8), cap(0.06, 0.1, -0.1, 0.33, -0.08, -0.6, 0, 0.8), knot(0, 0.12, 0)]),
-      mergeGeos([{ geo: new THREE.SphereGeometry(0.11, 12, 10), matrix: M4(0, 0.2, 0, 0, 0, 0, 1, 1.2, 1) }, knot(0, 0.06, 0)]),
-    ];
+    this.hoops = inst(new THREE.TorusGeometry(1, 0.06, 10, 56), CS.material({ map: this.diagMask, mask: true, mapST: [16, 1, 0, 0], gloss: 1.0, shine: 60, rim: 0.6, emit: 0.4 }), 4);
+    // ---- balloon animals (glossy latex, little eyes) on swaying strings
+    this.balloonGeos = balloonGeos();
+    const balMat = CS.material({ gloss: 1.5, shine: 80, rim: 0.9, emit: 0.24, decor: true });
+    this.balloonMeshes = this.balloonGeos.map((geo) => inst(geo, balMat, 8));
+    this.KNOT_Y = [0.06, 0.04, 0.12, 0.06];
     this.balloons = [];
-    for (let i = 0; i < 8; i++) {
-      const m = new THREE.Mesh(this.balloonGeos[0], new THREE.MeshBasicMaterial({ color: 0xff5fb4 }));
-      m.visible = false; scene.add(m);
-      this.balloons.push({ m, active: false, owner: null, pos: new THREE.Vector3(), popBeat: 0, kind: 0, size: 1, warned: false });
-    }
-    // ---- the music-box ballerina
+    for (let i = 0; i < 8; i++) this.balloons.push({ active: false, owner: null, pos: new THREE.Vector3(), draw: new THREE.Vector3(), popBeat: 0, kind: 0, size: 1, warned: false, col: new THREE.Color(), yaw: 0, ph: 0, vy: 0, small: false, s: 1 });
+    const str = new THREE.CylinderGeometry(0.0035, 0.0035, 1, 4, 1, true); str.translate(0, -0.5, 0);
+    this.balStrings = inst(str, CS.material({ color: 0xfff4dc, gloss: 0.2, rim: 0.2, emit: 0.5 }), 40);
+    // ---- the music box: lacquered jewel box, open lid with a mirror, winding key, and the ballerina
     const bal = this.ballerina = new THREE.Group(); bal.visible = false; scene.add(bal);
-    const boxM = new THREE.Mesh(mergeGeos([
-      { geo: new THREE.BoxGeometry(0.62, 0.24, 0.62), matrix: M4(0, 0.12, 0), color: 0x6a1a3a },
-      { geo: new THREE.BoxGeometry(0.66, 0.04, 0.66), matrix: M4(0, 0.25, 0), color: 0xffc83c },
-      { geo: new THREE.CylinderGeometry(0.2, 0.22, 0.05, 16), matrix: M4(0, 0.29, 0), color: 0xfff4dc },
-    ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
-    bal.add(boxM);
-    const fig = this.balFig = new THREE.Group(); fig.position.y = 0.31; bal.add(fig);
-    fig.add(new THREE.Mesh(mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.012, 0.02, 0.36, 6), matrix: M4(0, 0.18, 0), color: 0xfff4dc },                 // standing leg (en pointe)
-      { geo: new THREE.ConeGeometry(0.26, 0.12, 18, 1, true), matrix: M4(0, 0.4, 0, Math.PI, 0, 0), color: 0xff8fd0 },    // tutu
-      { geo: new THREE.CylinderGeometry(0.05, 0.07, 0.26, 8), matrix: M4(0, 0.55, 0), color: 0xff5fb4 },                  // bodice
-      { geo: new THREE.SphereGeometry(0.065, 10, 8), matrix: M4(0, 0.75, 0), color: 0xf6e8dc },                          // head
-      { geo: new THREE.SphereGeometry(0.04, 8, 6), matrix: M4(0, 0.82, -0.02), color: 0x3a2418 },                         // bun
-      { geo: new THREE.CylinderGeometry(0.012, 0.012, 0.42, 5), matrix: M4(0, 0.64, 0, 0, 0, Math.PI / 2 - 0.25), color: 0xf6e8dc },   // arms
-      { geo: new THREE.CylinderGeometry(0.012, 0.012, 0.3, 5), matrix: M4(0.07, 0.24, 0, 0, 0, 1.2), color: 0xfff4dc },              // raised leg
-    ]), new THREE.MeshBasicMaterial({ vertexColors: true })));
-    // ---- marionette strings (vertical, instanced) + the proprietor's shield chandelier
+    const boxMat = CS.material({ gloss: 1.1, shine: 60, rim: 0.45, emit: 0.14 });
+    bal.add(new THREE.Mesh(musicBoxGeo(), boxMat));
+    const lid = this.mbLid = new THREE.Group(); lid.position.set(0, 0.262, -0.23); bal.add(lid);
+    lid.add(new THREE.Mesh(mergeGeos([
+      { geo: new THREE.BoxGeometry(0.62, 0.03, 0.46), matrix: M4(0, 0.015, 0.23), color: 0x6a1a3a },
+      { geo: new THREE.BoxGeometry(0.645, 0.02, 0.025), matrix: M4(0, 0.015, 0.46), color: 0xffc83c },
+      { geo: new THREE.BoxGeometry(0.025, 0.02, 0.47), matrix: M4(-0.31, 0.015, 0.23), color: 0xffc83c },
+      { geo: new THREE.BoxGeometry(0.025, 0.02, 0.47), matrix: M4(0.31, 0.015, 0.23), color: 0xffc83c },
+    ]), boxMat));
+    const mirror = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.36), CS.material({ color: 0xd8e0ff, vertexColors: false, gloss: 2.0, shine: 120, rim: 0.8, emit: 0.55 }));
+    mirror.geometry.rotateX(Math.PI / 2); mirror.position.set(0, -0.002, 0.23); lid.add(mirror);
+    lid.rotation.x = -1.95;
+    const key = this.mbKey = new THREE.Mesh(mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.012, 0.012, 0.07, 8), matrix: M4(0.035, 0, 0, 0, 0, Math.PI / 2), color: 0xffc83c },
+      { geo: new THREE.SphereGeometry(0.045, 10, 8), matrix: M4(0.075, 0.045, 0, 0, 0, 0, 0.18, 1, 0.65), color: 0xffc83c },
+      { geo: new THREE.SphereGeometry(0.045, 10, 8), matrix: M4(0.075, -0.045, 0, 0, 0, 0, 0.18, 1, 0.65), color: 0xffc83c },
+    ]), boxMat);
+    key.position.set(0.31, 0.14, 0); bal.add(key);
+    const fig = this.balFig = new THREE.Group(); fig.position.y = 0.285; bal.add(fig);
+    fig.add(new THREE.Mesh(ballerinaGeo(), CS.material({ gloss: 0.7, shine: 40, rim: 0.65, emit: 0.22 })));
+    const tutuMat = CS.material({ side: THREE.DoubleSide, gloss: 0.35, shine: 20, rim: 0.8, emit: 0.32 });
+    const t1 = new THREE.Mesh(tutuGeo(0.03, 0.27, 11, 0.05), tutuMat), t2 = new THREE.Mesh(tutuGeo(0.03, 0.22, 9, 0.03), tutuMat);
+    t1.position.y = 0.425; t2.position.y = 0.442; t2.rotation.y = 0.3; fig.add(t1, t2);
+    // ---- marionette strings (glowing silk ribbons) + the puppeteer's wooden control crosses above the box
     this.STR_CAP = 24;
-    this.strings = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.008, 1, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }), this.STR_CAP);
-    this.strings.frustumCulled = false; this.strings.count = 0; this.strings.setColorAt(0, _c1.setRGB(1, 1, 1)); scene.add(this.strings);
+    const sg = new THREE.InstancedBufferGeometry(), sp = [], si = [];
+    for (let k = 0; k <= 10; k++) sp.push(-1, k / 10, 0, 1, k / 10, 0);
+    for (let k = 0; k < 10; k++) { const a = k * 2; si.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setIndex(si);
+    this.silkA = {};
+    for (const nm of ['iA', 'iB', 'iC']) { const a = new THREE.InstancedBufferAttribute(new Float32Array(this.STR_CAP * 4), 4); a.setUsage(THREE.DynamicDrawUsage); sg.setAttribute(nm, a); this.silkA[nm] = a; }
+    sg.instanceCount = 0;
+    this.silkU = { uTime: { value: 0 } };
+    this.strings = new THREE.Mesh(sg, new THREE.ShaderMaterial({ uniforms: this.silkU, vertexShader: SILK_VS, fragmentShader: SILK_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    this.strings.frustumCulled = false; this.strings.visible = false; this.strings.renderOrder = 19; scene.add(this.strings);
+    const woodMat = CS.material({ gloss: 0.5, shine: 30, rim: 0.7, emit: 0.5 });
+    this.ctrlBars = inst(mergeGeos([{ geo: new THREE.BoxGeometry(1, 0.036, 0.036), color: 0xc8925a }]), woodMat, 3);
+    this.ctrlCross = inst(mergeGeos([
+      { geo: new THREE.BoxGeometry(0.036, 0.03, 0.4), color: 0xc8925a },
+      { geo: new THREE.TorusGeometry(0.035, 0.007, 5, 14), matrix: M4(0, 0.05, 0), color: 0xffc83c },
+      { geo: new THREE.SphereGeometry(0.026, 8, 6), matrix: M4(0, 0, 0.2), color: 0xffc83c },
+      { geo: new THREE.SphereGeometry(0.026, 8, 6), matrix: M4(0, 0, -0.2), color: 0xffc83c },
+      { geo: new THREE.SphereGeometry(0.03, 8, 6), color: 0xffc83c },
+    ]), woodMat, 3);
+    // ---- juggler's gloves (they toss and catch the cascade), theatre spotlight fixtures
+    const gloveMat = CS.material({ gloss: 0.35, shine: 24, rim: 0.55, emit: 0.3 });
+    this.gloveOpen = inst(gloveGeo(false), gloveMat, 4); this.gloveFist = inst(gloveGeo(true), gloveMat, 4);
+    this.gloves = [];
+    for (let i = 0; i < 4; i++) this.gloves.push({ owner: null, pos: new THREE.Vector3(), want: new THREE.Vector3(), side: 0, toss: -9, caught: -9, s: 0 });
+    this.fixBody = inst(fixtureGeo(), CS.material({ gloss: 0.9, shine: 50, rim: 0.5, emit: 0.1 }), 4);
+    const lens = new THREE.CircleGeometry(0.185, 20); lens.rotateX(Math.PI / 2); lens.translate(0, -0.225, 0);
+    this.fixLens = inst(lens, CS.material({ vertexColors: false, gloss: 0, rim: 0, emit: 1.0 }), 4);
+    // ---- the proprietor's shield chandelier (an audience cameo)
     const sh = this.shield = new THREE.Group(); sh.visible = false; scene.add(sh);
     const shParts = [{ geo: new THREE.TorusGeometry(0.5, 0.03, 6, 24), matrix: M4(0, 0, 0, Math.PI / 2, 0, 0), color: 0xc8a040 }];
     for (let i = 0; i < 10; i++) { const a = i / 10 * TAU; shParts.push({ geo: new THREE.OctahedronGeometry(0.05, 0), matrix: M4(Math.cos(a) * 0.5, -0.08, Math.sin(a) * 0.5, 0, 0, 0, 1, 1.8, 1), color: 0xdff8ff }); }
-    sh.add(new THREE.Mesh(mergeGeos(shParts), new THREE.MeshBasicMaterial({ vertexColors: true })));
+    sh.add(new THREE.Mesh(mergeGeos(shParts), CS.material({ gloss: 1.4, shine: 80, rim: 0.6, emit: 0.35 })));
     this.shieldDisc = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), new THREE.MeshBasicMaterial({ color: 0xffd8a0, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.shieldDisc.rotation.x = Math.PI / 2; sh.add(this.shieldDisc);
   },
   hideAll() {
     if (!this.ready) return;
-    for (const c of this.cannons) c.g.visible = false;
-    for (const c of this.curtains) { c.active = false; c.m.visible = false; for (const r of c.rims) r.visible = false; }
-    for (const b of this.balloons) { b.active = false; b.m.visible = false; }
-    this.ballerina.visible = false; this.strings.count = 0; this.shield.visible = false;
+    for (const c of this.cannons) { c.visible = false; c.owner = null; c.loaded = false; }
+    for (const c of this.curtains) { c.active = false; c.m.visible = false; }
+    for (const b of this.balloons) b.active = false;
+    for (const g of this.gloves) { g.owner = null; g.s = 0; }
+    for (const m of [this.cannonBarrel, this.cannonCarriage, this.cannonWheels, this.cannonDrum, this.cannonCap, this.hoops, this.balStrings, this.ctrlBars, this.ctrlCross, this.gloveOpen, this.gloveFist, this.fixBody, this.fixLens, ...this.balloonMeshes]) { m.count = 0; m.visible = false; }
+    this.ballerina.visible = false; this.strings.visible = false; this.strings.geometry.instanceCount = 0; this.shield.visible = false;
+  },
+  flush(m, n) { m.count = n; m.visible = n > 0; if (n) { m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; } },
+  // every frame of the fight (props that outlive their act fade out here)
+  update(dt) { if (this.ready && this.gloves.some((g) => g.owner || g.s > 0.02)) this.layoutGloves(dt); },
+  // ---- cannons: write the instanced parts from the dummy poses
+  layoutCannons() {
+    let n = 0;
+    for (const c of this.cannons) {
+      if (!c.visible) continue;
+      c.g.updateMatrixWorld(true);
+      this.cannonBarrel.setMatrixAt(n, c.aim.matrixWorld); this.cannonCarriage.setMatrixAt(n, c.g.matrixWorld); this.cannonWheels.setMatrixAt(n, c.wheels.matrixWorld);
+      const top = c.base.y - 0.39, h = Math.max(0.05, top + 0.04);
+      _m1.compose(_v1.set(c.base.x, top, c.base.z), _q1.identity(), _v2.set(1, h, 1)); this.cannonDrum.setMatrixAt(n, _m1);
+      _m1.compose(_v1.set(c.base.x, top + 0.04, c.base.z), _q1.identity(), V_ONE); this.cannonCap.setMatrixAt(n, _m1);
+      n++;
+    }
+    for (const m of [this.cannonBarrel, this.cannonCarriage, this.cannonWheels, this.cannonDrum, this.cannonCap]) this.flush(m, n);
+  },
+  // ---- gloves (claimed by the newest cascade; a cascade that stopped throwing gives them up)
+  takeGloves(owner, n) {
+    for (const g of this.gloves) if (g.owner && g.owner !== owner && g.owner.spawning === false) g.owner = null;
+    const out = [];
+    for (const g of this.gloves) { if (out.length >= n) break; if (!g.owner) { g.owner = owner; g.toss = g.caught = -9; g.s = 0; out.push(g); } }
+    return out;
+  },
+  layoutGloves(dt) {
+    let no = 0, nf = 0;
+    for (const g of this.gloves) {
+      g.s = damp(g.s, g.owner ? 1 : 0, 8, dt);
+      if (g.s < 0.02) continue;
+      g.pos.x = damp(g.pos.x, g.want.x, 12, dt); g.pos.y = damp(g.pos.y, g.want.y, 12, dt); g.pos.z = damp(g.pos.z, g.want.z, 6, dt);
+      const kt = clamp((G.time - g.toss) / 0.28, 0, 1), kc = clamp((G.time - g.caught) / 0.22, 0, 1);
+      const toss = kt < 1 ? Math.sin(kt * Math.PI) : 0, dip = kc < 1 ? Math.sin(kc * Math.PI) : 0;
+      _v1.copy(g.pos); _v1.y += toss * 0.07 - dip * 0.045;
+      _e1.set(0, g.side ? Math.PI : 0, toss * 0.75 - dip * 0.2); _q1.setFromEuler(_e1);
+      const sq = 1 + dip * 0.15;
+      _m1.compose(_v1, _q1, _v2.set(g.s * sq, g.s / sq, g.s * sq));
+      if (kc < 0.75) this.gloveFist.setMatrixAt(nf++, _m1); else this.gloveOpen.setMatrixAt(no++, _m1);
+    }
+    this.flush(this.gloveOpen, no); this.flush(this.gloveFist, nf);
+  },
+  // ---- silk strings: i -> top / bottom points, a seed, twang amount and color
+  silk(i, ax, ay, az, bx, by, bz, seed, vib, r, g, b, a) {
+    const A = this.silkA.iA.array, B = this.silkA.iB.array, C = this.silkA.iC.array, o = i * 4;
+    A[o] = ax; A[o + 1] = ay; A[o + 2] = az; A[o + 3] = seed; B[o] = bx; B[o + 1] = by; B[o + 2] = bz; B[o + 3] = vib; C[o] = r; C[o + 1] = g; C[o + 2] = b; C[o + 3] = a;
+  },
+  silkFlush(n) {
+    const g = this.strings.geometry; g.instanceCount = n; this.strings.visible = n > 0; this.silkU.uTime.value = G.time;
+    if (n) for (const k in this.silkA) this.silkA[k].needsUpdate = true;
+  },
+  // ---- spotlight fixtures: list of { src, dir, col (hex), on }
+  layoutFixtures(list) {
+    let n = 0;
+    for (const f of list) {
+      if (n >= 4) break;
+      _q1.setFromUnitVectors(RM.DOWN, f.dir); _m1.compose(f.src, _q1, _v1.setScalar(1.7));
+      this.fixBody.setMatrixAt(n, _m1); this.fixLens.setMatrixAt(n, _m1);
+      this.fixLens.setColorAt(n, _c1.setHex(f.col).multiplyScalar(f.on === false ? 0.3 : 1.6)); n++;
+    }
+    this.flush(this.fixBody, n); this.flush(this.fixLens, n);
   },
 };
-registerKit(RingKit, function () { this.cannons = []; this.curtains = []; this.balloons = []; this.balloonGeos = null; });
+registerKit(RingKit, function () { this.cannons = []; this.curtains = []; this.balloons = []; this.balloonGeos = null; this.balloonMeshes = []; this.gloves = []; });
 
 // ---- shared curtain logic (RING OF FIRE / THE STORM TENT): a wall that spans the box and
 // travels along +z; only its holes are safe (white) - an orange hole must be crossed moving
@@ -11103,25 +12345,34 @@ function curtainSpawn(owner, mode, holes, startBeat, travel) {
   for (let i = 0; i < 2; i++) {
     const h = holes[i], v = C.u.uHole.value[i];
     if (h) v.set(h.x - A.center.x, h.y - A.center.y, h.r, h.orange ? 2 : 1); else v.set(0, 0, 0, 0);
-    const rim = C.rims[i]; rim.visible = false;
-    if (h) { rim.scale.setScalar(h.r); rim.material.color.setHex(mode ? 0x8a6a4a : h.orange ? CONFIG.COL.orange : 0xffc83c); }
   }
   return C;
 }
 function curtainUpdate(owner, pb, dmg, onThrough) {
-  const A = G.arena, soul = G.soul, sp = soul.pos;
+  const A = G.arena, soul = G.soul, sp = soul.pos, FX = CircusFX;
   for (const C of RingKit.curtains) {
     if (!C.active || C.owner !== owner) continue;
     const p = (pb - C.enter) / (C.exit - C.enter);
-    if (p > 1.04) { C.active = false; C.m.visible = false; for (const r of C.rims) r.visible = false; continue; }
+    if (p > 1.04) { C.active = false; C.m.visible = false; continue; }
     const z = lerp(A.min.z - 0.05, A.max.z + 0.05, Math.max(p, -0.4));
     C.z = z;
     C.m.visible = p > -0.4; C.m.position.set(A.center.x, A.center.y, z);
     C.u.uTime.value = G.time; C.u.uAlpha.value = clamp((p + 0.4) * 4, 0, 1);
-    C.holes.forEach((h, i) => {
-      const rim = C.rims[i]; rim.visible = C.m.visible; rim.position.set(h.x, h.y, z);
-      if (C.mode === 0 && C.m.visible) for (let k = 0; k < 3; k++) { const a = rand(0, TAU); G.fx.glow.add(h.x + Math.cos(a) * h.r, h.y + Math.sin(a) * h.r, z, rand(0.08, 0.16), 1, rand(0.4, 0.8), 0.15, 0.7, 0); }
-    });
+    if (C.m.visible) {
+      if (C.mode === 0) {
+        // the wall burns: flame tongues and sparks around each hoop, embers and smoke off the top, an orange glow
+        for (const h of C.holes) {
+          const a = rand(0, TAU);
+          if (chance(0.65)) FX.fire(_v1.set(h.x + Math.cos(a) * h.r, h.y + Math.sin(a) * h.r, z), 1, { size: 0.08, speed: 0.25, rise: 1.1, hot: 0.15 });
+          if (chance(0.35)) { const b = rand(0, TAU); FX.spark(h.x + Math.cos(b) * h.r, h.y + Math.sin(b) * h.r, z, Math.cos(b) * 0.6, Math.sin(b) * 0.6 + 0.4, rand(-0.3, 0.3), rand(0.3, 0.6), 0.014, 1, rand(0.55, 0.85), 0.2, 1.5, 1.2, 0.05); }
+        }
+        if (chance(0.5)) FX.spark(rand(A.min.x, A.max.x), A.max.y, z, rand(-0.2, 0.2), rand(0.6, 1.4), rand(-0.2, 0.2), rand(0.6, 1.1), 0.013, 1, rand(0.45, 0.75), 0.15, -0.2, 0.8, 0.06);
+        if (chance(0.18)) FX.smoke(_v1.set(rand(A.min.x, A.max.x), A.max.y + 0.05, z), 1, { color: 0x3a3034, size: 0.2, speed: 0.15, alpha: 0.32, rise: 0.5 });
+        const fl = 0.85 + 0.1 * Math.sin(G.time * 13 + C.enter) + 0.06 * Math.sin(G.time * 7.3);
+        FX.hold(C, _v1.set(A.center.x, A.center.y, z), 0xff8a30, 1.25 * fl * C.u.uAlpha.value, 2.4);
+        FX.floorLight(A.center.x, 0.0, z, 1.4, 0xff7a28, 0.35 * fl * C.u.uAlpha.value, A.size.x / 2.6, 0.55);
+      } else if (chance(0.06)) FX.bit(rand(A.min.x, A.max.x), rand(A.min.y, A.max.y), z, rand(-0.6, 0.6), rand(-0.2, 0.3), rand(0.2, 0.6), 0.05, 0.03, pick([0xe8283c, 0xfff4dc]), 1, 0.9);
+    }
     if (p < 0 || p > 1) continue;
     // the plane crosses the heart: inside a hole = through; on a rim or the wall = hit
     if (Math.abs(sp.z - z) < soul.hitR + 0.04) {
@@ -11133,9 +12384,25 @@ function curtainUpdate(owner, pb, dmg, onThrough) {
       } else Haz.resolve(0, RULE.WHITE, dmg, C.key, null);   // on a rim or the wall itself
     }
   }
+  curtainHoops();
+}
+// the hoop rims of every live curtain (candy stripes; orange for an ORANGE hoop, rope for the canvas)
+function curtainHoops() {
+  const K = RingKit, M = K.hoops;
+  let n = 0;
+  for (const C of K.curtains) {
+    if (!C.active || !C.m.visible) continue;
+    for (const h of C.holes) {
+      if (n >= 4) break;
+      _m1.compose(_v1.set(h.x, h.y, C.z), _q1.identity(), _v2.setScalar(h.r)); M.setMatrixAt(n, _m1);
+      M.setColorAt(n, _c1.setHex(C.mode ? 0x8a6a4a : h.orange ? CONFIG.COL.orange : 0xe8283c));
+      n++;
+    }
+  }
+  K.flush(M, n);
 }
 function curtainsIdle(owner) { return !RingKit.curtains.some((c) => c.active && c.owner === owner); }
-function curtainsEnd(owner) { for (const c of RingKit.curtains) if (c.owner === owner) { c.active = false; c.m.visible = false; for (const r of c.rims) r.visible = false; } }
+function curtainsEnd(owner) { for (const c of RingKit.curtains) if (c.owner === owner) { c.active = false; c.m.visible = false; } curtainHoops(); }
 // a hole the heart can reach: near where it is now (and inside the box)
 function reachableHole(r, from, maxMove, orange) {
   const A = G.arena, m = r + 0.12;
@@ -11149,16 +12416,23 @@ function reachableHole(r, from, maxMove, orange) {
 // 1. JUGGLER'S CASCADE - balls and pins arc across the box in juggling cascades,
 //    one throw per beat; the arc shows a beat ahead and the landing spot glows.
 //    A': a 5-ball cascade and two jugglers throwing past each other.
+//    Look: a pair of white gloves tosses and catches at each end of the arc, the
+//    arc to come is drawn as running gold dots, balls and pins leave trails and
+//    pins spin end over end.
 class JugglersCascade extends Pattern {
   onStart() {
+    RingKit.init();
     const hard = !this.o.tutorial && (RM.inA2() || this.intensity >= 1.5);
     this.n = this.o.tutorial ? 3 : hard ? 5 : 3;
     this.flight = this.n - 1;                 // beats in the air (a cascade throws every beat)
     this.two = hard;
     this.k = 0; this.hand = [0, 1];
+    this.prev = [];
+    this.gl = RingKit.takeGloves(this, this.two ? 4 : 2);
     // patterns start on a bar line and hear beats from n = 1: lanes and the first arc are set up now
     this.lanes = [this.pickLane(0), this.pickLane(1)];
     for (let j = 0; j < (this.two ? 2 : 1); j++) this.preview(this.lanes[j], j ? 1 - this.hand[j] : this.hand[j]);
+    this.placeGloves();
     if (this.o.tutorial) G.ui.showPrompt('THE OPENING ACT!  DODGE THE JUGGLING', 3.2, '#ffc83c');
   }
   // a lane: the arc plane (z) and its height; picked near you so you have to step out of it
@@ -11171,6 +12445,16 @@ class JugglersCascade extends Pattern {
     const A = G.arena, x0 = from ? A.max.x - 0.12 : A.min.x + 0.12, x1 = from ? A.min.x + 0.12 : A.max.x - 0.12;
     return out.set(lerp(x0, x1, u), L.y0 + (L.peak - L.y0) * 4 * u * (1 - u), L.z);
   }
+  glove(j, side) { const g = this.gl[j * 2 + side]; return g && g.owner === this ? g : null; }
+  // the gloves appear at the ends of the first arcs (afterwards update() moves them)
+  placeGloves() {
+    const A = G.arena;
+    for (let j = 0; j < 2; j++) for (let s = 0; s < 2; s++) {
+      const g = this.glove(j, s); if (!g) continue;
+      const L = this.lanes[j]; g.side = s;
+      g.want.set(s ? A.max.x - 0.1 : A.min.x + 0.1, L.y0 - 0.075, L.z); g.pos.copy(g.want);
+    }
+  }
   onBeat(n, when) {
     const M = this.bpb;
     if (!this.spawning || (!this.fragment && n > this.beats - this.flight - 2)) return;
@@ -11178,7 +12462,7 @@ class JugglersCascade extends Pattern {
       const from = () => (j ? 1 - this.hand[j] : this.hand[j]);
       const throws = (b) => !(this.o.tutorial && b % 2 === 0);
       if (throws(n)) {
-        if (!this.skip()) this.throwBall(n, this.lanes[j], from(), (this.k++) % 3 === 2);
+        if (!this.skip()) this.throwBall(n, this.lanes[j], from(), (this.k++) % 3 === 2, j);
         this.hand[j] ^= 1;
       }
       // a new lane every bar; the next throw's arc always shows one beat ahead
@@ -11187,37 +12471,85 @@ class JugglersCascade extends Pattern {
     }
     G.audio.sfx.tock(when);
   }
-  preview(L, from) {
-    const life = this.bd * 1.1;
-    for (let i = 0; i < 8; i++) { this.arcPoint(L, from, i / 8, _v1); this.arcPoint(L, from, (i + 1) / 8, _v2); G.tele.line(_v1, _v2, 0.012, 0xffc83c, life, { alpha: 0.45 }); }
-  }
-  throwBall(n, L, from, pin) {
+  // the next throw's arc: gold dots that run from the throwing hand to the catching one (for 1.1 beats)
+  preview(L, from) { this.prev.push({ L, from, t0: this.pb, t1: this.pb + 1.1 }); }
+  throwBall(n, L, from, pin, j) {
     this.arcPoint(L, from, 0, _v1);
     const b = G.bullets.spawn(pin ? 'pin' : 'ball', _v1.x, _v1.y, _v1.z); if (!b) return;
     b.beh = BEH.OWNER; b.owner = this; b.life = 20; b.dmg = this.dmg;
-    b.p0 = n; b.p1 = from; b.tag = 0; b.ring = L;
-    if (!pin) { const c = pick(RM.PARTY); b.color.setHex(c); b.glowCol.setHex(c); }
+    b.p0 = n; b.p1 = from; b.tag = j; b.ring = L;
+    let tc = 0xffd890;
+    if (!pin) { const c = pick(RM.PARTY); b.color.setHex(c); b.glowCol.setHex(c); tc = c; }
+    else { b.useQuat = true; b.q.identity(); }
+    CircusFX.trail(b, tc, pin ? 0.045 : 0.05, 0.26, 0.6);
     // the landing spot glows until the catch
     this.arcPoint(L, from, 1, _v2);
     G.tele.ring(_v2, _v3.set(from ? 1 : -1, 0, 0), 0.16, 0xffc83c, this.flight * this.bd, { pulse: 1 });
+    const g = this.glove(j, from); if (g) g.toss = G.time;
+    CircusFX.sparks(_v1, 4, 0xfff0c0, 0.7, 0.3, 0.012, 1.5, 0.04, _v3.set(from ? -0.5 : 0.5, 1, 0), 0.6);
   }
   bulletUpdate(b, dt) {
     const u = (this.pb - b.p0) / (this.flight / Math.min(1, G.bullets.speedMul));
-    if (u >= 1) { this.arcPoint(b.ring, b.p1, 1, b.pos); G.fx.sparkle(b.pos, 3); b.age = b.life + 1; return; }
+    if (u >= 1) {
+      this.arcPoint(b.ring, b.p1, 1, b.pos); G.fx.sparkle(b.pos, 3); b.age = b.life + 1;
+      const g = this.glove(b.tag, 1 - b.p1); if (g) g.caught = G.time;
+      CircusFX.ring(b.pos, null, 0xffe0a0, 0.03, 0.16, 0.25, 0.4, 0.8);
+      return;
+    }
     this.arcPoint(b.ring, b.p1, Math.max(0, u), b.pos);
+    // pins turn end over end: exactly one flip per throw, so they land handle-first
+    if (b.useQuat) b.q.setFromAxisAngle(RM.Z, (b.p1 ? 1 : -1) * Math.max(0, u) * TAU);
+  }
+  update(dt) {
+    super.update(dt);
+    const pb = this.pb;
+    for (let i = 0; i < this.prev.length; i++) {
+      const P = this.prev[i];
+      if (pb > P.t1) { this.prev.splice(i, 1); i--; continue; }
+      const k = (pb - P.t0) / (P.t1 - P.t0), shown = Math.min(1, k * 2.6), fade = Math.min(1, (P.t1 - pb) * 4);
+      for (let d = 0; d < 18; d++) {
+        const u = d / 17; if (u > shown) break;
+        this.arcPoint(P.L, P.from, u, _v4);
+        const w = 0.55 + 0.45 * Math.sin(G.time * 11 - d * 0.8);
+        G.fx.glow.add(_v4.x, _v4.y, _v4.z, d === 17 ? 0.09 : 0.055, 1, 0.8, 0.3, 0.6 * w * fade, 0);
+      }
+    }
+    if (!this.spawning && this.isIdle()) for (const g of this.gl) if (g.owner === this) g.owner = null;
+    // each glove waits where its next action is: the landing of a ball still in flight, or its next throw
+    const A = G.arena, pools = [G.bullets.pools.ball, G.bullets.pools.pin];
+    for (let j = 0; j < 2; j++) for (let s = 0; s < 2; s++) {
+      const g = this.glove(j, s); if (!g) continue;
+      let land = null, tl = 1e9;
+      for (const P of pools) for (const b of P.active) {
+        if (b.owner !== this || b.tag !== j || 1 - b.p1 !== s) continue;
+        const left = this.flight - (pb - b.p0); if (left < tl) { tl = left; land = b.ring; }
+      }
+      const from = j ? 1 - this.hand[j] : this.hand[j], tt = (Math.ceil(pb + 1e-3) - pb) + (from === s ? 0 : 1);
+      const L = land && (tl < tt || !this.spawning) ? land : this.lanes[j];
+      g.side = s; g.want.set(s ? A.max.x - 0.1 : A.min.x + 0.1, L.y0 - 0.075, L.z);
+    }
   }
   isIdle() { return !G.bullets.pools.ball.active.some((b) => b.owner === this) && !G.bullets.pools.pin.active.some((b) => b.owner === this); }
+  onEnd() { for (const g of this.gl) if (g.owner === this) g.owner = null; this.prev.length = 0; }   // the gloves bow out (RingKit.update)
 }
 
 // 2. CLOWN CANNONS - cannons around the ring smoke for a beat, then fire rubbery
-//    clown balls on beat 1 that bounce off the box walls (restitution 0.8) with a honk
+//    clown balls on beat 1 that bounce off the box walls (restitution 0.8) with a honk.
+//    Look: striped cannons on circus drums; the fuse fizzes and the barrel swells
+//    while it smokes, then a muzzle blast (fire, smoke, confetti, BOOM!) kicks the
+//    carriage back on its wheels; balls squash against the walls (HONK!).
 class ClownCannons extends Pattern {
   onStart() {
     RingKit.init();
     const A = G.arena;
     this.hard = RM.inA2() || this.intensity >= 1.5;
     const spots = [[A.min.x - 0.3, A.min.y + 0.35, A.center.z], [A.max.x + 0.3, A.min.y + 0.35, A.center.z], [A.center.x, A.min.y + 0.35, A.min.z - 0.3]];
-    RingKit.cannons.forEach((c, i) => { c.g.position.set(spots[i][0], spots[i][1], spots[i][2]); c.g.visible = true; c.smoke = 0; c.recoil = 0; c.owner = this; c.loaded = false; });
+    RingKit.cannons.forEach((c, i) => {
+      c.base.set(spots[i][0], spots[i][1], spots[i][2]); c.g.position.copy(c.base);
+      c.g.rotation.set(0, Math.atan2(A.center.x - c.base.x, A.center.z - c.base.z), 0);
+      c.visible = true; c.smoke = 0; c.recoil = 0; c.rock = 0; c.slide = 0; c.bulge = 0; c.owner = this; c.loaded = false;
+      CircusFX.smoke(_v1.set(c.base.x, c.base.y - 0.3, c.base.z), 4, { color: 0xe8dccc, size: 0.14, speed: 0.4, alpha: 0.35 });
+    });
     this.maxAlive = this.hard ? 6 : 4;
   }
   onBeat(n, when) {
@@ -11231,17 +12563,28 @@ class ClownCannons extends Pattern {
     if (n % M === 0) for (const c of C) if (c.loaded && c.owner === this) { c.loaded = false; this.fire(c, when); }
   }
   fire(c, when) {
-    c.recoil = 1; c.smoke = 0;
+    c.recoil = 1; c.smoke = 0; c.rock = 1; c.slide = 1; c.bulge = 0;
     G.audio.sfx.cannon(when);
     G.fx.burst(c.muzzle, 10, 1, 0.9, 0.7, 1.2, 0.08);
+    // the muzzle blast
+    const FX = CircusFX, dir = _v3.subVectors(c.muzzle, c.aim.getWorldPosition(_v4)).normalize();
+    FX.flash(c.muzzle, 0xffc890, 3.2, 2.6, 0.24);
+    FX.ring(c.muzzle, dir, 0xffe0b0, 0.06, 0.55, 0.32, 0.35);
+    FX.ring(c.muzzle, null, 0xffb060, 0.05, 0.4, 0.22, 0.5, 0.7);
+    FX.fire(c.muzzle, 7, { size: 0.16, speed: 0.6, dir, push: 1.6, hot: 0.4, rise: 0.4 });
+    FX.smoke(c.muzzle, 9, { color: 0xe6dccc, size: 0.13, speed: 0.45, dir, push: 1.0, alpha: 0.55, rise: 0.3 });
+    FX.sparks(c.muzzle, 12, 0xffd890, 2.4, 0.45, 0.016, 2, 0.05, dir, 0.7);
+    FX.paper(c.muzzle, 8, 0.9, CIRCUS_PAPER, dir);
+    FX.pop('BOOM!', _v5.copy(c.base).setY(c.base.y + 0.62), 0.42, 0.4);
     const alive = G.bullets.pools.ball.active.filter((b) => b.owner === this && !b.dying).length;
     if (alive >= this.maxAlive || this.skip()) return;
     const b = G.bullets.spawn('ball', c.muzzle.x, c.muzzle.y, c.muzzle.z); if (!b) return;
     b.beh = BEH.OWNER; b.owner = this; b.life = 7; b.dmg = this.dmg; b.bounds = false;
-    b.scale = 0.15; b.r = 0.15; b.glowSize = 0.38; b.p0 = 0;
+    b.scale = 0.15; b.r = 0.15; b.glowSize = 0.38; b.p0 = 0; b.p2 = 0;
     const col = pick([0xe8283c, 0xffc83c, 0xff5fb4]); b.color.setHex(col); b.glowCol.setHex(col);
     _v1.subVectors(G.soul.pos, c.muzzle); _v1.y += 0.35;
     b.vel.copy(_v1.normalize().multiplyScalar((this.hard ? 2.6 : 2.2) * Math.sqrt(this.intensity)));
+    CircusFX.trail(b, col, 0.08, 0.3, 0.6);
   }
   bulletUpdate(b, dt) {
     const A = G.arena, k = G.bullets.speedMul, r = b.r;
@@ -11249,39 +12592,70 @@ class ClownCannons extends Pattern {
     b.pos.addScaledVector(b.vel, dt * k);
     let hit = false;
     for (const ax of ['x', 'y', 'z']) {
-      if (b.pos[ax] < A.min[ax] + r && b.vel[ax] < 0) { b.pos[ax] = A.min[ax] + r; b.vel[ax] *= -0.8; hit = true; }
-      else if (b.pos[ax] > A.max[ax] - r && b.vel[ax] > 0) { b.pos[ax] = A.max[ax] - r; b.vel[ax] *= -0.8; hit = true; }
+      if (b.pos[ax] < A.min[ax] + r && b.vel[ax] < 0) { b.pos[ax] = A.min[ax] + r; b.vel[ax] *= -0.8; hit = true; b.dir.set(0, 0, 0)[ax] = 1; }
+      else if (b.pos[ax] > A.max[ax] - r && b.vel[ax] > 0) { b.pos[ax] = A.max[ax] - r; b.vel[ax] *= -0.8; hit = true; b.dir.set(0, 0, 0)[ax] = -1; }
     }
     if (hit) {
       b.p0++; G.audio.sfx.honk(); G.fx.sparkle(b.pos, 3);
-      if (b.p0 >= 7 || b.vel.lengthSq() < 0.15) { G.fx.confetti(b.pos, 10, 0.8); b.die(); b.collide = false; }
+      // a rubbery squash against the wall, a ring on the wall and a HONK!
+      b.p2 = 1; b.useQuat = true; b.q.setFromUnitVectors(UP, b.dir);
+      _v2.copy(b.pos).addScaledVector(b.dir, -r);
+      CircusFX.ring(_v2, b.dir, 0xfff0d0, 0.04, 0.3, 0.3, 0.35, 0.8);
+      CircusFX.sparks(_v2, 5, b.color.getHex(), 1.0, 0.35, 0.014, 2, 0.04, b.dir, 0.9);
+      if (b.p0 <= 2) CircusFX.pop('HONK!', _v2.addScaledVector(b.dir, 0.12), 0.24, 0.45, 0.9);
+      if (b.p0 >= 7 || b.vel.lengthSq() < 0.15) {
+        G.fx.confetti(b.pos, 6, 0.8); CircusFX.paper(b.pos, 10, 1.1); CircusFX.ring(b.pos, null, 0xffffff, 0.05, 0.35, 0.25, 0.4, 0.8);
+        b.die(); b.collide = false;
+      }
+    }
+    if (b.p2 > 0) {
+      b.p2 = Math.max(0, b.p2 - dt * 7);
+      const sq = Math.sin(b.p2 * Math.PI) * 0.4;
+      b.stretch = 1 - sq; b.scale = 0.15 * (1 + sq * 0.45);
+      if (b.p2 <= 0) { b.useQuat = false; b.stretch = 1; b.scale = 0.15; }
     }
   }
   update(dt) {
     super.update(dt);
-    const s = G.soul.pos;
+    const s = G.soul.pos, FX = CircusFX;
     for (const c of RingKit.cannons) {
-      if (c.owner !== this || !c.g.visible) continue;
-      // the barrel tracks you while it smokes
-      c.aim.lookAt(_v1.set(s.x, s.y + 0.2, s.z));
+      if (c.owner !== this || !c.visible) continue;
+      // the barrel tracks you while it smokes; it swells just before it fires (and stretches after)
       c.recoil = Math.max(0, c.recoil - dt * 4);
+      c.rock = Math.max(0, c.rock - dt * 3); c.slide = Math.max(0, c.slide - dt * 2.2);
+      if (c.smoke > 0) c.bulge = Math.min(1, c.bulge + dt / (this.bd * 0.9)); else c.bulge = Math.max(0, c.bulge - dt * 6);
+      const back = easeOut(c.slide) * 0.14;
+      c.g.position.copy(c.base); _v1.set(0, 0, -back).applyQuaternion(c.g.quaternion); c.g.position.add(_v1);
+      c.g.rotation.x = -Math.sin(c.rock * Math.PI) * 0.12;
+      c.wheels.rotation.x = -back / 0.15;
+      c.g.updateMatrixWorld(true);
+      c.aim.lookAt(_v1.set(s.x, s.y + 0.2, s.z));
+      const bl = c.bulge * c.bulge * 0.09, st = Math.sin(Math.min(1, c.recoil) * Math.PI) * 0.12;
+      c.aim.scale.set(1 + bl - st * 0.4, 1 + bl - st * 0.4, 1 - bl * 0.6 + st);
       c.aim.position.copy(_v2.set(0, 0, -0.08 * c.recoil).applyQuaternion(c.aim.quaternion));
       c.g.updateMatrixWorld(true);
-      c.muzzle.set(0, 0, 0.36).applyMatrix4(c.aim.matrixWorld);
+      c.muzzle.set(0, 0, 0.4).applyMatrix4(c.aim.matrixWorld);
+      c.fuse.set(0, 0.24, -0.385).applyMatrix4(c.aim.matrixWorld);
       if (c.smoke > 0) {
         c.smoke = Math.max(0, c.smoke - dt / (this.bd * 1.1));
-        if (chance(dt * 30)) G.fx.parts.emit(c.muzzle.x, c.muzzle.y, c.muzzle.z, rand(-0.15, 0.15), rand(0.3, 0.6), rand(-0.15, 0.15), rand(0.6, 1.1), rand(0.06, 0.1), 0.75, 0.72, 0.7, 1.2, -0.2, 0);
-        G.fx.glow.add(c.muzzle.x, c.muzzle.y, c.muzzle.z, 0.3, 1, 0.5, 0.2, 0.5 + 0.4 * Math.sin(G.time * 20), 0);
+        // a fizzing fuse and smoke curling out of the muzzle: it is about to fire
+        if (chance(dt * 22)) FX.smoke(c.muzzle, 1, { color: 0xd8d0c8, size: 0.07, speed: 0.12, alpha: 0.45, rise: 0.45 });
+        for (let i = 0; i < 2; i++) FX.spark(c.fuse.x, c.fuse.y, c.fuse.z, rand(-0.5, 0.5), rand(0.3, 1.1), rand(-0.5, 0.5), rand(0.15, 0.35), 0.011, 1, rand(0.6, 0.9), 0.3, 3, 1, 0.03);
+        FX.hold(c, c.fuse, 0xffa040, 0.9 + 0.3 * Math.sin(G.time * 31), 0.9);
+        G.fx.glow.add(c.fuse.x, c.fuse.y, c.fuse.z, 0.12, 1, 0.7, 0.3, 0.8, 0);
+        G.fx.glow.add(c.muzzle.x, c.muzzle.y, c.muzzle.z, 0.3, 1, 0.5, 0.2, 0.35 + 0.3 * Math.sin(G.time * 20), 0);
       }
     }
+    RingKit.layoutCannons();
   }
   isIdle() { return !G.bullets.pools.ball.active.some((b) => b.owner === this && !b.dying); }
-  onEnd() { for (const c of RingKit.cannons) if (c.owner === this) { c.g.visible = false; c.loaded = false; c.owner = null; } }
+  onEnd() { for (const c of RingKit.cannons) if (c.owner === this) { c.visible = false; c.loaded = false; c.owner = null; } RingKit.layoutCannons(); }
 }
 
 // 3. RING OF FIRE - a wall of flame crosses the ring every other bar; only its hoops are
 //    safe. Threading the center: +6% TP and a WHOOSH! A': pairs (choose a line), some
-//    hoops orange (cross them moving)
+//    hoops orange (cross them moving). Look: rising flames with white-hot hoop edges,
+//    candy-striped hoops licked by flame, embers and smoke, an orange glow on the sawdust
 class RingOfFire extends Pattern {
   onStart() {
     RingKit.init();
@@ -11305,14 +12679,21 @@ class RingOfFire extends Pattern {
     const C = curtainSpawn(this, 0, holes, n + 1, this.travel);
     if (!C) return;
     const A = G.arena;
-    for (const h of holes) G.tele.ring(_v1.set(h.x, h.y, A.min.z + 0.02), _v2.set(0, 0, 1), h.r, h.orange ? CONFIG.COL.orange : 0xffc83c, this.bd * 1.2, { pulse: 1 });
+    for (const h of holes) {
+      G.tele.ring(_v1.set(h.x, h.y, A.min.z + 0.02), _v2.set(0, 0, 1), h.r, h.orange ? CONFIG.COL.orange : 0xffc83c, this.bd * 1.2, { pulse: 1 });
+      // the hoop outline catches fire on the far wall a beat ahead
+      for (let k = 0; k < 10; k++) { const a = k / 10 * TAU; CircusFX.fire(_v3.set(h.x + Math.cos(a) * h.r, h.y + Math.sin(a) * h.r, A.min.z + 0.03), 1, { size: 0.07, speed: 0.15, rise: 0.8, life: 1.6 }); }
+    }
     G.audio.sfx.fireWhoosh(when);
   }
   update(dt) {
     super.update(dt);
     curtainUpdate(this, this.pb, this.dmg, (C, h) => {
       G.soul.addTP(6); G.audio.sfx.whoosh(); G.fx.sparkle(G.soul.pos, 16);
-      G.fx.damageNumber(_v1.copy(G.soul.pos).setY(G.soul.pos.y + 0.25), 'WHOOSH!', '#ffc83c', 0.7);
+      const p = _v4.copy(G.soul.pos);
+      CircusFX.ring(_v5.set(h.x, h.y, C.z), RM.Z, 0xffd060, h.r * 0.9, h.r * 1.6, 0.4, 0.3);
+      CircusFX.sparks(p, 18, 0xffd890, 1.6, 0.5, 0.016, 0.5, 0.05);
+      CircusFX.pop('WHOOSH!', p.setY(p.y + 0.38), 0.3, 0.5, 0.9);
     });
   }
   isIdle() { return curtainsIdle(this); }
@@ -11321,7 +12702,8 @@ class RingOfFire extends Pattern {
 
 // 4. BALLOON MENAGERIE - balloon animals drift up from the floor; on beat 1 of every
 //    second bar the old ones pop into radial bursts of confetti (each squeaks and
-//    wobbles a beat before it pops)
+//    wobbles a beat before it pops). Look: glossy latex animals with little eyes on
+//    swaying strings; they swell and blush before they POP into shreds and confetti
 class BalloonMenagerie extends Pattern {
   onStart() { RingKit.init(); this.hard = RM.inA2() || this.intensity >= 1.5; }
   onBeat(n, when) {
@@ -11344,21 +12726,26 @@ class BalloonMenagerie extends Pattern {
     for (let k = 0; k < 10; k++) { x = rand(A.min.x + 0.35, A.max.x - 0.35); z = rand(A.min.z + 0.35, A.max.z - 0.35); if (Math.hypot(x - s.x, z - s.z) > 0.8) break; }
     b.active = true; b.owner = this; b.warned = false; b.small = small;
     b.kind = small ? 3 : randi(0, 2); b.size = small ? 0.8 : 1.15;
-    b.m.geometry = RingKit.balloonGeos[b.kind]; b.m.material.color.setHex(pick([0xff5fb4, 0xffc83c, 0xe8283c, 0xd23c8c, 0xfff4dc]));
-    b.m.scale.setScalar(b.size); b.m.rotation.y = rand(0, TAU);
+    b.col.setHex(pick([0xff5fb4, 0xffc83c, 0xe8283c, 0xd23c8c, 0xfff4dc])); b.yaw = rand(0, TAU); b.s = 0;
     b.pos.set(x, A.min.y + 0.02, z); b.vy = small ? 0.12 : 0.22; b.ph = rand(0, 10);
     // pop on beat 1 of the second bar after this one
     const bar = Math.floor(n / M); b.popBeat = (bar + (bar % 2 ? 3 : 2)) * M;
     G.audio.sfx.balloonSqueak();
+    CircusFX.sparks(b.pos, 6, 0xfff0f8, 0.6, 0.4, 0.012, -0.3, 0.03);
   }
   pop(b, when) {
-    b.active = false; b.m.visible = false;
-    G.audio.sfx.balloonPop(when); G.fx.confetti(b.pos, 18, 1.2);
+    b.active = false;
+    G.audio.sfx.balloonPop(when); G.fx.confetti(b.pos, 8, 1.2);
+    const cp = _v4.copy(b.pos); cp.y += 0.3 * b.size;
+    CircusFX.shreds(cp, 9, b.col.getHex(), 1.8);
+    CircusFX.paper(cp, 10, 1.3);
+    CircusFX.ring(cp, null, 0xfff0f8, 0.08, 0.6 * b.size, 0.28, 0.35);
+    CircusFX.pop('POP!', _v5.copy(cp).setY(cp.y + 0.3), 0.32, 0.25);
     const n = Math.round((b.small ? 8 : this.hard ? 16 : 13) * this.sloppy), dirs = RM.dirs(n, RM._dirs);
     const sp = (b.small ? 1.0 : 1.25) * Math.sqrt(this.intensity), rot = rand(0, TAU), c = Math.cos(rot), sn = Math.sin(rot);
     for (const d of dirs) {
-      const bb = G.bullets.spawn('glyph', b.pos.x, b.pos.y, b.pos.z); if (!bb) break;
-      bb.glyph = GlyphAtlas.of('confetti'); bb.dmg = this.dmg; bb.life = 3.2;
+      const bb = G.bullets.spawn('paper', b.pos.x, b.pos.y, b.pos.z); if (!bb) break;
+      bb.dmg = this.dmg; bb.life = 3.2;
       const col = pick(RM.PARTY); bb.color.setHex(col); bb.glowCol.setHex(col);
       bb.vel.set(d[0] * c - d[2] * sn, d[1], d[0] * sn + d[2] * c).multiplyScalar(sp);
     }
@@ -11370,14 +12757,39 @@ class BalloonMenagerie extends Pattern {
       if (!b.active || b.owner !== this) continue;
       // rise slowly, bob (small ones bob in place so you can read them)
       b.pos.y = Math.min(A.max.y - 0.45 * b.size, b.pos.y + b.vy * dt);
-      const wob = b.warned ? Math.sin(G.time * 30) * 0.06 : 0;
-      b.m.position.set(b.pos.x + Math.sin(G.time * 1.3 + b.ph) * 0.04, b.pos.y + Math.sin(G.time * 2 + b.ph) * 0.03, b.pos.z);
-      b.m.scale.setScalar(b.size * (1 + wob + (b.warned ? 0.12 : 0))); b.m.visible = true;
-      b.m.rotation.y += dt * 0.4;
+      b.yaw += dt * 0.4; b.s = Math.min(1, b.s + dt * 3);
     }
+    layoutBalloons();
   }
   isIdle() { return !RingKit.balloons.some((b) => b.active && b.owner === this); }
-  onEnd() { for (const b of RingKit.balloons) if (b.owner === this) { b.active = false; b.m.visible = false; } }
+  onEnd() { for (const b of RingKit.balloons) if (b.owner === this) b.active = false; layoutBalloons(); }
+}
+// every live balloon (any owner) + its string; a warned balloon swells, wobbles and blushes
+function layoutBalloons() {
+  const K = RingKit, cnt = [0, 0, 0, 0];
+  let ns = 0;
+  for (const b of K.balloons) {
+    if (!b.active) continue;
+    const wob = b.warned ? Math.sin(G.time * 30) * 0.06 : 0, sc = b.size * (1 + wob + (b.warned ? 0.12 : 0)) * easeBack(Math.min(1, b.s));
+    b.draw.set(b.pos.x + Math.sin(G.time * 1.3 + b.ph) * 0.04, b.pos.y + Math.sin(G.time * 2 + b.ph) * 0.03, b.pos.z);
+    _q1.setFromAxisAngle(UP, b.yaw); _q2.setFromAxisAngle(RM.Z, Math.sin(G.time * 1.1 + b.ph) * 0.07); _q1.premultiply(_q2);
+    _m1.compose(b.draw, _q1, _v1.setScalar(Math.max(0.01, sc)));
+    const M = K.balloonMeshes[b.kind], i = cnt[b.kind]++;
+    M.setMatrixAt(i, _m1);
+    _c1.copy(b.col); if (b.warned) _c1.lerp(_c2.setRGB(1, 1, 1), 0.25 + 0.2 * Math.sin(G.time * 18)).multiplyScalar(1.25);
+    M.setColorAt(i, _c1);
+    // the string hangs from the knot and sways
+    let x = b.draw.x, y = b.draw.y + (K.KNOT_Y[b.kind] - 0.03) * sc, z = b.draw.z;
+    for (let k = 0; k < 5 && ns < 40; k++) {
+      const a = Math.sin(G.time * 1.6 + b.ph + k * 0.6) * 0.3 * (k + 1) / 5, len = 0.085 * b.size;
+      const nx = x + Math.sin(a) * len, ny = y - Math.cos(a) * len, nz = z + Math.sin(G.time * 1.2 + b.ph * 2 + k) * 0.01;
+      _v2.set(nx - x, ny - y, nz - z); const L = _v2.length(); _v2.divideScalar(L);
+      _q1.setFromUnitVectors(RM.DOWN, _v2); _m1.compose(_v3.set(x, y, z), _q1, _v1.set(1, L, 1)); K.balStrings.setMatrixAt(ns++, _m1);
+      x = nx; y = ny; z = nz;
+    }
+  }
+  K.balloonMeshes.forEach((M, k) => K.flush(M, cnt[k]));
+  K.flush(K.balStrings, ns);
 }
 
 // ============================================================================
@@ -11385,12 +12797,14 @@ class BalloonMenagerie extends Pattern {
 // ============================================================================
 // 5. SPOTLIGHT - three spotlights sweep the dark ring. A light on you is a BLUE rule
 //    (hold still in it); knives drift through the dark and melt in the light.
+//    Look: theatre fixtures hang above, dust drifts in the beams, steel knives glint
+//    as they cross a beam and sizzle away in steam; your light shows a blue ring
 class Spotlight extends Pattern {
   onStart() {
-    BigTopKit.init();
+    BigTopKit.init(); RingKit.init();
     const A = G.arena;
     this.r = this.intensity >= 1.6 ? 0.5 : 0.58;
-    this.spots = [0, 1, 2].map((i) => ({ i, c: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), state: 'hold', t: -i * 1.4, key: null, litT: 0 }));
+    this.spots = [0, 1, 2].map((i) => ({ i, c: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), state: 'hold', t: -i * 1.4, key: null, litT: 0, src: new THREE.Vector3(), dir: new THREE.Vector3(0, -1, 0), col: 0xfff0d0, on: true }));
     for (const s of this.spots) { this.newTarget(s); s.c.copy(s.to); s.from.copy(s.to); }
     this.spots[0].c.set(G.soul.pos.x, 0, G.soul.pos.z); this.spots[0].to.copy(this.spots[0].c);   // start in a light
     this.knives = 0; this.lit = false; this.tipT = 2.5;
@@ -11414,7 +12828,7 @@ class Spotlight extends Pattern {
     for (let i = 0; i < n; i++) this.spawnKnife();
   }
   spawnKnife() {
-    if (this.skip() || G.bullets.pools.shard.active.filter((b) => b.owner === this).length > 26) return;
+    if (this.skip() || G.bullets.pools.knife.active.filter((b) => b.owner === this).length > 26) return;
     const A = G.arena, s = G.soul.pos;
     // from a dark spot on a wall, drifting across the ring
     let x = 0, y = 0, z = 0;
@@ -11425,42 +12839,66 @@ class Spotlight extends Pattern {
       y = rand(A.min.y + 0.2, A.max.y - 0.2);
       if (!this.inLight(_v1.set(x, y, z))) break;
     }
-    const b = G.bullets.spawn('shard', x, y, z); if (!b) return;
+    const b = G.bullets.spawn('knife', x, y, z); if (!b) return;
     RM.arm(b); b.owner = this; b.dmg = this.dmg; b.life = 14;
-    b.color.setHex(0xd8dce8); b.glowCol.setHex(0xb8c0ff); b.glowA = 0.45;
+    b.color.setHex(0xffffff); b.glowCol.setHex(0xb8c0ff); b.glowA = 0.45;
     _v2.set(rand(A.min.x + 0.4, A.max.x - 0.4), rand(A.min.y + 0.3, A.max.y - 0.3), rand(A.min.z + 0.4, A.max.z - 0.4));
     if (!this.lit && chance(0.5)) _v2.copy(s);
     b.vel.subVectors(_v2, b.pos).normalize().multiplyScalar(0.5 * Math.sqrt(this.intensity));
     G.tele.ring(b.pos, _v3.copy(b.vel).normalize(), 0.09, 0xb8c0ff, CONFIG.FREE_TIME_ARM, { pulse: 0 });
+    CircusFX.trail(b, 0x9aa4ff, 0.03, 0.45, 0.5);
+    CircusFX.spark(b.pos.x, b.pos.y, b.pos.z, 0, 0, 0, 0.3, 0.06, 0.85, 0.88, 1, 0, 0, 0);
   }
   update(dt) {
     super.update(dt);
-    const A = G.arena, soul = G.soul;
+    const A = G.arena, soul = G.soul, FX = CircusFX;
     for (const s of this.spots) {
       s.t += dt;
       if (s.state === 'hold' && s.t > 3.0) { s.state = 'move'; s.t = 0; s.from.copy(s.c); this.newTarget(s); }
       else if (s.state === 'move') { const k = Math.min(1, s.t / 1.4); s.c.lerpVectors(s.from, s.to, easeInOut(k)); if (k >= 1) { s.state = 'hold'; s.t = 0; s.key = { grazed: false }; } }
       const hold = s.state === 'hold';
-      BigTopKit.spotOn(s.i, _v1.set(s.c.x * 0.4, A.max.y + 5.5, s.c.z * 0.4 - 1.5), _v2.set(s.c.x, A.min.y, s.c.z), this.r, hold ? 0xfff0d0 : 0xb8a8d8, hold ? 0.12 : 0.05);
+      s.src.set(s.c.x * 0.4, A.max.y + 5.5, s.c.z * 0.4 - 1.5);
+      BigTopKit.spotOn(s.i, s.src, _v2.set(s.c.x, A.min.y, s.c.z), this.r, hold ? 0xfff0d0 : 0xb8a8d8, hold ? 0.12 : 0.05);
+      s.dir.subVectors(_v2, s.src).normalize(); s.col = hold ? 0xfff0d0 : 0xb8a8d8; s.on = hold;
+      // dust motes drifting in the held beams
+      if (hold && chance(dt * 14)) {
+        const f = rand(0.35, 1), rr = this.r * f * rand(0, 0.9), a = rand(0, TAU);
+        FX.spark(lerp(s.src.x, s.c.x, f) + Math.cos(a) * rr, lerp(s.src.y, A.min.y, f), lerp(s.src.z, s.c.z, f) + Math.sin(a) * rr, rand(-0.04, 0.04), rand(-0.05, 0.03), rand(-0.04, 0.04), rand(1.4, 2.6), 0.009, 1, 0.95, 0.82, 0, 0.4, 0);
+      }
     }
+    RingKit.layoutFixtures(this.spots);
     // the light you stand in is BLUE (after a moment to settle); knives melt in held lights
     const sp = this.inLight(soul.pos);
     this.lit = !!sp;
-    if (sp) { sp.litT = (sp.litT || 0) + dt; if (sp.litT > 0.45) Haz.resolve(0, RULE.BLUE, this.dmg, sp.key || (sp.key = { grazed: false }), null); }
+    if (sp) {
+      sp.litT = (sp.litT || 0) + dt; if (sp.litT > 0.45) Haz.resolve(0, RULE.BLUE, this.dmg, sp.key || (sp.key = { grazed: false }), null);
+      // a blue ring around your light while it holds you (BLUE: keep still)
+      const k = clamp(sp.litT / 0.45, 0, 1);
+      FX.ringNow(_v3.set(sp.c.x, A.min.y + 0.01, sp.c.z), UP, this.r * (1.06 - 0.06 * k), CONFIG.COL.blue, (0.35 + 0.35 * k) * (0.8 + 0.2 * Math.sin(G.time * 6)), 0.1);
+    }
     for (const s of this.spots) if (s !== sp) s.litT = 0;
-    for (const b of G.bullets.pools.shard.active) {
+    for (const b of G.bullets.pools.knife.active) {
       if (b.owner !== this || b.dying) continue;
-      if (this.inLight(b.pos)) { b.die(); b.collide = false; G.fx.sparkle(b.pos, 3); }
+      if (this.inLight(b.pos)) {
+        b.die(); b.collide = false; G.fx.sparkle(b.pos, 3);
+        // red-hot, then gone in a hiss of steam and molten drips
+        b.color.setRGB(2.2, 0.9, 0.3); b.glowCol.setHex(0xff8a30); b.glowA = 0.8;
+        FX.sparks(b.pos, 7, 0xffa040, 0.8, 0.5, 0.012, 3, 0.04);
+        FX.smoke(b.pos, 3, { color: 0xf0eee8, size: 0.06, speed: 0.25, alpha: 0.45, rise: 0.7 });
+        for (let i = 0; i < 2; i++) FX.spark(b.pos.x, b.pos.y, b.pos.z, rand(-0.1, 0.1), 0, rand(-0.1, 0.1), 0.8, 0.016, 1, 0.5, 0.12, 4, 0.5, 0.06);
+      }
     }
     if (this.tipT > 0) { this.tipT -= dt; if (this.tipT <= 0) G.ui.showPrompt('WHEN YOUR LIGHT MOVES ON, PULL TO THE NEXT ONE', 3, '#fff0d0'); }
   }
-  isIdle() { return !G.bullets.pools.shard.active.some((b) => b.owner === this && !b.dying); }
-  onEnd() { for (let i = 0; i < 3; i++) BigTopKit.spotOff(i); }
+  isIdle() { return !G.bullets.pools.knife.active.some((b) => b.owner === this && !b.dying); }
+  onEnd() { for (let i = 0; i < 3; i++) BigTopKit.spotOff(i); RingKit.layoutFixtures([]); }
 }
 
 // 6. MARIONETTE STRINGS - curtains of glowing strings drop from the sky (each one
 //    announced 350 ms ahead by a harp pluck). A string snags you: your pull slows for
-//    1 s (no damage) while slow bullets drift through.
+//    1 s (no damage) while slow bullets drift through. Look: silk strings hang from the
+//    puppeteer's wooden control crosses, shimmer, and twang when they snag you; the
+//    drifting bullets are thread spools trailing their thread
 class MarionetteStrings extends Pattern {
   onStart() { RingKit.init(); this.curt = []; this.snagT = 0; this.tipped = false; }
   onOnset(t, strength, synthetic) {
@@ -11472,8 +12910,8 @@ class MarionetteStrings extends Pattern {
   announce() {
     const A = G.arena, s = G.soul.pos, alongX = chance(0.5);
     const n = 6, span = alongX ? A.size.x : A.size.z, gap = span / n;
-    const c = { alongX, pos: [], plane: alongX ? clamp(s.z + rand(-0.6, 0.6), A.min.z + 0.3, A.max.z - 0.3) : clamp(s.x + rand(-0.6, 0.6), A.min.x + 0.3, A.max.x - 0.3),
-      dir: chance(0.5) ? 1 : -1, t: 0, state: 'warn', drop: 0, life: rand(4.5, 6) };
+    const c = { alongX, pos: [], vib: [0, 0, 0, 0, 0, 0], plane: alongX ? clamp(s.z + rand(-0.6, 0.6), A.min.z + 0.3, A.max.z - 0.3) : clamp(s.x + rand(-0.6, 0.6), A.min.x + 0.3, A.max.x - 0.3),
+      dir: chance(0.5) ? 1 : -1, t: 0, state: 'warn', drop: 0, life: rand(4.5, 6), seed: rand(0, 10) };
     const off = rand(0, gap);
     for (let i = 0; i < n; i++) c.pos.push((alongX ? A.min.x : A.min.z) + off + i * gap);
     this.curt.push(c);
@@ -11490,51 +12928,74 @@ class MarionetteStrings extends Pattern {
       const fromX = chance(0.5), sgn = chance(0.5) ? 1 : -1;
       const x = fromX ? (sgn > 0 ? A.min.x + 0.05 : A.max.x - 0.05) : rand(A.min.x + 0.2, A.max.x - 0.2);
       const z = fromX ? rand(A.min.z + 0.2, A.max.z - 0.2) : (sgn > 0 ? A.min.z + 0.05 : A.max.z - 0.05);
-      const b = G.bullets.spawn('pellet', x, rand(A.min.y + 0.2, A.max.y - 0.2), z); if (!b) break;
+      const b = G.bullets.spawn('spool', x, rand(A.min.y + 0.2, A.max.y - 0.2), z); if (!b) break;
       RM.arm(b); b.owner = this; b.dmg = this.dmg; b.life = 12;
       b.vel.set(fromX ? sgn : rand(-0.2, 0.2), rand(-0.1, 0.1), fromX ? rand(-0.2, 0.2) : sgn).normalize().multiplyScalar(0.55 * Math.sqrt(this.intensity));
-      b.color.setHex(0xfff4dc); b.glowCol.setHex(0xffc83c);
+      const col = pick([0xe8283c, 0xff5fb4, 0xfff4dc, 0xd23c8c]);
+      b.color.setHex(col); b.glowCol.setHex(0xffc83c);
+      CircusFX.trail(b, col, 0.016, 0.9, 0.7);
     }
   }
   update(dt) {
     super.update(dt);
-    const A = G.arena, soul = G.soul, sp = soul.pos, S = RingKit.strings;
-    let n = 0;
+    const A = G.arena, soul = G.soul, sp = soul.pos, K = RingKit;
+    let n = 0, nc = 0;
     for (const c of this.curt) {
       if (c.state === 'gone') continue;
       c.t += dt;
       if (c.state === 'warn' && c.t >= CONFIG.FREE_TIME_ARM) { c.state = 'live'; c.t = 0; }
       if (c.state === 'live') { c.drop = Math.min(1, c.drop + dt / 0.35); c.plane += c.dir * 0.22 * dt; if (c.t > c.life) c.state = 'lift'; }
       if (c.state === 'lift') { c.drop -= dt / 0.5; if (c.drop <= 0) { c.state = 'gone'; continue; } }
-      if (c.state === 'warn') continue;
-      const top = A.max.y + 3, bot = lerp(top, A.min.y, c.drop), len = top - bot;
-      for (const u of c.pos) {
-        if (n >= RingKit.STR_CAP) break;
+      const top = A.max.y + 3;
+      if (c.state === 'warn') {
+        // a glint runs down each string-to-be
+        const f = c.t / CONFIG.FREE_TIME_ARM;
+        for (const u of c.pos) { const x = c.alongX ? u : c.plane, z = c.alongX ? c.plane : u; G.fx.glow.add(x, lerp(A.max.y + 0.4, A.min.y, f), z, 0.08, 1, 0.95, 0.8, 0.7, 0); }
+        continue;
+      }
+      const bot = lerp(top, A.min.y, c.drop);
+      // the control cross the strings hang from (it rocks gently)
+      if (nc < 3) {
+        const last = c.pos.length - 1, mid = (c.pos[0] + c.pos[last]) / 2;
+        const cx = c.alongX ? mid : c.plane, cz = c.alongX ? c.plane : mid, span = Math.abs(c.pos[last] - c.pos[0]) + 0.16;
+        _e1.set(0, c.alongX ? 0 : Math.PI / 2, Math.sin(G.time * 1.3 + c.seed) * 0.06); _q1.setFromEuler(_e1);
+        _m1.compose(_v1.set(cx, top + 0.02, cz), _q1, _v2.set(span, 1, 1)); K.ctrlBars.setMatrixAt(nc, _m1);
+        _m1.compose(_v1, _q1, V_ONE); K.ctrlCross.setMatrixAt(nc, _m1); nc++;
+      }
+      for (let i = 0; i < c.pos.length; i++) {
+        const u = c.pos[i];
+        if (n >= K.STR_CAP) break;
         const x = c.alongX ? u : c.plane, z = c.alongX ? c.plane : u;
-        _m1.compose(_v1.set(x, bot + len / 2, z), _q1.identity(), _v2.set(1, len, 1)); S.setMatrixAt(n, _m1);
-        S.setColorAt(n, _c1.setRGB(1, 0.95, 0.85).multiplyScalar(0.7 + 0.3 * Math.sin(G.time * 3 + u * 5)));
+        c.vib[i] = Math.max(0, c.vib[i] - dt * 1.6);
+        const sh = 0.75 + 0.25 * Math.sin(G.time * 3 + u * 5);
+        K.silk(n, x, top, z, x, bot, z, c.seed + i * 1.7, c.vib[i], 1 * sh, 0.93 * sh, 0.78 * sh, 0.85);
         n++;
-        G.fx.glow.add(x, bot, z, 0.06, 1, 0.9, 0.7, 0.6, 0);
+        G.fx.glow.add(x, bot, z, 0.07, 1, 0.9, 0.7, 0.6, 0);
         // a snag: your pull slows for a second (no damage)
         if (c.drop > 0.6 && sp.y > bot - 0.05 && Math.hypot(sp.x - x, sp.z - z) < soul.hitR + 0.035 && this.snagT <= 0) {
           this.snagT = 1; G.loco.boost = 0.35; G.loco.vel.multiplyScalar(0.3);
           G.audio.sfx.harp(undefined, 60); G.input.pulseAll(0.35, 50); G.fx.sparkle(sp, 8);
+          c.vib[i] = 1;
+          CircusFX.ring(sp, null, 0xfff4dc, 0.04, 0.3, 0.3, 0.35, 0.8);
+          CircusFX.pop('TWANG!', _v4.copy(sp).setY(sp.y + 0.32), 0.28, 0.8, 0.9);
           if (!this.tipped) { this.tipped = true; G.ui.showPrompt('SNAGGED!  (SLOWED FOR A MOMENT)', 1.8, '#fff4dc'); }
         }
       }
     }
-    S.count = n; S.instanceMatrix.needsUpdate = true; if (S.instanceColor) S.instanceColor.needsUpdate = true;
+    K.silkFlush(n); K.flush(K.ctrlBars, nc); K.flush(K.ctrlCross, nc);
     if (this.snagT > 0) { this.snagT -= dt; if (this.snagT <= 0 && G.loco.boost === 0.35) G.loco.boost = 1; }
   }
-  isIdle() { return !G.bullets.pools.pellet.active.some((b) => b.owner === this && !b.dying); }
-  onEnd() { RingKit.strings.count = 0; this.curt.length = 0; if (G.loco.boost === 0.35) G.loco.boost = 1; }
+  isIdle() { return !G.bullets.pools.spool.active.some((b) => b.owner === this && !b.dying); }
+  onEnd() { const K = RingKit; K.silkFlush(0); K.flush(K.ctrlBars, 0); K.flush(K.ctrlCross, 0); this.curt.length = 0; if (G.loco.boost === 0.35) G.loco.boost = 1; }
 }
 
 // 7. MUSIC BOX - a music-box ballerina rises and pirouettes; every detected note onset
-//    releases petals from her arms, so the spirals trace the melody
+//    releases petals from her arms, so the spirals trace the melody. Look: a lacquered
+//    jewel box with an open mirrored lid, turning key and brass cylinder, a pink
+//    spotlight, notes rising with every onset and a ring of sparkles around her
 class MusicBox extends Pattern {
   onStart() {
-    RingKit.init();
+    RingKit.init(); BigTopKit.init();
     const A = G.arena, B = RingKit.ballerina, s = G.soul.pos;
     // she rises on the far side of the ring from you (straight ahead if you stand in the middle)
     _v1.set(A.center.x - s.x, 0, A.center.z - s.z);
@@ -11542,18 +13003,22 @@ class MusicBox extends Pattern {
     this.c = new THREE.Vector3(clamp(A.center.x + _v1.x * 0.95, A.min.x + 0.45, A.max.x - 0.45), A.min.y, clamp(A.center.z + _v1.z * 0.95, A.min.z + 0.45, A.max.z - 0.45));
     this.S = 1.3; B.scale.setScalar(this.S);
     B.position.copy(this.c); B.position.y = A.min.y - 1.2; B.visible = true;
+    B.rotation.y = Math.atan2(s.x - this.c.x, s.z - this.c.z);   // the box faces you
     this.rise = 0; this.key = { grazed: false };
+    this.src = new THREE.Vector3(this.c.x * 0.5, A.max.y + 4.5, this.c.z * 0.5 - 1.0); this.dir = new THREE.Vector3(0, -1, 0);
+    this.fix = [{ src: this.src, dir: this.dir, col: 0xffc8e8 }];
     G.audio.sfx.musicBoxChime();
+    CircusFX.sparks(_v2.set(this.c.x, A.min.y + 0.05, this.c.z), 16, 0xffd8f0, 1.2, 0.8, 0.014, -0.2, 0.04);
   }
   onOnset(t, strength, synthetic) {
     if (!this.spawning || this.rise < 0.95) return;
-    const arms = strength > 3 && !synthetic ? 4 : 2, yaw = RingKit.balFig.rotation.y;
+    const arms = strength > 3 && !synthetic ? 4 : 2, yaw = RingKit.balFig.rotation.y + RingKit.ballerina.rotation.y;
     for (let i = 0; i < arms; i++) {
       if (this.skip()) continue;
       const a = yaw + (i % 2 ? Math.PI : 0) + (i >= 2 ? 0.35 : 0);
       const ox = Math.cos(a) * 0.22 * this.S, oz = -Math.sin(a) * 0.22 * this.S;
-      const b = G.bullets.spawn('glyph', this.c.x + ox, this.c.y + 0.95 * this.S, this.c.z + oz); if (!b) break;
-      RM.arm(b); b.glyph = GlyphAtlas.of('petal'); b.owner = this; b.dmg = this.dmg; b.life = 9;
+      const b = G.bullets.spawn('petal', this.c.x + ox, this.c.y + 0.95 * this.S, this.c.z + oz); if (!b) break;
+      RM.arm(b); b.owner = this; b.dmg = this.dmg; b.life = 9;
       const col = i % 2 ? 0xff8fd0 : 0xfff4dc; b.color.setHex(col); b.glowCol.setHex(0xff5fb4);
       // outward along the arm plus the spin's sweep: spirals
       _v1.set(ox, 0, oz).normalize(); _v2.set(-_v1.z, 0, _v1.x);
@@ -11561,21 +13026,37 @@ class MusicBox extends Pattern {
       b.vel.multiplyScalar(Math.sqrt(this.intensity));
     }
     G.audio.sfx.musicBoxNote();
+    // a note floats up out of the box
+    const B = RingKit.ballerina;
+    G.fx.glyphs.emit(this.c.x + rand(-0.15, 0.15), B.position.y + 0.4 * this.S, this.c.z + rand(-0.15, 0.15), rand(-0.12, 0.12), rand(0.35, 0.55), rand(-0.12, 0.12), rand(1.4, 2.0), rand(0.07, 0.1), 1, pick([0.56, 0.95]), pick([0.82, 0.86]), GlyphAtlas.of('note'), -0.1, 0.4);
   }
   update(dt) {
     super.update(dt);
-    const B = RingKit.ballerina, A = G.arena;
+    const B = RingKit.ballerina, A = G.arena, FX = CircusFX;
     this.rise = Math.min(1, this.rise + dt / 1.2);
     B.position.y = lerp(A.min.y - 1.2, A.min.y, easeOut(this.rise));
-    // one turn every 2 bars, locked to the beat clock
-    RingKit.balFig.rotation.y = G.clock.beat / (2 * this.bpb) * TAU;
+    // one turn every 2 bars, locked to the beat clock (counter to the box's own facing); the key turns
+    RingKit.balFig.rotation.y = G.clock.beat / (2 * this.bpb) * TAU - B.rotation.y;
+    RingKit.mbKey.rotation.x = -G.clock.beat * 0.8;
     // her column hurts (white)
     _v1.set(this.c.x, B.position.y + 0.1, this.c.z); _v2.set(this.c.x, B.position.y + 1.1 * this.S, this.c.z);
     if (this.rise > 0.5) Haz.segment(_v1, _v2, 0.22, RULE.WHITE, this.dmg, this.key);
     G.fx.glow.add(this.c.x, B.position.y + 0.95 * this.S, this.c.z, 0.6, 1, 0.55, 0.8, 0.35, 0);
+    // a pink spotlight from the rigging and a soft pink light on the petals around her
+    const hy = B.position.y + 0.75 * this.S;
+    this.dir.set(this.c.x, A.min.y, this.c.z).sub(this.src).normalize();
+    BigTopKit.spotOn(0, this.src, _v3.set(this.c.x, A.min.y, this.c.z), 0.55, 0xffc8e8, 0.09);
+    RingKit.layoutFixtures(this.fix);
+    FX.hold(this, _v3.set(this.c.x, hy, this.c.z), 0xff8fd0, 1.2, 2.2);
+    FX.floorLight(this.c.x, 0.0, this.c.z, 0.9, 0xff8fd0, 0.35);
+    // a ring of sparkles turns around her waist
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * TAU + G.time * 1.6, r = 0.36 * this.S;
+      G.fx.glow.add(this.c.x + Math.cos(a) * r, B.position.y + (0.62 + 0.04 * Math.sin(G.time * 3 + i)) * this.S, this.c.z + Math.sin(a) * r, 0.06, 1, 0.85, 0.95, 0.75, 1);
+    }
   }
-  isIdle() { return !G.bullets.pools.glyph.active.some((b) => b.owner === this && !b.dying); }
-  onEnd() { RingKit.ballerina.visible = false; RingKit.ballerina.scale.setScalar(1); }
+  isIdle() { return !G.bullets.pools.petal.active.some((b) => b.owner === this && !b.dying); }
+  onEnd() { const B = RingKit.ballerina; B.visible = false; B.scale.setScalar(1); B.rotation.y = 0; BigTopKit.spotOff(0); RingKit.layoutFixtures([]); }
 }
 
 // ============================================================================
@@ -11583,7 +13064,8 @@ class MusicBox extends Pattern {
 // ============================================================================
 // 8. FLYING TRAPEZE (PINK SOUL) - swing bar to bar across the storm-torn ring;
 //    lightning strikes the gaps (clouds glow a beat ahead); GRANDIOSO swings opposite
-//    you and throws pins on beat 1. 8 bars.
+//    you and throws pins on beat 1. 8 bars. (The branched bolts, their leaders and
+//    impacts are drawn by StormKit.)
 class FlyingTrapeze extends Pattern {
   onStart() {
     StormKit.init(); BigTopKit.init();
@@ -11627,6 +13109,9 @@ class FlyingTrapeze extends Pattern {
     b.dmg = this.dmg; b.life = 7; b.bounds = false;
     _v2.copy(G.soul.pos); if (i) _v2.x += rand(-0.5, 0.5);
     b.vel.subVectors(_v2, _v1).normalize().multiplyScalar(2.8);
+    b.sx = rand(9, 12) * (chance(0.5) ? 1 : -1); b.sy = 0;   // a fast end-over-end spin
+    CircusFX.trail(b, 0xffd890, 0.05, 0.28, 0.65);
+    CircusFX.sparks(_v1, 6, 0xffe0a0, 0.9, 0.35, 0.013, 1, 0.04);
     G.audio.sfx.throwPin();
   }
   update(dt) {
@@ -11649,7 +13134,9 @@ class FlyingTrapeze extends Pattern {
 
 // 9. THE STORM TENT - the canvas rips free and flaps across the box as moving walls with
 //    holes; wind gusts push you sideways (announced a beat ahead by streaming wind);
-//    raindrop bullets fall in diagonal sheets
+//    raindrop bullets fall in diagonal sheets. Look: the billowing canvas is lit by the
+//    storm (rope, grommets, rain running down it), wind streaks and scraps blow
+//    through, and every drop splashes on the floor
 class StormTent extends Pattern {
   onStart() {
     RingKit.init(); StormKit.init();
@@ -11682,43 +13169,58 @@ class StormTent extends Pattern {
     const gapZ = clamp(s.z + rand(-0.5, 0.5), A.min.z + 0.4, A.max.z - 0.4), x0 = rand(A.min.x + 0.2, A.max.x - 0.2);
     for (let z = A.min.z + 0.15; z <= A.max.z - 0.1; z += 0.4) {
       if (Math.abs(z - gapZ) < 0.42 || this.skip()) continue;
-      const b = G.bullets.spawn('glyph', x0, A.max.y - 0.05, z); if (!b) break;
-      b.glyph = GlyphAtlas.of('drop'); b.dmg = this.dmg;
+      const b = G.bullets.spawn('drop', x0, A.max.y - 0.05, z); if (!b) break;
+      b.dmg = this.dmg; b.owner = this;
       b.color.setHex(0xcfe0ff); b.glowCol.setHex(0x8aa0ff); b.glowA = 0.35;
       b.vel.set(0.55 * wind, -1.8 * Math.sqrt(this.intensity / 1.8), 0);
-      b.life = (A.size.y - 0.05) / -b.vel.y / Math.max(0.5, G.bullets.speedMul);   // gone at the floor
+      b.life = (A.size.y - 0.05) / -b.vel.y / Math.max(0.5, G.bullets.speedMul) * 1.15;   // the floor check below ends it
       b.armT = 0.1;
     }
   }
   update(dt) {
     super.update(dt);
     curtainUpdate(this, this.pb, this.dmg, null);
-    // the gust: streaming wind particles a beat ahead, then a sideways push (<= 1.5 m/s^2)
-    const L = G.loco, A = G.arena, g = this.gust;
+    // the gust: streaming wind a beat ahead, then a sideways push (<= 1.5 m/s^2)
+    const L = G.loco, A = G.arena, g = this.gust, FX = CircusFX;
     let want = 0;
     if (g) {
       const pb = this.pb;
-      if (pb >= g.warn - 1 && pb < g.end) for (let i = 0; i < 4; i++) G.fx.parts.emit(g.dir > 0 ? A.min.x : A.max.x, rand(A.min.y, A.max.y), rand(A.min.z, A.max.z), g.dir * rand(2.5, 4), rand(-0.2, 0.2), rand(-0.2, 0.2), rand(0.5, 0.9), 0.025, 0.85, 0.9, 1, 0.3, 0, 1);
+      if (pb >= g.warn - 1 && pb < g.end) {
+        for (let i = 0; i < 3; i++) FX.spark(g.dir > 0 ? A.min.x - 0.3 : A.max.x + 0.3, rand(A.min.y, A.max.y), rand(A.min.z, A.max.z), g.dir * rand(3, 4.5), rand(-0.15, 0.15), rand(-0.2, 0.2), rand(0.7, 1.1), 0.008, 0.85, 0.9, 1, 0, 0.1, 0.09);
+        if (chance(dt * 5)) FX.bit(g.dir > 0 ? A.min.x : A.max.x, rand(A.min.y, A.max.y), rand(A.min.z, A.max.z), g.dir * rand(1.5, 2.5), rand(0, 0.6), rand(-0.3, 0.3), 0.045, 0.03, pick([0xe8283c, 0xfff4dc, 0xffc83c]), 0, 1.6);
+      }
       if (pb >= g.start && pb < g.end) want = g.dir * 1.2;
       if (pb >= g.end + 1) this.gust = null;
     }
     const cur = L.push.x, acc = 1.5 * dt;
     L.push.x = cur + clamp(want - cur, -acc, acc);
+    // raindrops splash on the box floor
+    for (const b of G.bullets.pools.drop.active) {
+      if (b.owner !== this || b.dying || b.pos.y > A.min.y + 0.05) continue;
+      b.die(); b.collide = false;
+      _v3.set(b.pos.x, A.min.y + 0.01, b.pos.z);
+      FX.ring(_v3, UP, 0xcfe0ff, 0.02, 0.14, 0.35, 0.3, 0.7);
+      for (let i = 0; i < 3; i++) FX.spark(_v3.x, _v3.y, _v3.z, rand(-0.4, 0.4), rand(0.5, 1.0), rand(-0.4, 0.4), rand(0.25, 0.4), 0.01, 0.8, 0.88, 1, 4, 0.5, 0.04);
+    }
   }
   isIdle() { return curtainsIdle(this) && Math.abs(G.loco.push.x) < 0.02; }
   onEnd() { curtainsEnd(this); G.loco.push.set(0, 0, 0); }
 }
 
 // 10. THE SHOW MUST GO ON (final) - he cuts his own strings and the mask cracks; every act
-//     returns in a medley (2 bars each, fireworks behind). In the last 6 bars the acts fall
-//     apart one at a time, bulbs pop, bullets slow, and the banner shrinks.
+//     returns in a medley (2 bars each, rocket fireworks behind). In the last 6 bars the
+//     acts fall apart one at a time, bulbs pop, bullets slow, and the banner shrinks.
 class ShowMustGoOn extends Pattern {
   onStart() {
     RingKit.init(); BigTopKit.init();
     this.frags = []; this.idx = -1;
     this.seq = [JugglersCascade, ClownCannons, RingOfFire, BalloonMenagerie];
     this.medleyBars = 8; this.fallBars = 6;
-    if (G.boss) { G.boss.cutStrings(); G.boss.setCrack(1); }
+    if (G.boss) {
+      G.boss.cutStrings(); G.boss.setCrack(1);
+      G.boss.headWorldPos(_v1); _v1.y += 0.9;
+      CircusFX.pop('SNIP!', _v1, 0.5, 1); CircusFX.sparks(_v1, 14, 0xfff4dc, 1.4, 0.6, 0.015, 1.5, 0.05);
+    }
     this.slow = 1;
   }
   onBeat(n, when) {
@@ -11732,8 +13234,8 @@ class ShowMustGoOn extends Pattern {
       if (BigTopKit.ready) BigTopKit.popBulbs(0.3);
     }
     if (k === 0 && bar === this.medleyBars + 2) { if (G.boss) G.boss.setCrack(3); G.ui.say("please... just one more act... don't leave yet...", { mood: 'tragedy', speed: 10, shrink: 0.68 }); }
-    // fireworks behind the show on every beat 1 (until it falls apart)
-    if (k === 0 && bar < this.medleyBars + 1) for (let i = 0; i < 2; i++) this.firework(when, i);
+    // fireworks behind the show: rockets launch a beat early and burst on every beat 1 (until it falls apart)
+    if (k === M - 1 && bar < this.medleyBars) for (let i = 0; i < 2; i++) this.firework(when, i);
     const g = n + this.startBeat;
     for (const f of this.frags) f.onBeat(g - f.startBeat, when);
   }
@@ -11755,10 +13257,10 @@ class ShowMustGoOn extends Pattern {
     if (G.boss) G.boss.setMood('tragedy');
   }
   firework(when, i) {
-    const p = _v1.set(rand(-7, 7), rand(6, 11), rand(-13, -9));
-    const c = pick([[1, 0.78, 0.24], [1, 0.3, 0.55], [1, 0.95, 0.85], [0.8, 0.4, 1]]);
-    G.fx.firework(p, c[0], c[1], c[2], 26, 2.4);
-    if (i === 0) G.audio.sfx.fireworkBoom(when);
+    const to = _v1.set(rand(-7, 7), rand(6, 11), rand(-13, -9)), from = _v2.set(to.x * 0.8 + rand(-1, 1), -2, to.z + rand(-1, 1));
+    const hex = pick([0xffc83c, 0xff4d8c, 0xfff4dc, 0xcc66ff, 0xff7a3c]);
+    CircusFX.rocket(from, to, hex, pick(['peony', 'ring', 'willow', 'crossette']), this.bd, 1.6);
+    if (i === 0) G.audio.sfx.fireworkBoom(when + this.bd);
   }
   update(dt) {
     super.update(dt);
@@ -11772,15 +13274,21 @@ class ShowMustGoOn extends Pattern {
   onEnd() { for (const f of this.frags) f.end(); this.frags.length = 0; G.bullets.speedMul = this.speedMul; RingKit.hideAll(); }
 }
 
-// ENCORE (ACT): his next attack is a harmless firework show instead (heals 10)
+// ENCORE (ACT): his next attack is a harmless firework show instead (heals 10). Rockets
+// launch from around the ring and burst right above it
 class EncoreShow extends Pattern {
-  onStart() { this.healed = 0; G.ui.showPrompt('ENCORE!  (SIT BACK AND ENJOY THE SHOW)', 2.6, '#ffc83c'); }
+  onStart() {
+    this.healed = 0; G.ui.showPrompt('ENCORE!  (SIT BACK AND ENJOY THE SHOW)', 2.6, '#ffc83c');
+    if (G.boss) { G.boss.headWorldPos(_v1); _v1.y += 0.9; CircusFX.pop('TA-DA!', _v1, 0.55, 1); }
+  }
   onBeat(n, when) {
     if (n >= this.beats - 1) return;
     const A = G.arena;
-    const p = _v1.set(rand(A.min.x - 1.5, A.max.x + 1.5), rand(A.max.y + 0.5, A.max.y + 3.5), rand(A.min.z - 3, A.min.z - 0.5));
-    const c = pick([[1, 0.78, 0.24], [1, 0.3, 0.55], [1, 0.95, 0.85], [0.4, 1, 0.6]]);
-    G.fx.firework(p, c[0], c[1], c[2], 30, 2.2); G.audio.sfx.fireworkBoom(when);
+    const to = new THREE.Vector3(rand(A.min.x - 1.5, A.max.x + 1.5), rand(A.max.y + 0.8, A.max.y + 3.5), rand(A.min.z - 3, A.min.z - 0.5));
+    const from = _v2.set(to.x + rand(-0.6, 0.6), A.min.y - 0.4, to.z + rand(0.2, 1.2));
+    const hex = pick([0xffc83c, 0xff4d8c, 0xfff4dc, 0x66ff99, 0xcc66ff]);
+    CircusFX.rocket(from, to, hex, pick(['peony', 'ring', 'willow', 'crossette']), 0.45, 1.1, () => CircusFX.flash(to, hex, 1.4, 3.5, 0.4));
+    G.audio.sfx.fireworkBoom(when + 0.45);
     if (n % 2 === 0 && this.healed < 10) { const h = G.soul.heal(2); this.healed += 2; if (h > 0) { G.audio.sfx.healTick(); G.fx.heal(G.soul.pos); } }
   }
   onEnd() { if (this.healed < 10) G.soul.heal(10 - this.healed); }
@@ -12216,7 +13724,7 @@ BOSSES.ringmaster = {
   hp: 3000, stats: { atk: 15, def: 6 }, bulletDmg: [4, 5, 6], phaseGlitch: [0, 0, 0],
   transition: 'custom',
   beatsPerBar: 3,   // the brief's default meter (the procedural waltz is 3/4); the MP3's measured map sets its own (RINGMASTER_MUSIC.beatsPerBar)
-  kits: [BigTopKit, StormKit, RingKit, JuggleKit],
+  kits: [BigTopKit, StormKit, RingKit, JuggleKit, CircusFX],
   musicSlot: 'MUSIC_RINGMASTER', dataUri: MUSIC_DATA_URI_RINGMASTER, musicUrl: MUSIC_URL_RINGMASTER,
   fallbackMusic() { return synthRingmasterFallback(89); }, fallbackLabel: '3/4 calliope waltz',
   palette: { name: '#fff4dc', spareName: '#ffe600', hp: '#ffc83c', hpBack: '#5a0a1c', accent: '#e8283c', pelletGlow: 0xffc83c, glyph: 0xfff4dc },
@@ -12246,7 +13754,7 @@ BOSSES.ringmaster = {
   updateModel(dt) {
     const B = G.battle;
     if (G.boss) G.boss.update(G.rdt);
-    BigTopKit.update(G.rdt); StormKit.update(G.dt);
+    BigTopKit.update(G.rdt); StormKit.update(G.dt); RingKit.update(G.dt); CircusFX.update(G.dt);
     if (!B) return;
     this.updateCameos(B, G.dt);
     // spareable: a single spotlight settles softly on you both
@@ -12264,6 +13772,7 @@ BOSSES.ringmaster = {
   onLoad(B) {
     this.ending = null; this.spareSpot = false; this.shieldT = 0;
     this.applyPhaseLook(B, 0, true);
+    CircusFX.prewarm();   // compile the lit props / effects during the intro
   },
   intro(B) {
     const spared = ['proprietor', 'kiddie'].some((id) => Save.beaten(id) === 'spare');
@@ -12453,7 +13962,7 @@ BOSSES.ringmaster = {
       B.bossHp = Math.max(0, B.bossHp - bonus);
       G.ui.showPrompt('BRAVO!  x1.5', 1.8, '#ffc83c');
       G.audio.sfx.crit(); G.audio.sfx.cheer(2.2); G.audio.sfx.confettiSparkle();
-      G.boss.chestPos(_v1); G.fx.confetti(_v1, 60, 2.2);
+      G.boss.chestPos(_v1); G.fx.confetti(_v1, 40, 2.2); CircusFX.paper(_v1, 40, 2.4); CircusFX.ring(_v1, null, 0xffe08a, 0.2, 1.6, 0.5, 0.3);
       G.fx.damageNumber(np, '+' + bonus, '#ffc83c', 2.6);
       this.cheerGuests(2.5);
     }
@@ -12794,7 +14303,7 @@ BOSSES.ringmaster = {
   },
   debugMax(B) { B.bossHp = Math.min(B.bossHp, 1); B.applauds = Math.max(2, B.applauds); B.bowed = true; B.spare = 100; },
   cleanup(B) {
-    RingKit.hideAll(); JuggleKit.hideAll();
+    RingKit.hideAll(); JuggleKit.hideAll(); CircusFX.clear();
     if (G.trapeze) G.trapeze.stop();
     StormKit.clear();
     if (BigTopKit.ready) { for (let i = 0; i < 4; i++) BigTopKit.spotOff(i); BigTopKit.hideNet(); }
@@ -12966,7 +14475,7 @@ G.shooter = new Shooter();
 G.soul = new Soul();
 G.battle = new Battle();
 G.ui = new UI();
-window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, KITS: { BigTopKit, StormKit, RingKit, JuggleKit } };
+window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX } };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)

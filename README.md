@@ -18,7 +18,11 @@ Three bosses, picked from the SAVE FILES screen:
   flutters down: poke it to fly into the big top (RETURN TO TITLE skips it). Bosses 1 and
   2 you spared watch from the front row and help once per fight (Settings > AUDIENCE
   ASSISTS turns that off); a boss you defeated leaves an empty seat under a dusty
-  spotlight.
+  spotlight. His acts get their own look: glossy, lit props and bullets (striped cannons
+  on circus drums, balloon animals, a music-box ballerina, throwing knives, raindrops),
+  smoke, sparks, shockwaves, trails, comic pop words (BOOM! HONK! POP!), branched
+  lightning and rocket fireworks. In Reduced flashing mode the light flashes are dimmer
+  and fade in.
 
 ## Run it on Quest 3S
 
