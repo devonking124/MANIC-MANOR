@@ -1726,6 +1726,11 @@ class Sfx {
     for (let i = 0; i < 3; i++) this.tone({ type: 'sine', f: 3000 + Math.random() * 4000, t: base + Math.random() * 0.12, dur: 0.22, vol: 0.05 * vol });
   }
   tink() { if (this.a.gate('tink', 0.07)) this.tone({ type: 'sine', f: 4200 + Math.random() * 1500, dur: 0.06, vol: 0.03 }); }
+  keyJingle() {
+    const t = this.a.now;
+    for (let i = 0; i < 5; i++) this.tone({ type: 'sine', f: 2800 + Math.random() * 1800, t: t + i * 0.045 + Math.random() * 0.02, dur: 0.12, vol: 0.05 });
+    this.noise({ type: 'highpass', f: 5000, t, dur: 0.25, vol: 0.06 });
+  }
   // ---- KNOBS' SHOP ----
   chaChing(t) {
     const b = t !== undefined ? t : this.a.now;
@@ -8280,6 +8285,7 @@ const LINES = {
   danceBad: ["Two left feet! Delightful! You'll fit right in with the others."],
   window: ['AH-- fresh air?! Who-- who opened that?! The draft! THE DRAFT!'],
   item: ["Eating MY snacks? Good. Good! Full guests don't leave.", "Help yourself! There's plenty. There's ALWAYS plenty."],
+  houseKey: ['W-where did you find that? I locked that door myself. Centuries ago.', '...It still fits? Of course it fits. Nobody ever changed the locks.'],
   spareFail: ["Spare ME? Darling, I'M the one being generous here."],
   flee: ['Leaving? The coats are in the basement. The basement is in the walls.'],
   check: ["Yes, yes, read the plaque. I'm VERY old and VERY fabulous."],
@@ -8345,13 +8351,13 @@ BOSSES.proprietor = {
     { key: 'check', label: 'CHECK' }, { key: 'compliment', label: 'COMPLIMENT DECOR' }, { key: 'dance', label: 'DANCE' },
     { key: 'window', label: 'OPEN A WINDOW 40%TP' }, { key: 'rsvp', label: 'RSVP "NO"' },
   ],
-  items: [{ key: 'mint', label: 'PARTY MINT x3' }, { key: 'canape', label: 'STALE CANAPE x2' }, { key: 'towel', label: 'GUEST TOWEL x1' }],
+  items: [{ key: 'mint', label: 'PARTY MINT x3' }, { key: 'canape', label: 'STALE CANAPE x2' }, { key: 'towel', label: 'GUEST TOWEL x1' }, { key: 'key', label: '★HOUSE KEY x1' }],
   fightType: 'slash',
   glitchWords: ['ST4Y', 'THE PARTY NEVER ENDS', 'RSVP: ATTENDING', 'N0 EXIT', 'M4N1C M4N0R'],
   shatterStyle: 'heart',
   buildModel() { return new Boss(); },
   updateModel(dt, clock, energy) { if (G.boss) G.boss.update(dt, G.rdt); },
-  newState() { return { items: { mint: 3, canape: 2, towel: 1 }, windowStun: false, towelSlow: false, compliments: 0, rsvp: false, rsvpTrigger: false }; },
+  newState() { return { items: { mint: 3, canape: 2, towel: 1, key: 1 }, windowStun: false, towelSlow: false, compliments: 0, rsvp: false, rsvpTrigger: false }; },
   snapshot(B) { return { items: Object.assign({}, B.items), compliments: B.compliments, rsvp: B.rsvp }; },
   restore(B, s) { B.items = Object.assign({}, s.items); B.compliments = s.compliments; B.rsvp = s.rsvp; B.rsvpTrigger = false; B.windowStun = false; B.towelSlow = false; },
   hudName(B) { return B && B.tired ? 'THE PROPRIETOR (TIRED)' : 'THE PROPRIETOR'; },
@@ -8367,11 +8373,12 @@ BOSSES.proprietor = {
     im[0].setLabel(`PARTY MINT x${it.mint}`); im[0].setDisabled(it.mint <= 0);
     im[1].setLabel(`STALE CANAPE x${it.canape}`); im[1].setDisabled(it.canape <= 0);
     im[2].setLabel(`GUEST TOWEL x${it.towel}`); im[2].setDisabled(it.towel <= 0);
+    im[3].setLabel(`★HOUSE KEY x${it.key}`); im[3].setDisabled(it.key <= 0);
     am[3].setDisabled(G.soul.tp < 40);
     am[4].hidden = B.phase < 2;
   },
   actPrompt(B) { return B.phase >= 2 ? '* What will you do?\n* (Something tells you to RSVP.)' : '* What will you do?'; },
-  itemPrompt() { return '* Your pockets are full of party favors.'; },
+  itemPrompt() { return '* Your pockets are full of party favors.\n* (★ = found in the MANOR. KNOBS doesn\'t sell those.)'; },
   itemLine() { return pick(LINES.item); },
   mercyPrompt(B) { return B.spare >= 100 ? '* THE PROPRIETOR is ready to let you go.' : `* Mercy: ${Math.floor(B.spare)}%.`; },
   spareCap(B) { return B.rsvp ? 100 : 75; },
@@ -8409,6 +8416,13 @@ BOSSES.proprietor = {
     G.ui.itemMenu.hide();
     const s = G.soul;
     let healed, text;
+    if (k === 'key') {
+      // the manor's own front-door key: he remembers there is a way out
+      B.addSpare(20); B.windowStun = true;
+      G.audio.sfx.keyJingle(); if (G.boss) G.boss.flashT = 0.4;
+      B.narrate('* You hold up an old HOUSE KEY. It fits the front door.\n* THE PROPRIETOR goes very quiet. +20% MERCY.\n* His next attack will be slower.', () => B.afterAction(LINES.houseKey));
+      return;
+    }
     G.audio.sfx.crunch(); B.after(0.3, () => G.audio.sfx.heal());
     if (k === 'mint') { healed = s.heal(15); text = '* You ate the Party Mint. Minty. Suspiciously minty.'; }
     else if (k === 'canape') { healed = s.heal(25); text = '* You ate the Stale Canape. It has been here since opening night.'; }
@@ -10327,6 +10341,7 @@ const KLINES = {
   miss: ['lol missed. skill issue', 'u typed it wrong. n00b', 'pwn3d lol'],
   hacked: ['HACKED?? HOW. thats MY word'],
   item: ['u brought SNACKS to a hacker fight??', 'share??'],
+  undo: ['HEY. theres no undo button in MY game', 'who gave u ctrl+z?? thats MY keyboard shortcut'],
   spareFail: ['spare ME?? lol no. i spare U. later. maybe'],
   flee: ['u cant log off. i disabled the logout button. it was a picture anyway'],
   check: ['yeah thats me. the greatest hacker alive. (citation needed)'],
@@ -10525,7 +10540,7 @@ BOSSES.kiddie = {
     { key: 'ctrlz', label: 'CTRL+Z 35%TP' }, { key: 'teach', label: 'TEACH HIM' }, { key: 'gg', label: 'SAY "GG"' },
   ],
   actMenuOpts: { yOff: -0.47, radius: 0.76, gap: 0.022 },
-  items: [{ key: 'drink', label: 'ENERGY DRINK x2' }, { key: 'pizza', label: 'COLD PIZZA x2' }, { key: 'av', label: 'ANTIVIRUS.EXE x1' }],
+  items: [{ key: 'drink', label: 'ENERGY DRINK x2' }, { key: 'pizza', label: 'COLD PIZZA x2' }, { key: 'av', label: 'ANTIVIRUS.EXE x1' }, { key: 'undo', label: '★CTRL+Z x1' }],
   fightType: 'type',
   shatterStyle: 'hex',
   glitchWords: ['404', 'SUDO', 'LAG', 'PWNED', 'GG EZ'],
@@ -10538,7 +10553,7 @@ BOSSES.kiddie = {
     if (B && !['VICTORY_FIGHT', 'VICTORY_SPARE', 'FRIEND_REQUEST', 'COZY', 'RESULTS', 'TITLE', 'GAME_OVER'].includes(B.state)) G.ui.chat.setStatus(B.spare >= 100 ? 'online' : 'busy');
   },
   newState() {
-    return { items: { drink: 2, pizza: 2, av: 1 }, boost: false, antivirus: false, stunned: false, bugged: false,
+    return { items: { drink: 2, pizza: 2, av: 1, undo: 1 }, boost: false, antivirus: false, stunned: false, bugged: false,
       rates: 0, teachDone: false, gg: false, hpAtStart: 40, hpLost: 0, pendingFlavor: null };
   },
   snapshot(B) { return { items: Object.assign({}, B.items), rates: B.rates, teachDone: B.teachDone, gg: B.gg }; },
@@ -10562,13 +10577,14 @@ BOSSES.kiddie = {
     im[0].setLabel(`ENERGY DRINK x${it.drink}`); im[0].setDisabled(it.drink <= 0);
     im[1].setLabel(`COLD PIZZA x${it.pizza}`); im[1].setDisabled(it.pizza <= 0);
     im[2].setLabel(`ANTIVIRUS.EXE x${it.av}`); im[2].setDisabled(it.av <= 0);
+    im[3].setLabel(`★CTRL+Z x${it.undo}`); im[3].setDisabled(it.undo <= 0);
     am[3].setDisabled(G.soul.tp < 35);
     am[4].hidden = B.phase < 1;
     am[5].hidden = B.phase < 2 || !B.teachDone;
     const C = G.ui.chat; C.name = this.hudName(B).replace(' (LAGGING)', ''); C.setStatus(B.spare >= 100 ? 'online' : 'busy');
   },
   actPrompt(B) { return B.phase >= 2 && B.teachDone ? '* What will you do?\n* (Maybe he just wants someone to say it.)' : '* What will you do?'; },
-  itemPrompt() { return '* Your inventory smells like a LAN party.'; },
+  itemPrompt() { return '* Your inventory smells like a LAN party.\n* (★ = found on THE SERVER. Not for sale anywhere.)'; },
   itemLine() { return { text: pick(KLINES.item) }; },
   mercyPrompt(B) { return B.spare >= 100 ? "* SCR1PT_K1DD1E's status: online." : `* Mercy: ${Math.floor(B.spare)}%.`; },
   spareCap(B) { return B.gg ? 100 : 75; },
@@ -10629,6 +10645,15 @@ BOSSES.kiddie = {
       const h = s.heal(18);
       text = `* You eat the Cold Pizza Slice. It has been on the desk since 2009.\n* You recovered ${h} HP!`;
       G.fx.damageNumber(Head.rel(_v2, 0, -0.05, 0.9), '+' + h + ' HP', '#3dff5a', 0.9);
+    } else if (k === 'undo') {
+      // undo the last attack: the HP it took comes back
+      const lost = B.hpAtStart !== undefined ? Math.max(0, B.hpAtStart - s.hp) : 0;
+      const h = s.heal(lost > 0 ? lost : 15); s.addTP(10);
+      text = lost > 0 ? `* You press CTRL+Z. The last attack never happened.\n* You got back ${h} HP! (+10% TP)` : `* You press CTRL+Z. There was nothing to undo... you feel better anyway.\n* You recovered ${h} HP! (+10% TP)`;
+      G.fx.damageNumber(Head.rel(_v2, 0, -0.05, 0.9), '+' + h + ' HP', '#3dff5a', 0.9);
+      G.fx.heal(Head.rel(_v1, 0, -0.25, 0.6));
+      B.narrate(text, () => B.afterAction([{ text: pick(KLINES.undo), mood: 'angry' }]));
+      return;
     } else {
       B.antivirus = true;
       text = '* You run Antivirus.exe. Scanning... 3%...\n* The next attack will be quarantined on arrival.';
@@ -14779,6 +14804,7 @@ const RLINES = {
   bravo: ['BRAVO?! Bravo... that is MY line!'],
   miss: ['Dropped it! Butterfingers! The crowd adores a second try!', 'A miss! Comedy! Pure comedy!'],
   item: ['Concessions! Only the finest sugar for my star!', 'Snacks during MY show? ...pass the popcorn.'],
+  bouquet: ['For ME? Oh, darling audience, you SHOULDN\'T have! ...Do it again.', 'ROSES! On a WEEKNIGHT! Somebody fetch me a vase and a spotlight!'],
   spareFail: ['Spare me? Darling, the show is NOT over.'],
   flee: ['The exits are painted on. Every circus does that. Probably.'],
   check: ["Read the poster, darling! It's all true! (Most of it.)"],
@@ -14905,7 +14931,7 @@ BOSSES.ringmaster = {
     { key: 'heckle', label: 'HECKLE' }, { key: 'encore', label: 'ENCORE 40%TP' }, { key: 'bow', label: 'TAKE A BOW' },
   ],
   actMenuOpts: { yOff: -0.47, radius: 0.76, gap: 0.022 },
-  items: [{ key: 'candy', label: 'COTTON CANDY x2' }, { key: 'popcorn', label: 'POPCORN x2' }, { key: 'peanuts', label: 'PEANUT BAG x1' }],
+  items: [{ key: 'candy', label: 'COTTON CANDY x2' }, { key: 'popcorn', label: 'POPCORN x2' }, { key: 'peanuts', label: 'PEANUT BAG x1' }, { key: 'bouquet', label: '★BOUQUET x1' }],
   fightType: 'juggle',
   shatterStyle: 'confetti',
   glitchWords: ['BRAVO', 'ENCORE', 'SOLD OUT'],
@@ -14932,7 +14958,7 @@ BOSSES.ringmaster = {
     if (this.ending) this.updateEnding(B, G.rdt);
   },
   newState() {
-    return { items: { candy: 2, popcorn: 2, peanuts: 1 }, candy: false, popcorn: 0, heckled: false, sulk: 0, encore: false,
+    return { items: { candy: 2, popcorn: 2, peanuts: 1, bouquet: 1 }, candy: false, popcorn: 0, heckled: false, sulk: 0, encore: false,
       applauds: 0, juggled: false, bowed: false, cameo: { proprietor: false, kiddie: false } };
   },
   snapshot(B) { return { items: Object.assign({}, B.items), applauds: B.applauds, bowed: B.bowed, juggled: B.juggled }; },
@@ -14962,11 +14988,12 @@ BOSSES.ringmaster = {
     im[0].setLabel(`COTTON CANDY x${it.candy}`); im[0].setDisabled(it.candy <= 0);
     im[1].setLabel(`POPCORN x${it.popcorn}`); im[1].setDisabled(it.popcorn <= 0);
     im[2].setLabel(`PEANUT BAG x${it.peanuts}`); im[2].setDisabled(it.peanuts <= 0);
+    im[3].setLabel(`★BOUQUET x${it.bouquet}`); im[3].setDisabled(it.bouquet <= 0);
     am[4].setDisabled(G.soul.tp < 40);
     am[5].hidden = !(B.phase >= 2 && B.applauds >= 2);
   },
   actPrompt(B) { return B.phase >= 2 && B.applauds >= 2 ? '* What will you do?\n* (Every show ends with a bow.)' : B.phase >= 2 ? '* What will you do?\n* (He lights up whenever you applaud.)' : '* What will you do?'; },
-  itemPrompt() { return '* Your pockets are full of concessions.'; },
+  itemPrompt() { return '* Your pockets are full of concessions.\n* (★ = from THE BIG TOP. You can\'t buy one.)'; },
   itemLine() { return { text: pick(RLINES.item) }; },
   mercyPrompt(B) { return B.spare >= 100 ? '* GRANDIOSO is ready for the final bow.' : `* Mercy: ${Math.floor(B.spare)}%.`; },
   spareCap(B) { return B.bowed ? 100 : 75; },
@@ -14995,6 +15022,14 @@ BOSSES.ringmaster = {
     let text, h;
     G.audio.sfx.crunch(); B.after(0.3, () => G.audio.sfx.heal());
     Head.update();
+    if (k === 'bouquet') {
+      // a bouquet for the star: the crowd goes wild
+      B.addSpare(20); s.addTP(20);
+      G.audio.sfx.cheer(2.0); G.audio.sfx.confettiSparkle();
+      if (G.boss) { G.boss.chestPos(_v1); G.fx.confetti(_v1, 30, 1.8); }
+      B.narrate('* You toss GRANDIOSO a BOUQUET. The crowd ROARS.\n* +20% MERCY, +20% TP.', () => B.afterAction([{ text: pick(RLINES.bouquet) }]));
+      return;
+    }
     if (k === 'candy') { h = s.heal(22); B.candy = true; text = `* You eat the Cotton Candy. It melts into pure sugar.\n* You recovered ${h} HP! Next attack: grazes give double TP.`; }
     else if (k === 'popcorn') { h = s.heal(6); B.popcorn = Math.min(6, B.popcorn + 3); text = `* You open the Popcorn Bucket. Nearly bottomless.\n* You recovered ${h} HP! (+6 HP each turn for 3 turns.)`; }
     else { h = s.heal(30); text = `* You eat the whole Peanut Bag. Somewhere, an elephant sighs.\n* You recovered ${h} HP!`; }
