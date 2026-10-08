@@ -46,6 +46,10 @@
   .c-yellow { color: #ffe600; font-weight: bold; } .c-red { color: #ff2a4a; font-weight: bold; }
   .setrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 7px 0; }
   .setrow label { letter-spacing: 1px; }
+  .btn.small { font-size: 14px; padding: 7px 12px; min-width: 0; border-width: 2px; }
+  .mstat { font-size: 13px; letter-spacing: 0; }
+  .panel h3.h-music, .panel h4 { margin-top: 16px; }
+  .panel h4 { margin: 14px 0 4px; color: var(--teal); letter-spacing: 2px; font-size: 15px; }
   .setrow select, .setrow input[type=range] { font: 15px "Courier New", monospace; background: #000; color: #fff;
     border: 2px solid #fff; padding: 3px 6px; min-width: 170px; }
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; display: none; }
@@ -81,19 +85,14 @@
 <div id="overlay">
   <canvas id="titleCanvas" width="480" height="96"></canvas>
   <div class="sub">A WEBXR SOUL BATTLE &middot; <span class="warn">&#9888; WARNING: FLASHING LIGHTS</span></div>
-  <div class="row">
-    <button class="btn big" id="btnLoad1">LOAD BOSS 1 MUSIC<span class="ok" id="ok1">&#10003;</span></button>
-    <button class="btn big" id="btnLoad2">LOAD BOSS 2 MUSIC<span class="ok" id="ok2">&#10003;</span></button>
-    <button class="btn big" id="btnLoad3">LOAD BOSS 3 MUSIC<span class="ok" id="ok3">&#10003;</span></button>
-  </div>
   <div class="row" id="vrSlot"></div>
   <div class="row">
     <button class="btn" id="btnDesktop">PLAY ON DESKTOP</button>
     <button class="btn secondary" id="btnSettings">SETTINGS</button>
     <button class="btn secondary" id="btnHow">HOW TO PLAY</button>
   </div>
-  <div id="status">Loading three.js&hellip;</div>
-  <div class="panel" id="panelSettings"><h3>SETTINGS</h3><div id="settingsForm"></div></div>
+  <div id="status">Loading the music pack and three.js&hellip;</div>
+  <div class="panel" id="panelSettings"><h3>SETTINGS</h3><div id="settingsForm"></div><h3 class="h-music">MUSIC</h3><div id="musicForm"></div></div>
   <div class="panel" id="panelHow">
     <h3>HOW TO PLAY</h3>
     <ul>
@@ -115,25 +114,30 @@
     </ul>
   </div>
 </div>
-<input type="file" id="fileInput1" accept="audio/*,.mp3" style="display:none">
-<input type="file" id="fileInput2" accept="audio/*,.mp3" style="display:none">
-<input type="file" id="fileInput3" accept="audio/*,.mp3" style="display:none">
+<input type="file" id="fileInputMusic" accept="audio/*,.mp3" style="display:none">
 <div id="hud"><div id="crosshair"></div><div id="lockmsg">CLICK TO CAPTURE MOUSE</div><div id="hint"></div></div>
 <div id="debug"></div>
 <div id="beatgrid"><div class="cells"><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div></div><div id="beatinfo"></div></div>
 <div id="toast"></div>
+<!-- every track of the soundtrack, built in (window.MANIC_MUSIC). A classic script, so it is defined before the
+     game module runs; if it is missing the game still runs (IndexedDB cache, then procedural fallbacks). -->
+<script>window.MANIC_MUSIC_STATUS = 'loading';</script>
+<script src="music_pack.js" onload="window.MANIC_MUSIC_STATUS = window.MANIC_MUSIC ? 'ok' : 'empty'" onerror="window.MANIC_MUSIC_STATUS = 'missing'"></script>
 <script type="module">
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 // ============================================================================
-//  MUSIC SLOTS
-//  Paste a base64 data URI of an MP3 ("data:audio/mpeg;base64,....") into a slot
-//  and it loads automatically for that boss. The *_URL constants are optional
-//  same-origin paths (e.g. "M4N1C_M4N0R.mp3" uploaded next to index.html); leave
-//  them empty to skip the fetch. Without a file each boss plays its own
-//  procedural fallback track.
+//  MUSIC OVERRIDES
+//  Every track is built in: music_pack.js (next to index.html) defines
+//  window.MANIC_MUSIC = { proprietor, kiddie, ringmaster, outlaw, shop } as MP3
+//  data URIs, so nothing has to be loaded by hand. These constants are optional
+//  overrides that win over the pack: paste a base64 data URI of an MP3
+//  ("data:audio/mpeg;base64,....") into a slot, or set a *_URL to a same-origin
+//  path (e.g. "M4N1C_M4N0R.mp3" uploaded next to index.html). Leave them empty.
+//  Resolution order per track (MusicLibrary.getTrack): override -> music pack ->
+//  a copy cached in IndexedDB by Settings > MUSIC > REPLACE -> procedural fallback.
 // ============================================================================
 const MUSIC_DATA_URI_PROPRIETOR = "";
 const MUSIC_DATA_URI_KIDDIE = "";
@@ -142,6 +146,12 @@ const MUSIC_URL_KIDDIE = "";
 // boss 3 (GRANDIOSO): "THE CIRCUS IN THE SKY"
 const MUSIC_DATA_URI_RINGMASTER = "";
 const MUSIC_URL_RINGMASTER = "";
+// boss 4 (SUNDOWN): "Yeed Your Last Haw"
+const MUSIC_DATA_URI_OUTLAW = "";
+const MUSIC_URL_OUTLAW = "";
+// KNOBS' SHOP: "made this beat to practice mastering"
+const MUSIC_DATA_URI_SHOP = "";
+const MUSIC_URL_SHOP = "";
 
 // ============================================================================
 //  CONFIG (shared by every boss; boss-specific tuning lives in BOSSES.*)
@@ -385,6 +395,7 @@ const PixelFont = (() => {
     '★': '00100|00100|11111|01110|01110|11011|10001',
     '●': '00000|01110|11111|11111|11111|01110|00000',
     '✓': '00000|00001|00010|10100|01000|00000|00000',
+    '♪': '00100|00110|00101|00100|01100|11100|01000',
   };
   const glyphs = {};
   for (const ch in raw) glyphs[ch] = raw[ch].split('|').map((r) => parseInt(r, 2));
@@ -597,19 +608,21 @@ const Settings = {
     difficulty: 'normal', seated: false, beatHaptics: true, refresh: 72, unlockAll: false, assists: true,
   },
   schema: [
-    { key: 'musicVol', label: 'MUSIC VOLUME', type: 'num', min: 0, max: 1, step: 0.1 },
-    { key: 'sfxVol', label: 'SFX VOLUME', type: 'num', min: 0, max: 1, step: 0.1 },
-    { key: 'flashing', label: 'FLASHING', type: 'enum', options: ['reduced', 'full'], names: ['REDUCED', 'FULL'] },
-    { key: 'vignette', label: 'COMFORT VIGNETTE', type: 'enum', options: [true, false], names: ['ON', 'OFF'] },
-    { key: 'turn', label: 'TURNING', type: 'enum', options: ['snap', 'smooth'], names: ['SNAP 45', 'SMOOTH'] },
-    { key: 'hand', label: 'DOMINANT HAND', type: 'enum', options: ['right', 'left'], names: ['RIGHT', 'LEFT'] },
-    { key: 'difficulty', label: 'DIFFICULTY', type: 'enum', options: ['easy', 'normal', 'hard'], names: ['EASY', 'NORMAL', 'HARD'] },
-    { key: 'seated', label: 'SEATED MODE', type: 'enum', options: [false, true], names: ['OFF', 'ON'] },
-    { key: 'beatHaptics', label: 'BEAT HAPTICS', type: 'enum', options: [true, false], names: ['ON', 'OFF'] },
-    { key: 'refresh', label: 'REFRESH RATE', type: 'enum', options: [72, 90], names: ['72 HZ', '90 HZ'] },
-    { key: 'unlockAll', label: 'UNLOCK ALL BOSSES', type: 'enum', options: [false, true], names: ['OFF', 'ON'] },
-    { key: 'assists', label: 'AUDIENCE ASSISTS', type: 'enum', options: [true, false], names: ['ON', 'OFF'] },
+    { key: 'musicVol', label: 'MUSIC VOLUME', type: 'num', min: 0, max: 1, step: 0.1, page: 'audio' },
+    { key: 'sfxVol', label: 'SFX VOLUME', type: 'num', min: 0, max: 1, step: 0.1, page: 'audio' },
+    { key: 'flashing', label: 'FLASHING', type: 'enum', options: ['reduced', 'full'], names: ['REDUCED', 'FULL'], page: 'comfort' },
+    { key: 'vignette', label: 'COMFORT VIGNETTE', type: 'enum', options: [true, false], names: ['ON', 'OFF'], page: 'comfort' },
+    { key: 'turn', label: 'TURNING', type: 'enum', options: ['snap', 'smooth'], names: ['SNAP 45', 'SMOOTH'], page: 'comfort' },
+    { key: 'hand', label: 'DOMINANT HAND', type: 'enum', options: ['right', 'left'], names: ['RIGHT', 'LEFT'], page: 'game' },
+    { key: 'difficulty', label: 'DIFFICULTY', type: 'enum', options: ['easy', 'normal', 'hard'], names: ['EASY', 'NORMAL', 'HARD'], page: 'game' },
+    { key: 'seated', label: 'SEATED MODE', type: 'enum', options: [false, true], names: ['OFF', 'ON'], page: 'comfort' },
+    { key: 'beatHaptics', label: 'BEAT HAPTICS', type: 'enum', options: [true, false], names: ['ON', 'OFF'], page: 'comfort' },
+    { key: 'refresh', label: 'REFRESH RATE', type: 'enum', options: [72, 90], names: ['72 HZ', '90 HZ'], page: 'comfort' },
+    { key: 'unlockAll', label: 'UNLOCK ALL BOSSES', type: 'enum', options: [false, true], names: ['OFF', 'ON'], page: 'game' },
+    { key: 'assists', label: 'AUDIENCE ASSISTS', type: 'enum', options: [true, false], names: ['ON', 'OFF'], page: 'game' },
   ],
+  // the in-world settings panel's tabs (the page groups the same rows under headings)
+  pages: [{ id: 'game', name: 'GAME' }, { id: 'comfort', name: 'COMFORT' }, { id: 'audio', name: 'AUDIO' }],
   listeners: [],
   load() {
     const o = Save.data.settings;
@@ -653,10 +666,9 @@ const Flash = {
 class AudioEngine {
   constructor() {
     this.ctx = null;
-    this.track = null;          // active: { name, buffer, bpm, offset, sections, marks, duration, fallback, boss }
-    this.tracks = {};           // decoded MP3 per boss id (music slots)
-    this.fallbacks = {};        // procedural fallback per boss id
+    this.track = null;          // active: { name, buffer, bpm, offset, sections, marks, duration, fallback, boss } (MusicLibrary)
     this.source = null; this.srcGain = null;
+    this.xl = null; this.xlOld = null;   // crossfaded loop (playSegment with xfade): next loop point + the source fading out
     this.bass = 0; this.treble = 0; this.bassRaw = 0; this.trebleRaw = 0;
     this.userPaused = false;
     this.lastSfx = {};
@@ -679,7 +691,9 @@ class AudioEngine {
       this.analyser = c.createAnalyser(); this.analyser.fftSize = 1024; this.analyser.smoothingTimeConstant = 0.45;
       // unsmoothed tap for onset detection (free-time sections); analysers pass audio through unchanged
       this.onsetAn = c.createAnalyser(); this.onsetAn.fftSize = 1024; this.onsetAn.smoothingTimeConstant = 0;
-      this.musicGain.connect(this.musicFilter); this.musicFilter.connect(this.onsetAn); this.onsetAn.connect(this.analyser); this.analyser.connect(this.comp);
+      // duck: -6 dB while a character talks over the music (setDuck)
+      this.duck = c.createGain();
+      this.musicGain.connect(this.duck); this.duck.connect(this.musicFilter); this.musicFilter.connect(this.onsetAn); this.onsetAn.connect(this.analyser); this.analyser.connect(this.comp);
       this.onsetCur = new Float32Array(this.onsetAn.frequencyBinCount); this.onsetPrev = new Float32Array(this.onsetAn.frequencyBinCount).fill(-100);
       this.sfxGain = c.createGain(); this.sfxGain.connect(this.comp);
       this.freq = new Uint8Array(this.analyser.frequencyBinCount);
@@ -701,7 +715,9 @@ class AudioEngine {
   }
 
   // ---------------- music ----------------
-  playSegment(pos, loopStart, loopEnd, when, rate = 1, loop = true) {
+  // xfade > 0: loop with a crossfade instead of a hard sample loop - every pass is a fresh source that fades in
+  // over `xfade` s centred on the loop point while the old one fades out (the beat grid is the same as a hard loop)
+  playSegment(pos, loopStart, loopEnd, when, rate = 1, loop = true, xfade = 0) {
     if (!this.ctx || !this.track) return;
     this.stopMusic(when, 0.012);
     const c = this.ctx, buf = this.track.buffer;
@@ -715,6 +731,33 @@ class AudioEngine {
     src.connect(g); g.connect(this.musicGain);
     src.start(when, clamp(pos, 0, src.loopEnd - 0.01));
     this.source = src; this.srcGain = g;
+    const h = xfade / 2;
+    if (loop && xfade > 0 && src.loopStart >= h && src.loopEnd + h <= buf.duration && pos < src.loopEnd) {
+      src.loop = false;
+      this.xl = { loopStart: src.loopStart, loopEnd: src.loopEnd, x: xfade, rate, buf, tc: when + (src.loopEnd - pos) / rate };
+    }
+  }
+  // crossfaded loop: queue the next pass about a second before the loop point (called from update)
+  queueLoop() {
+    const L = this.xl, c = this.ctx, h = L.x / 2, old = this.source, og = this.srcGain;
+    if (!old) { this.xl = null; return; }
+    const t0 = Math.max(c.currentTime, L.tc - h);
+    try { og.gain.cancelScheduledValues(t0); og.gain.setValueAtTime(1, t0); og.gain.linearRampToValueAtTime(0, L.tc + h); old.stop(L.tc + h + 0.03); } catch { /* already stopped */ }
+    const src = c.createBufferSource(); src.buffer = L.buf;
+    src.playbackRate.setValueAtTime(L.rate, t0);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(1, L.tc + h);
+    src.connect(g); g.connect(this.musicGain);
+    src.start(t0, L.loopStart - (L.tc - t0) * L.rate);
+    this.xlOld = { src: old, g: og, until: L.tc + h };
+    this.source = src; this.srcGain = g;
+    L.tc += (L.loopEnd - L.loopStart) / L.rate;
+  }
+  // -6 dB while someone talks over the music
+  setDuck(on) {
+    if (!this.ctx) return;
+    const d = this.duck.gain, t = this.ctx.currentTime;
+    d.cancelScheduledValues(t); d.setTargetAtTime(on ? 0.5 : 1, t, 0.06);
   }
   // like playSegment, but the current source fades out over `dur` while the new one fades in
   crossfadeSegment(pos, loopStart, loopEnd, when, dur, loop = true) {
@@ -729,6 +772,11 @@ class AudioEngine {
     g.cancelScheduledValues(when); g.setValueAtTime(0, when); g.linearRampToValueAtTime(1, when + dur);
   }
   stopMusic(when, fade = 0.02) {
+    this.xl = null;
+    if (this.xlOld && this.ctx) {
+      const o = this.xlOld; this.xlOld = null;
+      if (o.until > this.ctx.currentTime) try { o.src.stop(Math.max(when, this.ctx.currentTime) + fade * 2.5); } catch { /* ignore */ }
+    }
     if (!this.source || !this.ctx) return;
     when = Math.max(when, this.ctx.currentTime);
     const s = this.source, g = this.srcGain;
@@ -742,6 +790,7 @@ class AudioEngine {
   // tape-stop: playbackRate 1 -> 0.2 over dur (the clock integrates the same ramp)
   tapeStop(when, dur) {
     if (!this.source) return;
+    this.xl = null;
     const s = this.source, g = this.srcGain;
     const pr = s.playbackRate;
     pr.cancelScheduledValues(when); pr.setValueAtTime(pr.value, when); pr.linearRampToValueAtTime(pr.value * 0.2, when + dur);
@@ -767,6 +816,8 @@ class AudioEngine {
   }
   update(dt) {
     if (!this.analyser) return;
+    if (this.xl && this.ctx.currentTime > this.xl.tc - 1.0) this.queueLoop();
+    if (this.xlOld && this.ctx.currentTime > this.xlOld.until) this.xlOld = null;
     this.analyser.getByteFrequencyData(this.freq);
     const binHz = this.ctx.sampleRate / this.analyser.fftSize;
     const f = this.freq;
@@ -880,6 +931,178 @@ function estimateOffset(buffer, bpm, guess, win) {
   }
   return Math.round(best * 1000) / 1000;
 }
+
+// ============================================================================
+//  AudioCache - IndexedDB "manicManor", object store "audio" (manicManor.audio):
+//  the raw bytes of every file loaded by hand (Settings > MUSIC > REPLACE), so it
+//  is remembered from then on. Every call is wrapped: if IndexedDB is blocked
+//  or fails, the cache is simply empty and the game carries on.
+// ============================================================================
+const AudioCache = {
+  db: null, failed: false,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    if (this.failed || !window.indexedDB) return Promise.resolve(null);
+    if (this._opening) return this._opening;
+    this._opening = new Promise((res) => {
+      try {
+        const rq = indexedDB.open('manicManor', 1);
+        rq.onupgradeneeded = () => { try { if (!rq.result.objectStoreNames.contains('audio')) rq.result.createObjectStore('audio'); } catch { /* ignore */ } };
+        rq.onsuccess = () => { this.db = rq.result; res(this.db); };
+        rq.onerror = () => { this.failed = true; res(null); };
+        rq.onblocked = () => { this.failed = true; res(null); };
+      } catch { this.failed = true; res(null); }
+    });
+    return this._opening;
+  },
+  // run one request in a transaction; resolves to its result, or `fallback` on any failure
+  async req(mode, fn, fallback) {
+    try {
+      const db = await this.open(); if (!db) return fallback;
+      return await new Promise((res) => {
+        try {
+          const st = db.transaction('audio', mode).objectStore('audio'), rq = fn(st);
+          rq.onsuccess = () => res(rq.result === undefined ? fallback : rq.result);
+          rq.onerror = () => res(fallback);
+        } catch { res(fallback); }
+      });
+    } catch { return fallback; }
+  },
+  get(key) { return this.req('readonly', (st) => st.get(key), null); },
+  put(key, rec) { return this.req('readwrite', (st) => st.put(rec, key), null); },
+  del(key) { return this.req('readwrite', (st) => st.delete(key), null); },
+  keys() { return this.req('readonly', (st) => st.getAllKeys(), []); },
+};
+
+// ============================================================================
+//  MusicLibrary - every track the game plays. getTrack(key) resolves in order:
+//    1. a non-empty MUSIC_DATA_URI_<KEY> (or MUSIC_URL_<KEY>) override above
+//    2. window.MANIC_MUSIC[key] from music_pack.js
+//    3. a copy cached in IndexedDB by an earlier manual load
+//    4. the key's procedural fallback
+//  (a file picked in Settings > MUSIC plays straight away for the rest of the session).
+//  Data URIs go fetch() -> arrayBuffer -> decodeAudioData. Decoding is lazy: decoded
+//  PCM costs ~21 MB a minute (44.1 kHz stereo float), so only what the scene needs is
+//  decoded - the current boss track and the shop track - and retain() drops every other
+//  decoded buffer (every reference) when a scene changes.
+// ============================================================================
+const MUSIC_KEYS = ['proprietor', 'kiddie', 'ringmaster', 'outlaw', 'shop'];
+const MUSIC_INFO = {
+  proprietor: { label: 'BOSS 1', title: 'M4N1C M4N0R', uri: MUSIC_DATA_URI_PROPRIETOR, url: MUSIC_URL_PROPRIETOR },
+  kiddie: { label: 'BOSS 2', title: 'SCR1PT_KIDDIE', uri: MUSIC_DATA_URI_KIDDIE, url: MUSIC_URL_KIDDIE },
+  ringmaster: { label: 'BOSS 3', title: 'THE CIRCUS IN THE SKY', uri: MUSIC_DATA_URI_RINGMASTER, url: MUSIC_URL_RINGMASTER },
+  outlaw: { label: 'BOSS 4', title: 'Yeed Your Last Haw', uri: MUSIC_DATA_URI_OUTLAW, url: MUSIC_URL_OUTLAW },
+  shop: { label: 'SHOP', title: 'made this beat to practice mastering', uri: MUSIC_DATA_URI_SHOP, url: MUSIC_URL_SHOP },
+};
+const MusicLibrary = {
+  live: {},       // key -> decoded (or synthesized) track, only the ones in use
+  pending: {},    // key -> Promise<track> while it decodes
+  cached: {},     // key -> { name } for each copy in IndexedDB (read once at boot)
+  session: {},    // key -> { name, bytes } a file picked in Settings > MUSIC this session
+  listeners: [],  // f(key): a track's status changed (settings panels redraw)
+  def(key) { return key === 'shop' ? SHOP_DEF : BOSSES[key]; },
+  title(key) { return MUSIC_INFO[key] ? MUSIC_INFO[key].title : key; },
+  pack(key) { const P = window.MANIC_MUSIC; return P && typeof P[key] === 'string' && P[key].startsWith('data:') ? P[key] : ''; },
+  // where a track comes from: 'file' (picked this session) | 'override' | 'pack' | 'cache' | 'fallback'
+  source(key) {
+    const I = MUSIC_INFO[key];
+    if (this.session[key]) return 'file';
+    if (I && (I.uri || I.url)) return 'override';
+    if (this.pack(key)) return 'pack';
+    if (this.cached[key]) return 'cache';
+    return 'fallback';
+  },
+  // the status shown in Settings > MUSIC (and the page overlay)
+  status(key) {
+    const s = this.source(key), t = this.live[key];
+    if (t && t.source === 'fallback' && s !== 'fallback') return '♪ PROCEDURAL (DECODE FAILED)';
+    return { file: '✓ YOUR FILE', override: '✓ EMBEDDED', pack: '✓ BUILT-IN', cache: '✓ CACHED', fallback: '♪ PROCEDURAL' }[s];
+  },
+  ready(key) { return !!this.live[key]; },
+  notify(key) { for (const f of this.listeners) { try { f(key); } catch (e) { console.warn(e); } } },
+  // boot: note which tracks IndexedDB holds (for the status list)
+  async init() {
+    const keys = await AudioCache.keys();
+    for (const k of keys || []) if (MUSIC_INFO[k]) this.cached[k] = { name: MUSIC_INFO[k].title };
+    // the picked file's name lives in a small 'meta:<key>' record (the audio record is the whole file)
+    for (const k of keys || []) {
+      if (typeof k !== 'string' || !k.startsWith('meta:') || !this.cached[k.slice(5)]) continue;
+      const m = await AudioCache.get(k);
+      if (m && m.name) this.cached[k.slice(5)].name = String(m.name);
+    }
+    for (const k of MUSIC_KEYS) this.notify(k);
+  },
+  // the bytes of each candidate source in priority order; the first one that decodes wins
+  async load(key) {
+    const I = MUSIC_INFO[key], tries = [];
+    if (this.session[key]) { const f = this.session[key]; tries.push(['file', f.name, async () => f.bytes.slice(0)]); }
+    if (I.uri) tries.push(['override', I.title + ' (embedded)', () => fetch(I.uri).then((r) => r.arrayBuffer())]);
+    if (I.url) tries.push(['override', decodeURIComponent(I.url.split('/').pop().replace(/\.[^.]+$/, '')), () => fetch(I.url).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('HTTP ' + r.status))))]);
+    const uri = this.pack(key);
+    if (uri) tries.push(['pack', I.title, () => fetch(uri).then((r) => r.arrayBuffer())]);
+    tries.push(['cache', I.title + ' (cached)', async () => { const rec = await AudioCache.get(key); if (!rec || !rec.bytes) throw new Error('not cached'); return rec.bytes; }]);
+    for (const [source, name, get] of tries) {
+      try {
+        const ab = await get();
+        const buf = await decodeAudio(ab);
+        return this.makeTrack(key, buf, name, source);
+      } catch (e) { if (source !== 'cache') console.warn(`[music] ${key}: ${source} failed`, e); }
+    }
+    return this.fallback(key);
+  },
+  makeTrack(key, buf, name, source) {
+    const def = this.def(key), t = makeSongTrack(buf, name, def);
+    if (CONFIG.AUTO_SYNC) { t.offset = estimateOffset(buf, t.bpm, def.music.offset, CONFIG.AUTO_SYNC_WINDOW); t.autoSynced = t.offset; }
+    t.source = source; t.key = key;
+    return t;
+  },
+  fallback(key) { const t = this.def(key).fallbackMusic(); t.source = 'fallback'; t.key = key; return t; },
+  // the track for a key (decoded once, then reused until retain() drops it)
+  getTrack(key) {
+    if (this.live[key]) return Promise.resolve(this.live[key]);
+    if (!this.pending[key]) {
+      const t0 = performance.now();
+      this.pending[key] = this.load(key).then((t) => {
+        delete this.pending[key];
+        if (this.live[key]) return this.live[key];   // a file picked meanwhile (replace) wins
+        this.live[key] = t;
+        console.log(`[music] ${key}: ${t.source} "${t.name}" ready in ${Math.round(performance.now() - t0)} ms (${t.duration.toFixed(1)} s)`);
+        this.notify(key);
+        return t;
+      });
+    }
+    return this.pending[key];
+  },
+  // keep only these decoded: drop every reference to the others (the playing source is already stopped)
+  retain(keys) {
+    for (const k in this.live) {
+      if (keys.includes(k)) continue;
+      const t = this.live[k];
+      delete this.live[k];
+      if (G.audio.track === t) G.audio.track = null;
+      if (G.clock.track === t) G.clock.track = null;
+    }
+  },
+  // Settings > MUSIC > REPLACE: play the picked file from now on (it wins for this session) and keep a copy in
+  // IndexedDB for any later session the overrides / music pack don't cover
+  async replace(key, file) {
+    const bytes = await file.arrayBuffer(), name = file.name.replace(/\.[^.]+$/, '');
+    let t;
+    try { t = this.makeTrack(key, await decodeAudio(bytes.slice(0)), name, 'file'); }   // decodeAudioData detaches its input
+    catch (e) { throw new Error('that file could not be decoded'); }
+    this.session[key] = { name, bytes };
+    if (await AudioCache.put(key, { name, bytes, savedAt: Date.now() }) !== null) { this.cached[key] = { name }; AudioCache.put('meta:' + key, { name }); }
+    const was = this.live[key];
+    this.live[key] = t;
+    // a scene with this track is running: swap the music in place (same section)
+    if (was && G.audio.track === was) {
+      G.audio.track = t; G.clock.setTrack(t);
+      if (G.inWorld && G.clock.running && G.clock.section) G.clock.play(G.clock.section);
+    }
+    this.notify(key);
+    return t;
+  },
+};
 
 // ---------------- boss 1 procedural fallback chiptune: D minor, at the boss's BPM ----------------
 function synthFallbackTrack(bpm) {
@@ -1159,6 +1382,122 @@ function synthKiddieFallback(bpm) {
   };
 }
 
+// ---------------------------------------------------------------------------
+//  KNOBS' SHOP music: "made this beat to practice mastering" (1:30.7), measured
+//  from the supplied MP3 (spectral-flux comb filter, band-split kick timing, beat
+//  chroma self-similarity): 106.00 BPM (beat 0.56604 s; the brief's ~107 drifts by
+//  ~0.8 beats over the song), kicks at 0.524 + 0.566 k s, 4-bar phrases starting on
+//  the bar line at 6.184 s (bar 2 of a 4/4 grid from 1.656 s). A soft intro to ~3.4 s,
+//  the groove from 6.184 s, short drops/stops near 0:22, 0:31, 1:05, 1:18 and 1:22, the
+//  last hit at ~88.0 s, silent by 88.5 s. Tonic D, like every boss track. Bass-heavy:
+//  ~56% of its spectral energy sits below 150 Hz.
+//  The loop is the brief's 6.2 -> 88.6 s snapped to whole bars - 6.184 -> 87.693 s is
+//  exactly 36 bars (9 phrases), so the room's beat clock never drifts - with a 150 ms
+//  equal-power crossfade at the seam (AudioEngine.playLooped). Both points are tunable.
+// ---------------------------------------------------------------------------
+const SHOP_MUSIC = {
+  bpm: 106.0,
+  offset: 1.656,                 // song time (s) of bar 0
+  beatsPerBar: 4,
+  songLength: 90.697,
+  loopStart: 6.184,              // brief 6.2   (bar 2, the groove's first phrase)
+  loopEnd: 87.693,               // brief 88.6  (bar 38: the track's own stop before its last hit)
+  xfade: 0.15,                   // crossfade at the loop seam (s)
+  sections: { L: { start: 6.184, end: 87.693 } },
+  labels: [[0, 'INTRO'], [6.184, 'GROOVE'], [87.693, 'END']],
+  // a different file in this slot: loop from its third bar to its last whole bar
+  adapt(d) { const bar = 60 / 106 * 4, s = 1.656 + 2 * bar, n = Math.max(1, Math.floor((d - 1.0 - s) / bar)); return { sections: { L: { start: s, end: s + n * bar } }, labels: [[0, 'INTRO'], [s, 'GROOVE']] }; },
+};
+// procedural fallback: a swung lo-fi hip-hop beat in D minor on the same bar map (soft intro,
+// the groove from bar 2 to bar 38, a last chord). FM electric piano, sub bass, dusty drums,
+// vinyl crackle. 22.05 kHz mono.
+function synthShopFallback(bpm) {
+  const SR = 22050, beat = 60 / bpm, bar = beat * 4, s16 = beat / 4;
+  const OFF = SHOP_MUSIC.offset, tB = (b) => OFF + b * bar, NB = 38;
+  const len = Math.ceil((tB(NB) + 3.4) * SR);
+  const out = new Float32Array(len);
+  const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  const TL = 2048, ST = new Float32Array(TL + 1);
+  for (let i = 0; i <= TL; i++) ST[i] = Math.sin(i / TL * TAU);
+  const sn = (ph) => { const x = (ph - Math.floor(ph)) * TL, i = x | 0; return ST[i] + (ST[i + 1] - ST[i]) * (x - i); };   // ph in cycles
+  // electric piano: one FM pair per note (index decays), slow tremolo
+  function keys(t0, dur, notes, vol) {
+    for (const m of notes) {
+      const f = mtof(m) * (1 + (Math.random() - 0.5) * 0.003), i0 = Math.floor(t0 * SR), n = Math.floor((dur + 0.7) * SR);
+      let ph = Math.random();
+      for (let i = 0; i < n; i++) {
+        const k = i0 + i; if (k >= len) break;
+        const t = i / SR; ph += f / SR;
+        const idx = 0.12 + 0.3 * Math.exp(-t * 6);
+        let env = Math.min(1, t / 0.008) * (0.3 + 0.7 * Math.exp(-t * 1.8)) * (1 - 0.12 * (0.5 + 0.5 * sn(t * 4.2)));
+        if (t > dur) env *= Math.exp(-(t - dur) * 8);
+        out[k] += sn(ph + idx * sn(ph * 2)) * vol * env;
+      }
+    }
+  }
+  function sub(t0, dur, m, vol) {
+    const f = mtof(m), i0 = Math.floor(t0 * SR), n = Math.floor(dur * SR); let ph = 0;
+    for (let i = 0; i < n; i++) { const k = i0 + i; if (k >= len) break; ph += f / SR; const t = i / SR; out[k] += sn(ph) * vol * Math.min(1, t / 0.01) * Math.min(1, (n - i) / (0.04 * SR)); }
+  }
+  function kick(t0, vol) {
+    const i0 = Math.floor(t0 * SR), n = Math.floor(0.32 * SR); let ph = 0;
+    for (let i = 0; i < n; i++) { const k = i0 + i; if (k >= len) break; const t = i / SR; ph += (44 + 80 * Math.exp(-t * 28)) / SR; out[k] += sn(ph) * vol * Math.exp(-t * 9); }
+  }
+  function noise(t0, dur, vol, decay, hp, lp) {
+    const i0 = Math.floor(t0 * SR), n = Math.floor(dur * SR); let prev = 0, l = 0;
+    for (let i = 0; i < n; i++) {
+      const k = i0 + i; if (k >= len) break;
+      const w = Math.random() * 2 - 1; let v = hp ? (w - prev) * 0.5 : w; prev = w;
+      if (lp) { l += (v - l) * lp; v = l; }
+      out[k] += v * vol * Math.exp(-i / (decay * SR));
+    }
+  }
+  function snare(t0, vol) {
+    noise(t0, 0.22, vol, 0.06, true, 0.55);
+    const i0 = Math.floor(t0 * SR), n = Math.floor(0.09 * SR); let ph = 0;
+    for (let i = 0; i < n; i++) { const k = i0 + i; if (k >= len) break; ph += 185 / SR; out[k] += sn(ph) * vol * 0.55 * Math.exp(-i / (0.028 * SR)); }
+  }
+  const CH = [[38, [53, 57, 60, 64]], [34, [58, 62, 65, 69]], [31, [58, 62, 65, 69]], [33, [55, 61, 64, 70]]];   // Dm9, Bbmaj7, Gm9, A7b9
+  const swing = (i) => (i % 2 ? s16 * 0.17 : 0);
+  // the intro: crackle and soft keys, then hats creep in
+  for (let b = 0; b < 2; b++) { const [, v] = CH[b % 4]; keys(tB(b), bar * 0.95, v, b ? 0.05 : 0.035); }
+  for (let i = 0; i < 16; i++) noise(tB(1) + i * beat / 2 + swing(i), 0.03, 0.012 + i * 0.0015, 0.012, true);
+  // the groove: bars 2-37 (the loop), drum stops on the last beat of every phrase, two bars with keys only
+  for (let b = 2; b < NB; b++) {
+    const [root, v] = CH[(b - 2) % 4], t0 = tB(b), ph = (b - 2) % 4, quiet = b === 21 || b === 33;
+    keys(t0, bar * 0.92, v, 0.06);
+    if (ph === 1 || ph === 3) keys(t0 + 2.5 * beat, beat * 0.9, [v[2] + 12, v[3] + 12], 0.03);
+    if (quiet) continue;
+    const stop = ph === 3;
+    sub(t0, beat * 1.6, root, 0.3); sub(t0 + 2 * beat, beat * (stop ? 0.9 : 1.4), root + (ph === 2 ? 2 : 0), 0.26);
+    if (!stop) sub(t0 + 3.5 * beat, beat * 0.45, root + 7, 0.18);
+    kick(t0, 0.75); kick(t0 + 2.5 * beat, 0.55); if (ph % 2 === 0) kick(t0 + 1.75 * beat, 0.4);
+    snare(t0 + beat, 0.28); if (!stop) snare(t0 + 3 * beat, 0.28);
+    for (let i = 0; i < (stop ? 12 : 16); i++) noise(t0 + i * s16 + swing(i), 0.025, i % 4 === 2 ? 0.05 : 0.028, 0.01, true);
+    if (!stop && b % 2) noise(t0 + 3.5 * beat + swing(1), 0.18, 0.025, 0.08, true);
+  }
+  // the last chord
+  kick(tB(NB), 0.7); keys(tB(NB), bar * 1.1, [53, 57, 60, 64], 0.06); sub(tB(NB), bar, 38, 0.28);
+  // vinyl crackle over everything (fades out after the last chord)
+  let lp = 0;
+  for (let i = 0; i < len; i++) {
+    const t = i / SR, fade = t > tB(NB) + 1.5 ? Math.max(0, 1 - (t - tB(NB) - 1.5) / 1.5) : 1;
+    lp += ((Math.random() * 2 - 1) - lp) * 0.08;
+    out[i] += (lp * 0.01 + (Math.random() < 0.0009 ? (Math.random() - 0.5) * 0.18 : 0)) * fade;
+  }
+  let peak = 0; for (let i = 0; i < len; i++) { const a = Math.abs(out[i]); if (a > peak) peak = a; }
+  const norm = peak > 0 ? 0.88 / peak : 1; for (let i = 0; i < len; i++) out[i] *= norm;
+  const buffer = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: SR });
+  buffer.copyToChannel(out, 0);
+  return {
+    name: 'procedural lo-fi beat (fallback)', buffer, bpm, offset: OFF, beatsPerBar: 4, duration: buffer.duration, fallback: true, boss: 'shop',
+    rawSections: { L: { start: tB(2), end: tB(NB) } }, sections: {}, marks: null, autoSynced: null,
+    labels: [[0, 'INTRO'], [tB(2), 'GROOVE'], [tB(NB), 'END']],
+  };
+}
+// the shop as a music "definition" (the library treats it like a boss track)
+const SHOP_DEF = { id: 'shop', songTitle: MUSIC_INFO.shop.title, music: SHOP_MUSIC, beatsPerBar: 4, fallbackMusic() { return synthShopFallback(SHOP_MUSIC.bpm); }, fallbackLabel: 'lo-fi beat, D minor' };
+
 // ============================================================================
 //  Sfx - every sound effect is synthesized (oscillators, noise, envelopes)
 // ============================================================================
@@ -1373,7 +1712,7 @@ class BeatClock {
     this.freeTime = false; this.onOnset = []; this.lastCue = 0;
     this.dispatching = null;        // half-beat currently being dispatched (seek guard)
     this.running = false;
-    this.seg = { ctx0: 0, pos0: 0, beat0: 0, rate: 1, ramp: null, loopStart: 0, loopEnd: 1e9 };
+    this.seg = { ctx0: 0, pos0: 0, beat0: 0, rate: 1, ramp: null, loopStart: 0, loopEnd: 1e9, xfade: 0 };
     this.songTime = 0; this.beat = 0; this.beatIndex = 0; this.barIndex = 0; this.beatPhase = 0; this.barPhase = 0;
     this.nextHalf = 0;
     this.onBeat = []; this.onBar = []; this.onHalfBeat = [];
@@ -1437,7 +1776,7 @@ class BeatClock {
   startSeg(o, keepCounters) {
     const s = this.seg;
     s.ctx0 = o.ctx0; s.pos0 = o.pos0; s.beat0 = o.beat0; s.rate = o.rate; s.ramp = o.ramp || null;
-    s.loopStart = o.loopStart; s.loopEnd = o.loopEnd;
+    s.loopStart = o.loopStart; s.loopEnd = o.loopEnd; s.xfade = o.xfade || 0;
     this.running = true;
     if (!keepCounters) {
       this.nextHalf = Math.ceil(o.beat0 * 2 - 1e-6);
@@ -1459,9 +1798,10 @@ class BeatClock {
     const loopEnd = opts.loopEnd !== undefined ? opts.loopEnd : sec.end;
     const beat0 = opts.beat0 !== undefined ? opts.beat0 : this.rebase(pos);
     const loop = opts.loop !== false;   // false: play on to the end of the track (ending outros)
+    const xl = loop && opts.xloop ? opts.xloop : 0;   // crossfade every loop pass over this many seconds
     if (opts.xfade) a.crossfadeSegment(pos, sec.start, loop ? loopEnd : this.track.buffer.duration, when, opts.xfade, loop);
-    else a.playSegment(pos, sec.start, loop ? loopEnd : this.track.buffer.duration, when, 1, loop);
-    this.startSeg({ ctx0: when, pos0: pos, beat0, rate: 1, ramp: null, loopStart: sec.start, loopEnd: loop ? loopEnd : 1e9 });
+    else a.playSegment(pos, sec.start, loop ? loopEnd : this.track.buffer.duration, when, 1, loop, xl);
+    this.startSeg({ ctx0: when, pos0: pos, beat0, rate: 1, ramp: null, loopStart: sec.start, loopEnd: loop ? loopEnd : 1e9, xfade: xl });
     this.section = name;
   }
   // seekIntoGap: jump the song to `pos` exactly on the bar line at ctx time `when`
@@ -1480,6 +1820,8 @@ class BeatClock {
     s.loopEnd = end;
     const src = this.audio.source;
     if (src) src.loopEnd = clamp(end, src.loopStart + 0.05, this.track.buffer.duration);
+    const xl = this.audio.xl;
+    if (xl) { xl.tc += (end - xl.loopEnd) / xl.rate; xl.loopEnd = end; }
   }
   // glitchy transition: tape-stop now, then snap to `name` and call onSnap
   tapeStopTo(name, when, onSnap) {
@@ -1508,7 +1850,7 @@ class BeatClock {
   pause() {
     const a = this.audio; if (!a.ctx) return;
     this.update();
-    this.paused = { pos: this.songTime, beat: this.beat, running: this.running, loopStart: this.seg.loopStart, loopEnd: this.seg.loopEnd, rate: this.rateAt(this.now), section: this.section };
+    this.paused = { pos: this.songTime, beat: this.beat, running: this.running, loopStart: this.seg.loopStart, loopEnd: this.seg.loopEnd, xfade: this.seg.xfade, rate: this.rateAt(this.now), section: this.section };
     if (this.running) a.stopMusic(a.now, 0.03);
     this.running = false;
     a.userPaused = true;
@@ -1528,8 +1870,8 @@ class BeatClock {
       const t = a.now + 0.15;
       for (let i = 0; i < 3; i++) a.sfx.count(t + i * bd, i === 2);
       const start = t + 3 * bd;
-      a.playSegment(pos, p.loopStart, p.loopEnd, start, rate);
-      this.startSeg({ ctx0: start, pos0: pos, beat0: Math.floor(p.beat), rate, ramp: null, loopStart: p.loopStart, loopEnd: p.loopEnd }, true);
+      a.playSegment(pos, p.loopStart, p.loopEnd, start, rate, true, p.xfade || 0);
+      this.startSeg({ ctx0: start, pos0: pos, beat0: Math.floor(p.beat), rate, ramp: null, loopStart: p.loopStart, loopEnd: p.loopEnd, xfade: p.xfade }, true);
       this.section = p.section;
       this.countIn = { t, bd };
       this.after(start, () => { this.countIn = null; if (onDone) onDone(); });
@@ -3522,7 +3864,6 @@ class UI {
       { label: 'START', icon: 'play', onPress: () => B.titleStart() },
       { label: 'SETTINGS', icon: 'gear', onPress: () => B.openSettings('title') },
       { label: 'HOW TO PLAY', icon: 'book', onPress: () => B.openHowTo() },
-      { label: 'LOAD MUSIC', icon: 'note', onPress: () => B.inWorldLoadMusic() },
     ], { yOff: -0.42 });
     // SAVE FILES: Undertale-style file cards (pixel font, box outline)
     const card = (id) => ({ face: { cw: 330, ch: 168, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, onPress: () => B.chooseFile(id) });
@@ -3546,15 +3887,21 @@ class UI {
     this.retryMenu = new Menu([{ label: 'RETRY', icon: 'heart', onPress: () => B.retry() }, { label: 'TITLE', icon: 'back', onPress: () => B.toTitle() }], { yOff: -0.4 });
     this.endMenu = new Menu([{ label: 'RETURN TO TITLE', icon: 'back', onPress: () => B.toTitle() }], { yOff: -0.4 });
     this.howMenu = new Menu([{ label: 'BACK', icon: 'back', onPress: () => B.closeHowTo() }], { yOff: -0.45 });
-    // settings: a panel + arrow buttons per row + action buttons
+    // settings: a panel with tabs (GAME / COMFORT / AUDIO) + arrow buttons per row (+ REPLACE per track) + action buttons
     this.setPanel = new TextPanel({ w: 1.25, h: 1.06, cw: 500, ch: 424, scale: 2, pad: 14, renderOrder: 8 });
     scene.add(this.setPanel.mesh); this.setPanel.mesh.visible = false;
+    this.setPage = 'game';
     const defs = [];
     for (const sc of Settings.schema) {
       defs.push({ label: '<', onPress: () => { Settings.step(sc.key, -1); this.drawSettings(); }, scale: 3 });
       defs.push({ label: '>', onPress: () => { Settings.step(sc.key, 1); this.drawSettings(); }, scale: 3 });
     }
+    for (const k of MUSIC_KEYS) defs.push({ label: 'REPLACE', scale: 2, color: '#2affd5', onPress: () => B.replaceMusic(k) });
     this.setArrows = new Menu(defs, { primary: false });
+    this.setTabs = new Menu(Settings.pages.map((pg) => ({ label: pg.name, scale: 2, onPress: () => this.showSettingsPage(pg.id) })), { primary: false });
+    // "tuning instruments...": a spinning record while a scene's music decodes
+    this.loading = new TextPanel({ w: 0.8, h: 0.24, cw: 400, ch: 120, bg: null, border: null, renderOrder: 60, depthTest: false });
+    scene.add(this.loading.mesh); this.loading.mesh.visible = false; this.loadT = 0; this.loadDrawT = 0;
     this.setActions = new Menu([
       { label: 'RESUME', icon: 'play', onPress: () => B.closeSettings() },
       { label: 'RECENTER', onPress: () => B.recenter() },
@@ -3802,23 +4149,53 @@ class UI {
   }
   hideBig() { this.big.mesh.visible = false; this.bigTW.done = true; }
   // ------------------------------------------------------------------ settings panel
+  // the rows on a settings page: schema entries, then (AUDIO) one row per music track
+  settingsRows(page) {
+    const rows = Settings.schema.filter((sc) => sc.page === page).map((sc) => ({ sc }));
+    if (page === 'audio') for (const k of MUSIC_KEYS) rows.push({ music: k });
+    return rows;
+  }
+  showSettingsPage(id) {
+    if (this.setPage === id) return;
+    this.setPage = id;
+    if (this.setPanel.mesh.visible) { this.layoutSettings(); this.drawSettings(); }
+  }
+  // tabs along the top, arrows / REPLACE on the current page's rows
+  layoutSettings() {
+    const p = this.setPanel.mesh, rows = this.settingsRows(this.setPage), face = _v2.copy(Head.pos);
+    p.updateMatrixWorld(true);
+    const at = (u, v, z = 0.02) => p.localToWorld(new THREE.Vector3(u, v, z));
+    const rowV = (i) => (0.5 - (64 + i * 44 + 7) / 424) * 1.06;
+    // tabs: to the right of the SETTINGS heading
+    const tp = []; let x = -0.06;
+    this.setTabs.buttons.forEach((b, i) => {
+      const on = Settings.pages[i].id === this.setPage;
+      b.colorN = on ? '#ffe600' : '#8a8a8a'; b.draw();
+      tp.push(at(x + b.w / 2, (0.5 - 26 / 424) * 1.06)); x += b.w + 0.025;
+    });
+    this.setTabs.showAt(tp, face);
+    for (const b of this.setTabs.buttons) b.root.quaternion.copy(p.quaternion);
+    const pos = [], A = this.setArrows.buttons, nS = Settings.schema.length;
+    Settings.schema.forEach((sc, i) => {
+      const r = rows.findIndex((x) => x.sc === sc);
+      A[2 * i].hidden = A[2 * i + 1].hidden = r < 0;
+      pos.push(r < 0 ? null : at(0.12, rowV(r)), r < 0 ? null : at(0.56, rowV(r)));
+    });
+    MUSIC_KEYS.forEach((k, j) => {
+      const r = rows.findIndex((x) => x.music === k), b = A[2 * nS + j];
+      b.hidden = r < 0;
+      pos.push(r < 0 ? null : at(0.5, rowV(r)));
+    });
+    this.setArrows.showAt(pos, face);
+    for (const b of A) b.root.quaternion.copy(p.quaternion);
+  }
   openSettingsPanel(fromTitle) {
     Head.update();
     const p = this.setPanel.mesh;
     Head.rel(p.position, 0, G.xr ? -0.05 : 0.08, G.xr ? 1.05 : 1.55);
     p.lookAt(Head.pos); p.visible = true;
     this.drawSettings();
-    // arrows on each row
-    const rows = Settings.schema.length;
-    const pos = [];
-    for (let i = 0; i < rows; i++) {
-      const v = (0.5 - (14 + 22 + i * 32 + 10) / 424) * 1.06;
-      for (const side of [0.12, 0.56]) {
-        _v1.set(side, v, 0.02); pos.push(p.localToWorld(_v1.clone()));
-      }
-    }
-    this.setArrows.showAt(pos, _v2.copy(Head.pos));
-    for (const b of this.setArrows.buttons) b.root.quaternion.copy(p.quaternion);
+    this.layoutSettings();
     this.setActions.buttons[0].setLabel(fromTitle ? 'BACK' : 'RESUME');
     this.setActions.buttons[2].hidden = !!fromTitle;
     const ap = [];
@@ -3834,19 +4211,57 @@ class UI {
   }
   drawSettings() {
     const P = this.setPanel, g = P.ctx, W = P.o.cw, H = P.o.ch;
+    g.clearRect(0, 0, W, H);
     g.fillStyle = 'rgba(0,0,0,0.94)'; g.fillRect(0, 0, W, H);
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, 4); g.fillRect(0, H - 4, W, 4); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
-    PixelFont.draw(g, 'SETTINGS', 18, 12, 3, '#ffd23c');
-    Settings.schema.forEach((sc, i) => {
-      const y = 14 + 22 + i * 32 + 4;
-      PixelFont.draw(g, sc.label, 18, y, 2, '#ffffff');
-      const v = Settings.display(sc.key);
-      const cx = Math.round((0.34 / 1.25 + 0.5) * W);
-      PixelFont.draw(g, v, cx - Math.round(PixelFont.width(v, 2) / 2), y, 2, '#2affd5');
+    PixelFont.draw(g, 'SETTINGS', 18, 16, 3, '#ffd23c');
+    g.fillStyle = '#333'; g.fillRect(14, 50, W - 28, 2);
+    const cx = Math.round((0.34 / 1.25 + 0.5) * W);
+    this.settingsRows(this.setPage).forEach((row, i) => {
+      const y = 64 + i * 44;
+      if (row.sc) {
+        const sc = row.sc;
+        PixelFont.draw(g, sc.label, 18, y, 2, '#ffffff');
+        const v = Settings.display(sc.key);
+        PixelFont.draw(g, v, cx - Math.round(PixelFont.width(v, 2) / 2), y, 2, '#2affd5');
+        return;
+      }
+      // a music track: "BOSS 1: TITLE" / status (+ BPM), REPLACE button on the right
+      const k = row.music, I = MUSIC_INFO[k], st = MusicLibrary.status(k), t = MusicLibrary.live[k];
+      const head = `${I.label}: ${I.title}`;
+      PixelFont.draw(g, head.length > 32 ? head.slice(0, 31) + '.' : head, 18, y - 8, 2, '#ffffff');
+      const col = MUSIC_STATUS_COL[st] || '#ff9d1a';
+      PixelFont.draw(g, st + (t ? `  ${t.bpm} BPM` : ''), 18, y + 10, 2, col);
     });
     P.tex.needsUpdate = true;
   }
-  closeSettingsPanel() { this.setPanel.mesh.visible = false; this.setArrows.hide(); this.setActions.hide(); }
+  closeSettingsPanel() { this.setPanel.mesh.visible = false; this.setArrows.hide(); this.setTabs.hide(); this.setActions.hide(); }
+  // ------------------------------------------------------------------ "tuning instruments..."
+  showLoading(on) {
+    const m = this.loading.mesh;
+    if (on && !m.visible) { Head.update(); Head.rel(m.position, 0, 0.02, 1.4); m.lookAt(Head.pos); this.loadT = 0; this.loadDrawT = 0; }
+    m.visible = !!on;
+  }
+  drawLoading(rdt) {
+    this.loadT += rdt; this.loadDrawT -= rdt;
+    if (this.loadDrawT > 0) return; this.loadDrawT = 0.07;
+    const P = this.loading, g = P.ctx, W = P.o.cw, H = P.o.ch, t = this.loadT;
+    g.clearRect(0, 0, W, H);
+    // a little record spinning on a platter
+    const cx = 56, cy = 60, a = t * 3.2;
+    g.fillStyle = '#0d0a10'; g.beginPath(); g.arc(cx, cy, 44, 0, TAU); g.fill();
+    g.strokeStyle = '#2a2430'; g.lineWidth = 2;
+    for (const r of [36, 29, 22]) { g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.stroke(); }
+    g.strokeStyle = 'rgba(255,240,220,0.55)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, 33, a, a + 0.7); g.stroke();
+    g.beginPath(); g.arc(cx, cy, 26, a + Math.PI, a + Math.PI + 0.5); g.stroke();
+    g.fillStyle = '#ffb347'; g.beginPath(); g.arc(cx, cy, 13, 0, TAU); g.fill();
+    g.fillStyle = '#000'; g.beginPath(); g.arc(cx, cy, 2.5, 0, TAU); g.fill();
+    const dots = '.'.repeat(1 + (Math.floor(t * 3) % 3));
+    PixelFont.draw(g, '♪ TUNING', 118, 34, 3, '#ffd23c', { shadow: '#000' });
+    PixelFont.draw(g, 'INSTRUMENTS' + dots, 118, 66, 3, '#ffffff', { shadow: '#000' });
+    P.tex.needsUpdate = true;
+  }
   // ------------------------------------------------------------------ how-to panel
   openHowTo() {
     Head.update();
@@ -3913,10 +4328,14 @@ class UI {
   showTitle(v) {
     this.title.visible = v;
     if (v) this.setBattleHUD(false);
-    if (v) {
-      const T = G.audio.tracks, line = (n, t) => `BOSS ${n} MUSIC: ` + (t ? t.name.toUpperCase().slice(0, 30) + ' ✓' : 'PROCEDURAL FALLBACK');
-      this.titleSub.setText(line(1, T.proprietor) + '\n' + line(2, T.kiddie) + '\n' + line(3, T.ringmaster));
-    }
+    if (v) this.titleSub.setText(this.titleLines());
+  }
+  titleLines() {
+    const n = MUSIC_KEYS.filter((k) => MusicLibrary.source(k) !== 'fallback').length;
+    const all = MUSIC_KEYS.every((k) => MusicLibrary.source(k) === 'pack' || MusicLibrary.source(k) === 'override');
+    if (all) return `♪ SOUNDTRACK BUILT IN  ${n}/${MUSIC_KEYS.length} ✓`;
+    return n === MUSIC_KEYS.length ? `♪ MUSIC  ${n}/${MUSIC_KEYS.length} TRACKS READY ✓`
+      : `♪ MUSIC  ${n}/${MUSIC_KEYS.length} TRACKS READY\nTHE OTHERS PLAY PROCEDURAL MUSIC (SETTINGS > AUDIO)`;
   }
   // ------------------------------------------------------------------ pointer interaction
   updateInteraction(dt) {
@@ -4020,6 +4439,7 @@ class UI {
       this.title.lookAt(Head.pos.x, this.title.position.y, Head.pos.z);
     }
     if (this.howPanel.mesh.visible) this.drawHowTo(rdt);
+    if (this.loading.mesh.visible) this.drawLoading(rdt);
     this.updateInteraction(rdt);
   }
 }
@@ -6499,7 +6919,8 @@ class Battle {
   loadBoss(def) {
     if (this.def && this.def !== def) this.releaseBoss();   // straight from one boss to the next (campaign hijack)
     this.def = G.def = def;
-    setActiveTrack(def.id);
+    this.useTrack(MusicLibrary.live[def.id]);
+    MusicLibrary.retain([def.id, 'shop']);   // free every other decoded track
     G.arena.setTheme(def.arenaTheme); G.bg.setTheme(def.bgTheme); G.bg.setRed(false, true);
     G.bg.disposeServer();   // free the boss looks this boss doesn't use
     G.bullets.setPalette(def.palette);
@@ -6507,6 +6928,22 @@ class Battle {
     else G.boss.reset();
     for (const k of def.kits || []) k.init();   // build its attack kits now, during the intro
     if (def.onLoad) def.onLoad(this);
+  }
+  // make a decoded track the one the clock plays
+  useTrack(t) {
+    if (!t) return;
+    G.audio.track = t; G.clock.setTrack(t);
+  }
+  // the scene's music is still decoding: "tuning instruments..." until it is ready, then carry on
+  waitForMusic(key, then) {
+    const tok = this.loadTok = {};
+    this.setState('LOADING');
+    G.ui.showLoading(true);
+    MusicLibrary.getTrack(key).then(() => {
+      if (this.loadTok !== tok) return;
+      this.loadTok = null; G.ui.showLoading(false);
+      if (this.state === 'LOADING') then();
+    });
   }
   // destroy the boss model, the attack kits and the boss's own UI (frees geometries, materials, canvases)
   releaseBoss() {
@@ -6550,8 +6987,10 @@ class Battle {
   toTitle() {
     this.cleanup();
     this.pausedMenus = null;
+    this.loadTok = null; G.ui.showLoading(false);
     G.clock.stop(0.4);
     this.unloadBoss();
+    MusicLibrary.retain(['shop']);
     debugLogMemory('title (boss model destroyed)');
     G.audio.drone(true);
     rig.position.set(0, 0, 0); rig.rotation.set(0, 0, 0); Head.update();
@@ -6580,6 +7019,7 @@ class Battle {
     }
     G.ui.saveMenu.hide(); G.ui.hideBig();
     this.pendingBoss = id;
+    MusicLibrary.getTrack(id);   // decode its music while the warning is up
     this.setState('SAFETY_WARNING');
     G.ui.showBig('!  WARNING  !\n\nThis game contains flashing lights\nand strobing effects.\n\nChoose your visual mode.\n(Reduced is recommended and selected.)', { scale: 3, dist: 1.7, y: 0.2, color: '#ffffff' });
     G.ui.safetyMenu.showArc({ yOff: -0.45 });
@@ -6592,10 +7032,11 @@ class Battle {
   openSettings() { G.ui.titleMenu.hide(); G.ui.showTitle(false); this.setState('SETTINGS'); G.ui.openSettingsPanel(true); }
   openHowTo() { G.ui.titleMenu.hide(); G.ui.showTitle(false); this.setState('HOW_TO'); G.ui.openHowTo(); }
   closeHowTo() { G.ui.closeHowTo(); G.ui.showTitle(true); this.setState('TITLE'); G.ui.titleMenu.showArc(); }
-  inWorldLoadMusic() {
-    if (G.xr) { G.ui.showPrompt('EXIT VR, PRESS "LOAD BOSS 1/2 MUSIC" ON THE PAGE, THEN ENTER VR AGAIN', 4.5, '#ffffff'); return; }
+  // Settings > MUSIC > REPLACE: a file picker can't open inside an immersive session, so VR points to the page
+  replaceMusic(key) {
+    if (G.xr) { G.ui.showPrompt('TO REPLACE A TRACK: EXIT VR, THEN SETTINGS > MUSIC > REPLACE ON THE PAGE', 4.5, '#ffffff'); return; }
     if (document.pointerLockElement) document.exitPointerLock();
-    showOverlay('Pick an MP3 with <b>LOAD BOSS 1 MUSIC</b> or <b>LOAD BOSS 2 MUSIC</b>, then press <b>PLAY ON DESKTOP</b> to return.');
+    pickMusicFile(key);
   }
   // ------------------------------------------------------------------ flow: battle start
   calibrate() {
@@ -6609,6 +7050,7 @@ class Battle {
   }
   startBattle(id, opts = {}) {
     const def = BOSSES[id] || this.def;
+    if (!MusicLibrary.ready(def.id)) { G.audio.drone(false); this.waitForMusic(def.id, () => this.startBattle(id, opts)); return; }
     G.audio.drone(false);
     this.cleanup();
     this.loadBoss(def);
@@ -7044,6 +7486,7 @@ class Battle {
   // campaign: boss 1's ending gets hijacked -> "lol wait dont leave yet" -> boss 2
   hijack() {
     const U = G.ui;
+    MusicLibrary.getTrack('kiddie');   // decode boss 2's music during the interruption
     this.afterIn('RESULTS', 1.6, () => {
       G.audio.sfx.glitch(); G.fx.glitchSpike = 0.8; G.audio.sfx.popDing();
       Head.update();
@@ -13813,6 +14256,7 @@ const RM_TALK_STATES = ['PLAYER_MENU', 'ACT_MENU', 'ITEM_MENU', 'MERCY', 'NARRAT
 // ---------------------------------------------------------------------------
 function admitTicketCampaign(B) {
   const K = BOSSES.kiddie;
+  MusicLibrary.getTrack('ringmaster');   // decode boss 3's music while the ticket flutters down
   B.afterIn('RESULTS', 1.4, () => {
     if (!K.ticket) K.ticket = new AdmitTicket();
     G.ui.showPrompt('A TICKET FLUTTERS DOWN...  (RETURN TO TITLE TO SKIP)', 4, '#ffc83c');
@@ -14599,16 +15043,18 @@ window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, KITS: { BigTo
 const overlay = document.getElementById('overlay');
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function setStatus(html) { document.getElementById('status').innerHTML = html; }
-function trackStatus(id, n) {
-  const t = G.audio.tracks[id], fb = G.audio.fallbacks[id];
-  if (t) return `Boss ${n} music: <b>${escapeHtml(t.name)}</b> &#10003; &middot; ${t.duration.toFixed(1)} s &middot; ${t.bpm} BPM &middot; beat offset ${t.offset.toFixed(3)} s${t.autoSynced !== null ? ' (auto-synced)' : ''}`;
-  return `Boss ${n} music: <b>procedural fallback</b>${fb ? ` (${fb.bpm} BPM &middot; ${BOSSES[id].fallbackLabel || 'D minor'})` : ' (generating&hellip;)'} &mdash; press <b>LOAD BOSS ${n} MUSIC</b> for &ldquo;${BOSSES[id].songTitle}&rdquo;`;
+// page status: the soundtrack (every track built in via music_pack.js)
+function musicHeadline() {
+  const n = MUSIC_KEYS.filter((k) => MusicLibrary.source(k) !== 'fallback').length, st = window.MANIC_MUSIC_STATUS;
+  const all = MUSIC_KEYS.every((k) => MusicLibrary.source(k) === 'pack' || MusicLibrary.source(k) === 'override');
+  if (all) return `&#9835; Soundtrack built in &mdash; <b>${n}/${MUSIC_KEYS.length}</b> tracks &#10003;`;
+  const why = st === 'missing' ? '<b>music_pack.js</b> was not found next to index.html'
+    : st === 'empty' ? '<b>music_pack.js</b> loaded but defines no tracks' : st === 'ok' ? 'some tracks are not in the music pack' : 'the music pack is still loading';
+  return `&#9835; Soundtrack: <b>${n}/${MUSIC_KEYS.length}</b> tracks ready &mdash; ${why}.` + (n < MUSIC_KEYS.length ? ' The others play procedural fallbacks (Settings &rsaquo; Music &rsaquo; Replace&hellip; adds your own copy).' : '');
 }
 function updateStatus() {
-  setStatus(trackStatus('proprietor', 1) + '<br>' + trackStatus('kiddie', 2) + '<br>' + trackStatus('ringmaster', 3));
-  document.getElementById('ok1').classList.toggle('on', !!G.audio.tracks.proprietor);
-  document.getElementById('ok2').classList.toggle('on', !!G.audio.tracks.kiddie);
-  document.getElementById('ok3').classList.toggle('on', !!G.audio.tracks.ringmaster);
+  setStatus(musicHeadline());
+  refreshMusicRows();
 }
 function showOverlay(msg) {
   overlay.classList.remove('hidden');
@@ -14616,49 +15062,67 @@ function showOverlay(msg) {
   if (msg) setStatus(msg); else updateStatus();
 }
 function hideOverlay() { overlay.classList.add('hidden'); }
-// the track a boss uses: its loaded MP3, else its procedural fallback (synthesized on demand)
-function trackFor(id) {
-  const A = G.audio;
-  if (A.tracks[id]) return A.tracks[id];
-  if (!A.fallbacks[id]) A.fallbacks[id] = BOSSES[id].fallbackMusic();
-  return A.fallbacks[id];
+// Settings > Music on the page: one row per track with its status and a Replace... button
+const MUSIC_STATUS_COL = { '✓ YOUR FILE': '#3cff6e', '✓ EMBEDDED': '#3cff6e', '✓ BUILT-IN': '#3cff6e', '✓ CACHED': '#2affd5' };
+const musicNotes = {};   // key -> transient note ("decoding...", errors)
+function buildOverlayMusic() {
+  const form = document.getElementById('musicForm');
+  form.innerHTML = '';
+  for (const k of MUSIC_KEYS) {
+    const I = MUSIC_INFO[k];
+    const row = document.createElement('div'); row.className = 'setrow';
+    const lab = document.createElement('label');
+    lab.innerHTML = `${I.label} &middot; &ldquo;${escapeHtml(I.title)}&rdquo;<br><span class="mstat" id="mstat-${k}"></span>`;
+    const btn = document.createElement('button'); btn.className = 'btn small'; btn.textContent = 'Replace…';
+    btn.addEventListener('click', () => pickMusicFile(k));
+    row.appendChild(lab); row.appendChild(btn); form.appendChild(row);
+  }
+  refreshMusicRows();
 }
-function setActiveTrack(id) {
-  const t = trackFor(id);
-  G.audio.track = t;
-  G.clock.setTrack(t);
-}
-async function loadMusicBuffer(ab, name, id) {
-  setStatus(`Decoding <b>${escapeHtml(name)}</b>&hellip;`);
-  try {
-    const def = BOSSES[id];
-    const buf = await decodeAudio(ab);
-    const track = makeSongTrack(buf, name, def);
-    if (CONFIG.AUTO_SYNC) { track.offset = estimateOffset(buf, track.bpm, def.music.offset, CONFIG.AUTO_SYNC_WINDOW); track.autoSynced = track.offset; }
-    G.audio.tracks[id] = track;
-    if (G.def.id === id) {
-      G.audio.track = track; G.clock.setTrack(track);
-      // a fight with this boss is running: swap the music to the new track in place (same section)
-      if (G.inWorld && G.clock.running && G.clock.section) G.clock.play(G.clock.section);
-    }
-    G.ui.showTitle(G.ui.title.visible);
-    updateStatus();
-  } catch (e) {
-    console.warn('music decode failed', e);
-    updateStatus();
-    setStatus(`Could not decode that file (${escapeHtml(e && e.message ? e.message : e)}). That boss keeps its procedural fallback.<br>` + document.getElementById('status').innerHTML);
+function refreshMusicRows() {
+  for (const k of MUSIC_KEYS) {
+    const el = document.getElementById('mstat-' + k); if (!el) continue;
+    const st = MusicLibrary.status(k), t = MusicLibrary.live[k];
+    let txt = st;
+    if (MusicLibrary.source(k) === 'file' || MusicLibrary.source(k) === 'cache') txt += ` (${(MusicLibrary.session[k] || MusicLibrary.cached[k]).name})`;
+    if (t) txt += ` · ${t.bpm} BPM · offset ${t.offset.toFixed(3)} s`;
+    if (musicNotes[k]) txt += ` · ${musicNotes[k]}`;
+    el.textContent = txt;
+    el.style.color = MUSIC_STATUS_COL[st] || '#ff9d1a';
   }
 }
-for (const [n, id] of [[1, 'proprietor'], [2, 'kiddie'], [3, 'ringmaster']]) {
-  const input = document.getElementById('fileInput' + n);
-  document.getElementById('btnLoad' + n).addEventListener('click', () => { G.audio.ensure(); input.click(); });
-  input.addEventListener('change', async () => {
-    const f = input.files && input.files[0]; if (!f) return;
-    const ab = await f.arrayBuffer();
-    await loadMusicBuffer(ab, f.name.replace(/\.[^.]+$/, ''), id);
-    input.value = '';
-  });
+let musicPickKey = null;
+const musicInput = document.getElementById('fileInputMusic');
+// Replace...: pick an audio file for a track (page button, or the in-world REPLACE on desktop)
+function pickMusicFile(key) {
+  musicPickKey = key;
+  G.audio.ensure();
+  musicInput.value = '';
+  musicInput.click();
 }
+musicInput.addEventListener('change', async () => {
+  const f = musicInput.files && musicInput.files[0], key = musicPickKey;
+  musicPickKey = null;
+  if (!f || !key) return;
+  musicNotes[key] = 'decoding…'; refreshMusicRows();
+  try {
+    await MusicLibrary.replace(key, f);
+    musicNotes[key] = 'saved ✓';
+    G.ui.showPrompt(`${MUSIC_INFO[key].label} MUSIC: ${f.name.replace(/\.[^.]+$/, '').toUpperCase().slice(0, 28)} ✓`, 2.6, '#3cff6e');
+  } catch (e) {
+    console.warn('music replace failed', e);
+    musicNotes[key] = 'could not decode that file: kept the old track';
+    G.ui.showPrompt('COULD NOT DECODE THAT FILE', 2.4, '#ff4466');
+  }
+  musicInput.value = '';
+  refreshMusicRows();
+});
+MusicLibrary.listeners.push(() => {
+  updateStatus();
+  if (!G.ui) return;
+  if (G.ui.title.visible) G.ui.showTitle(true);
+  if (G.ui.setPanel.mesh.visible) G.ui.drawSettings();
+});
 document.getElementById('btnDesktop').addEventListener('click', () => {
   G.audio.ensure();
   G.desktop = true;
@@ -14673,7 +15137,11 @@ document.getElementById('btnHow').addEventListener('click', () => { document.get
 function buildOverlaySettings() {
   const form = document.getElementById('settingsForm');
   form.innerHTML = '';
-  for (const sc of Settings.schema) {
+  const order = [];
+  for (const pg of Settings.pages) for (const sc of Settings.schema) if (sc.page === pg.id) order.push([pg, sc]);
+  let lastPage = null;
+  for (const [pg, sc] of order) {
+    if (pg !== lastPage) { lastPage = pg; const h = document.createElement('h4'); h.textContent = pg.name; form.appendChild(h); }
     const row = document.createElement('div'); row.className = 'setrow';
     const lab = document.createElement('label'); lab.textContent = sc.label; row.appendChild(lab);
     let input;
@@ -14834,21 +15302,10 @@ function frame(t) {
 }
 G.ui.showTitle(true);
 G.audio.drone(true);
-setStatus('Generating fallback music&hellip;');
-setTimeout(() => {
-  G.audio.fallbacks.proprietor = BOSSES.proprietor.fallbackMusic();
-  if (!G.audio.track) setActiveTrack('proprietor');
-  updateStatus();
-  // music slots: embedded data URIs (or same-origin URLs) load automatically
-  for (const id of ['proprietor', 'kiddie', 'ringmaster']) {
-    const def = BOSSES[id];
-    if (def.dataUri) fetch(def.dataUri).then((r) => r.arrayBuffer()).then((ab) => loadMusicBuffer(ab, def.songTitle + ' (embedded)', id)).catch((e) => console.warn('embedded music failed', id, e));
-    else if (def.musicUrl) fetch(def.musicUrl).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('HTTP ' + r.status)))).then((ab) => loadMusicBuffer(ab, decodeURIComponent(def.musicUrl.split('/').pop().replace(/\.[^.]+$/, '')), id)).catch((e) => { console.warn('music URL failed', id, e); updateStatus(); });
-  }
-  // boss 2's fallback is a longer render: do it a moment later so the title stays smooth
-  setTimeout(() => { if (!G.audio.fallbacks.kiddie) G.audio.fallbacks.kiddie = BOSSES.kiddie.fallbackMusic(); updateStatus(); }, 450);
-  setTimeout(() => { if (!G.audio.fallbacks.ringmaster) G.audio.fallbacks.ringmaster = BOSSES.ringmaster.fallbackMusic(); updateStatus(); }, 900);
-}, 40);
+buildOverlayMusic();
+updateStatus();
+// note which tracks IndexedDB holds (nothing is decoded until a scene needs it)
+MusicLibrary.init().then(() => updateStatus());
 renderer.setAnimationLoop(frame);
 </script>
 </body>
