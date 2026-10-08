@@ -667,6 +667,7 @@ const Settings = {
     { key: 'unlockAll', label: 'UNLOCK ALL BOSSES', type: 'enum', options: [false, true], names: ['OFF', 'ON'], page: 'game' },
     { key: 'assists', label: 'AUDIENCE ASSISTS', type: 'enum', options: [true, false], names: ['ON', 'OFF'], page: 'game' },
     { key: 'purist', label: 'PURIST MODE', type: 'enum', options: [false, true], names: ['OFF', 'ON'], page: 'game' },
+    { key: 'pin', label: 'SOUL PIN', type: 'pin', page: 'game' },
   ],
   // the in-world settings panel's tabs (the page groups the same rows under headings)
   pages: [{ id: 'game', name: 'GAME' }, { id: 'comfort', name: 'COMFORT' }, { id: 'audio', name: 'AUDIO' }],
@@ -680,11 +681,20 @@ const Settings = {
   // cycle an enum/num value by +/-1 step
   step(key, dir) {
     const sc = this.schema.find((s) => s.key === key); if (!sc) return;
+    if (sc.type === 'pin') { const L = this.pinList(), i = L.indexOf(Save.data.cosmetics.equipped); this.setPin(L[(i + dir + L.length) % L.length]); return; }
     if (sc.type === 'num') this.set(key, Math.round(clamp(this.data[key] + dir * sc.step, sc.min, sc.max) * 10) / 10);
     else { const i = sc.options.indexOf(this.data[key]); this.set(key, sc.options[(i + dir + sc.options.length) % sc.options.length]); }
   },
+  // SOUL pins you own (bought at KNOBS'), plus none
+  pinList() { return [null].concat(Save.data.cosmetics.owned.filter((k) => PINS[k])); },
+  setPin(id) {
+    Save.data.cosmetics.equipped = id || null; Save.write();
+    if (G.soul) G.soul.applyPin(id);
+    for (const f of this.listeners) f('pin', id);
+  },
   display(key) {
     const sc = this.schema.find((s) => s.key === key); const v = this.data[key];
+    if (sc.type === 'pin') { const eq = Save.data.cosmetics.equipped; return eq && PINS[eq] ? PINS[eq].name : this.pinList().length > 1 ? 'NONE' : "NONE (KNOBS' SELLS PINS)"; }
     if (sc.type === 'num') return Math.round(v * 100) + '%';
     return sc.names[sc.options.indexOf(v)];
   },
@@ -1651,6 +1661,17 @@ class Sfx {
       this.tone({ type: 'sawtooth', f: f * 0.502, dur: 0.05, vol: 0.035 });
     } else if (voice === 'glitch') {
       this.tone({ type: 'sawtooth', f: 200 + Math.random() * 900, dur: 0.035, vol: 0.05 });
+    } else if (voice === 'knobs') {
+      // KNOBS: a sub-bass boop (with an octave on top so small speakers carry it) and a little vinyl crackle
+      const f = 64 + Math.random() * 16;
+      this.tone({ type: 'sine', f: f * 1.6, f2: f, dur: 0.08, vol: 0.2 });
+      this.tone({ type: 'triangle', f: f * 2, f2: f * 1.8, dur: 0.05, vol: 0.06 });
+      if (Math.random() < 0.6) this.noise({ type: 'highpass', f: 3500, dur: 0.018, vol: 0.05 });
+    } else if (voice === 'outlaw') {
+      // SUNDOWN: a low twangy pluck
+      const f = 98 + Math.random() * 22;
+      this.tone({ type: 'sawtooth', f: f * 2, f2: f * 1.96, dur: 0.07, vol: 0.05 });
+      this.tone({ type: 'triangle', f, dur: 0.09, vol: 0.09 });
     } else {
       this.tone({ type: 'square', f: 560, dur: 0.028, vol: 0.045 });
     }
@@ -1705,6 +1726,33 @@ class Sfx {
     for (let i = 0; i < 3; i++) this.tone({ type: 'sine', f: 3000 + Math.random() * 4000, t: base + Math.random() * 0.12, dur: 0.22, vol: 0.05 * vol });
   }
   tink() { if (this.a.gate('tink', 0.07)) this.tone({ type: 'sine', f: 4200 + Math.random() * 1500, dur: 0.06, vol: 0.03 }); }
+  // ---- KNOBS' SHOP ----
+  chaChing(t) {
+    const b = t !== undefined ? t : this.a.now;
+    this.noise({ type: 'bandpass', f: 2600, Q: 1.2, t: b, dur: 0.06, vol: 0.22 });   // drawer bell clack
+    [2093, 2637, 3136].forEach((f, i) => this.tone({ type: 'sine', f, t: b + 0.05 + i * 0.012, dur: 0.6, vol: 0.07 }));
+    this.tone({ type: 'triangle', f: 4186, t: b + 0.07, dur: 0.35, vol: 0.03 });
+    this.noise({ type: 'lowpass', f: 600, t: b + 0.12, dur: 0.12, vol: 0.18 });       // the drawer slides out
+  }
+  bassDrop(t) {
+    const b = t !== undefined ? t : this.a.now;
+    this.tone({ type: 'sine', f: 110, f2: 38, t: b, dur: 0.55, vol: 0.5, slide: 0.45 });
+    this.tone({ type: 'triangle', f: 220, f2: 76, t: b, dur: 0.3, vol: 0.08 });
+  }
+  faderSlam(t) { this.noise({ type: 'bandpass', f: 900, f2: 300, Q: 2, t, dur: 0.08, vol: 0.16 }); this.tone({ type: 'square', f: 140, f2: 70, t, dur: 0.06, vol: 0.05 }); }
+  // a tape slotted into the deck: click, then a little bright stinger
+  tapeStinger(t) {
+    const b = t !== undefined ? t : this.a.now;
+    this.noise({ type: 'highpass', f: 2000, t: b, dur: 0.03, vol: 0.2 });
+    this.tone({ type: 'square', f: 300, t: b, dur: 0.04, vol: 0.05 });
+    [587, 740, 880, 1175].forEach((f, i) => this.tone({ type: 'triangle', f, t: b + 0.12 + i * 0.07, dur: 0.22 + i * 0.05, vol: 0.09 }));
+    this.tone({ type: 'sine', f: 1760, t: b + 0.4, dur: 0.6, vol: 0.05, vib: 8, vibRate: 7 });
+  }
+  doorCreak() { this.creak(); this.noise({ type: 'lowpass', f: 400, f2: 120, dur: 0.5, vol: 0.12, attack: 0.05 }); }
+  doorShut() { this.noise({ type: 'lowpass', f: 300, dur: 0.18, vol: 0.4 }); this.tone({ type: 'sine', f: 80, f2: 40, dur: 0.2, vol: 0.3 }); }
+  counterTap(t, good) { this.noise({ type: 'bandpass', f: good ? 1500 : 700, Q: 1.5, t, dur: 0.05, vol: 0.28 }); this.tone({ type: 'sine', f: good ? 220 : 150, t, dur: 0.07, vol: 0.18 }); }
+  pick() { this.tone({ type: 'triangle', f: 660, f2: 990, dur: 0.06, vol: 0.06 }); }
+  place() { this.noise({ type: 'lowpass', f: 900, dur: 0.06, vol: 0.2 }); this.tone({ type: 'sine', f: 180, dur: 0.06, vol: 0.12 }); }
   // ---- economy ----
   // a gold coin landing on your wrist
   coin(t) {
@@ -2264,6 +2312,7 @@ class PullLocomotion {
     this.boostTimer = 0;
     this.boost = 1;               // ENERGY DRINK: x1.1 pull speed for one attack
     this.ext = null;              // external driver that replaces pulling (the PINK trapeze): { update(dt) }
+    this.walk = null;             // grounded walking (KNOBS' SHOP): { speed, clamp(out: Vector3 head xz) } - no flying
     this.push = new THREE.Vector3();   // wind: carries the player along (m/s), on top of any movement
   }
   setMode(m) { this.mode = m; this.vel.set(0, 0, 0); this.grabbing = false; this.histN = 0; this.grounded = false; }
@@ -2288,10 +2337,51 @@ class PullLocomotion {
     }
     this.grabbing = false; this.histN = 0; this.histI = 0;
   }
+  // the right stick turns you (snap or smooth, per Settings)
+  stickTurn(dt) {
+    const R = G.input.right; if (!R) return;
+    const x = R.stick.x;
+    if (Settings.data.turn === 'snap') {
+      if (Math.abs(x) > 0.72 && this.snapArmed) { this.turnBy((x > 0 ? -1 : 1) * THREE.MathUtils.degToRad(CONFIG.SNAP_TURN_DEG)); this.snapArmed = false; }
+      else if (Math.abs(x) < 0.35) this.snapArmed = true;
+    } else if (Math.abs(x) > 0.2) {
+      this.turnBy(-deadzone(x, 0.2) * THREE.MathUtils.degToRad(CONFIG.SMOOTH_TURN_DEG_S) * dt);
+      this.turnRate = Math.abs(x);
+    }
+  }
+  // grounded walking: room-scale, the left stick walks you along the floor (head-relative), WASD on desktop;
+  // the walls (walk.clamp) keep your head inside the room
+  updateWalk(dt) {
+    const inp = G.input, W = this.walk;
+    this.vel.set(0, 0, 0); this.grabbing = false;
+    Head.update();
+    _v1.set(0, 0, 0);
+    if (G.xr) {
+      const L = inp.left;
+      if (L) { const x = deadzone(L.stick.x, 0.2), y = deadzone(L.stick.y, 0.2); if (x || y) _v1.copy(Head.fwdFlat).multiplyScalar(-y).addScaledVector(Head.right, x); }
+      this.stickTurn(dt);
+    } else {
+      const yaw = inp.desk.yaw, fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      if (inp.key('KeyW')) { _v1.x += fx; _v1.z += fz; }
+      if (inp.key('KeyS')) { _v1.x -= fx; _v1.z -= fz; }
+      if (inp.key('KeyD')) { _v1.x += rx; _v1.z += rz; }
+      if (inp.key('KeyA')) { _v1.x -= rx; _v1.z -= rz; }
+      if (_v1.lengthSq() > 1) _v1.normalize();
+    }
+    if (_v1.lengthSq() > 0) rig.position.addScaledVector(_v1, (W.speed || 1.5) * dt);
+    Head.update();
+    _v2.copy(Head.pos);
+    W.clamp(_v2);
+    rig.position.x += _v2.x - Head.pos.x; rig.position.z += _v2.z - Head.pos.z;
+    Head.update();
+    _v1.subVectors(rig.position, this.lastRig);
+    this.speed = damp(this.speed, Math.min(dt > 1e-4 ? _v1.length() / dt : 0, 10), 10, dt);
+  }
   update(dt) {
     const inp = G.input;
     this.turnRate = 0;
     this.lastRig.copy(rig.position);
+    if (this.walk) { this.updateWalk(dt); return; }
     if (this.ext) {   // the trapeze moves the rig itself (it runs here so the heart never lags the camera)
       this.vel.set(0, 0, 0); this.grabbing = false;
       this.ext.update(dt);
@@ -2441,6 +2531,32 @@ function buildVoxelHeart(s, depth, subset) {
   }
   return mergeGeos(parts);
 }
+// SOUL pins: tiny extras parented to the heart (sized to its voxel size s)
+function buildPinCassette(s) {
+  const g = new THREE.Group();
+  const shell = new THREE.Mesh(mergeGeos([
+    { geo: new THREE.BoxGeometry(s * 6.4, s * 4, s * 0.9), color: 0x2a2430 },
+    { geo: new THREE.BoxGeometry(s * 5.2, s * 1.7, s * 0.95), matrix: M4(0, s * 0.5, 0), color: 0xff9d1a },
+    { geo: new THREE.CylinderGeometry(s * 0.7, s * 0.7, s, 10).rotateX(Math.PI / 2), matrix: M4(-s * 1.5, -s * 0.6, 0), color: 0xfff4dc },
+    { geo: new THREE.CylinderGeometry(s * 0.7, s * 0.7, s, 10).rotateX(Math.PI / 2), matrix: M4(s * 1.5, -s * 0.6, 0), color: 0xfff4dc },
+  ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  shell.position.z = s * 1.1; g.add(shell); return g;
+}
+function buildPinHat(s) {
+  const g = new THREE.Group();
+  const hat = new THREE.Mesh(mergeGeos([
+    { geo: new THREE.CylinderGeometry(s * 3.6, s * 3.6, s * 0.35, 16), matrix: M4(0, 0, 0, 0, 0, 0, 1, 1, 0.8), color: 0x8a4a22 },
+    { geo: new THREE.CylinderGeometry(s * 1.6, s * 2.0, s * 2.2, 12), matrix: M4(0, s * 1.2, 0), color: 0x9a5628 },
+    { geo: new THREE.CylinderGeometry(s * 2.05, s * 2.05, s * 0.5, 12), matrix: M4(0, s * 0.4, 0), color: 0xc4532e },
+  ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  hat.position.set(0, s * 3.4, 0); hat.rotation.z = 0.18; g.add(hat); return g;
+}
+function buildPinDisco(s) {
+  // a glint ring around the heart
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(s * 4.8, s * 0.25, 4, 18), new THREE.MeshBasicMaterial({ color: 0xc8d8ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+  g.add(ring); return g;
+}
 class Soul {
   constructor() {
     this.pos = new THREE.Vector3(0, CONFIG.BOX_CENTER_Y, 0); this.prevPos = this.pos.clone(); this.vel = new THREE.Vector3();
@@ -2481,7 +2597,19 @@ class Soul {
     const shine = new THREE.Mesh(new THREE.RingGeometry(0.018, 0.026, 20, 1, 0.3, 1.1), new THREE.MeshBasicMaterial({ color: 0x9a90b0, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
     shine.position.z = 0.002;
     this.vinylMesh.add(disc, lab, shine); this.vinylMesh.visible = false; scene.add(this.vinylMesh);
+    // SOUL pins (KNOBS' SHOP cosmetics): a little extra on the heart; glowT: a tape just went in
+    this.pin = null; this.pinParts = {}; this.glowT = 0;
     this.setRadius();
+  }
+  // equip a pin: 'gold' | 'cassette' | 'disco' | 'hat' (on the heart) | 'neon' (the battle box) | null
+  applyPin(id) {
+    this.pin = id || null;
+    const P = this.pinParts;
+    if (id === 'cassette' && !P.cassette) P.cassette = buildPinCassette(0.022);
+    if (id === 'hat' && !P.hat) P.hat = buildPinHat(0.022);
+    if (id === 'disco' && !P.disco) P.disco = buildPinDisco(0.022);
+    for (const k in P) { if (!P[k].parent) this.heart.add(P[k]); P[k].visible = k === id; }
+    this.setMode(this.mode, true);
   }
   get hitR() { return CONFIG.HITBOX_R * (Settings.data.difficulty === 'hard' ? 1.3 : 1); }
   get grazeR() { return Stats.grazeR(); }
@@ -2501,7 +2629,8 @@ class Soul {
   setMode(m, silent) {
     this.mode = m;
     const C = CONFIG.COL;
-    const col = m === 'blue' ? C.blue : m === 'green' ? C.green : m === 'yellow' ? C.warn : m === 'cyan' ? C.cyan : m === 'pink' ? C.pink : C.red;
+    const red = this.pin === 'gold' ? 0xffd23c : this.pin === 'disco' ? 0xd8e4ff : C.red;   // pins only recolor the red SOUL
+    const col = m === 'blue' ? C.blue : m === 'green' ? C.green : m === 'yellow' ? C.warn : m === 'cyan' ? C.cyan : m === 'pink' ? C.pink : red;
     this.mat.color.setHex(col); this.aura.material.color.setHex(col);
     if (!silent) G.audio.sfx.ding();
   }
@@ -2511,7 +2640,7 @@ class Soul {
   unlock() { this.locked = false; }
   computeTarget(out) {
     const desk = !G.xr;
-    const down = desk ? CONFIG.DESKTOP_SOUL_DOWN : Settings.data.seated ? CONFIG.SEATED_SOUL_DOWN : CONFIG.SOUL_DOWN;
+    const down = desk ? CONFIG.DESKTOP_SOUL_DOWN + (Shop.active ? 0.09 : 0) : Settings.data.seated ? CONFIG.SEATED_SOUL_DOWN : CONFIG.SOUL_DOWN;
     const fwd = desk ? CONFIG.DESKTOP_SOUL_FWD : CONFIG.SOUL_FWD;
     out.copy(Head.pos).addScaledVector(Head.fwdFlat, fwd);
     out.y -= down;
@@ -2540,7 +2669,14 @@ class Soul {
     }
     this.heart.visible = vis;
     this.aura.visible = this.active && this.alive && this.shatterT < 0;
-    this.aura.material.opacity = 0.07 + this.grazeGlow * 0.12;
+    this.glowT = Math.max(0, this.glowT - dt);
+    this.aura.material.opacity = 0.07 + this.grazeGlow * 0.12 + Math.min(1, this.glowT) * 0.3;
+    if (this.glowT > 0) this.heart.scale.multiplyScalar(1 + 0.25 * Math.min(1, this.glowT) * (0.6 + 0.4 * Math.sin(this.glowT * 12)));
+    if (this.pin === 'disco' && this.mode === 'red' && this.heart.visible) {
+      // mirrorball: the heart shimmers through pale blues and pinks, little sparkles fly off
+      this.mat.color.setHSL((G.time * 0.15) % 1, 0.35, 0.82);
+      if (Math.random() < dt * 6) G.fx.sparkle(this.pos, 1);
+    }
     this.dbgHit.visible = this.dbgGraze.visible = G.debug.hitboxes && this.active;
     // the VINYL SHIELD orbits the heart
     const vv = this.vinyl && this.active && this.alive && this.shatterT < 0;
@@ -2864,6 +3000,11 @@ class Arena {
     this.edges.visible = this.glowEdges.visible = !this.theme.hideEdges;
     this.edgeMat.opacity = this.opacity;
     this.edgeMat.color.copy(this.themeEdge).multiply(this.tint);
+    if (G.soul && G.soul.pin === 'neon') {   // NEON BOX pin: the edges drift between hot pink and teal
+      const k = 0.5 + 0.5 * Math.sin(G.time * 0.7);
+      _c1.setRGB(1, 0.24, 0.78).lerp(_c2.setRGB(0.16, 1, 0.84), k);
+      this.edgeMat.color.lerp(_c1, 0.65);
+    }
     this.outlineMat.opacity = 0.85 * this.opacity;
     if (this.theme.scanlines && this.scanTex) { this.faceScroll += dt * 0.06; this.scanTex.offset.y = this.faceScroll % 1; }
     // edge packets
@@ -3696,24 +3837,30 @@ class Menu {
     this.o = Object.assign({ radius: 0.52, yOff: -0.52, gap: 0.03, primary: true }, o);
     this.isOpen = false; this.keyIdx = -1;
   }
-  // arc in front of the player at waist height, facing them
+  // arc in front of the player at waist height, facing them. o.split (or this.o.split): the first n
+  // buttons on the top row, the rest on a second row just below it
   showArc(o = {}) {
     Head.update();
     const r = o.radius || this.o.radius, seated = Settings.data.seated && G.xr;
-    const y = Head.pos.y + (o.yOff !== undefined ? o.yOff : this.o.yOff) * (seated ? 0.75 : 1) * (G.xr ? 1 : 0.72);
+    const y0 = Head.pos.y + (o.yOff !== undefined ? o.yOff : this.o.yOff) * (seated ? 0.75 : 1) * (G.xr ? 1 : 0.72);
     const vis = this.buttons.filter((b) => b.root.visible !== false && !b.hidden);
-    let total = 0; for (const b of vis) total += b.w; total += this.o.gap * (vis.length - 1);
-    const rr = G.xr ? r : r * 2.6;
-    let a = -total / 2 / rr; const yaw = Head.yaw;
+    const split = o.split !== undefined ? o.split : this.o.split;
+    const rows = split && vis.length > split ? [vis.slice(0, split), vis.slice(split)] : [vis];
+    const rr = G.xr ? r : (o.deskR || this.o.deskR || r * 2.6), yaw = Head.yaw, cy = Math.cos(yaw), sy = Math.sin(yaw);
     for (const b of this.buttons) b.root.visible = !b.hidden;
-    for (const b of vis) {
-      const ang = a + b.w / 2 / rr;
-      const lx = Math.sin(ang) * rr, lz = -Math.cos(ang) * rr;
-      const cy = Math.cos(yaw), sy = Math.sin(yaw);
-      b.root.position.set(Head.pos.x + lx * cy + lz * sy, y, Head.pos.z - lx * sy + lz * cy);
-      b.root.lookAt(Head.pos.x, y + 0.12, Head.pos.z);
-      a += (b.w + this.o.gap) / rr;
-    }
+    let y = y0;
+    rows.forEach((row, ri) => {
+      if (ri > 0) y -= Math.max(...rows[ri - 1].map((b) => b.h)) / 2 + Math.max(...row.map((b) => b.h)) / 2 + 0.035;
+      let total = 0; for (const b of row) total += b.w; total += this.o.gap * (row.length - 1);
+      let a = -total / 2 / rr;
+      for (const b of row) {
+        const ang = a + b.w / 2 / rr;
+        const lx = Math.sin(ang) * rr, lz = -Math.cos(ang) * rr;
+        b.root.position.set(Head.pos.x + lx * cy + lz * sy, y, Head.pos.z - lx * sy + lz * cy);
+        b.root.lookAt(Head.pos.x, y + 0.12, Head.pos.z);
+        a += (b.w + this.o.gap) / rr;
+      }
+    });
     this.open();
   }
   // explicit placement: list of world positions + a point to face
@@ -4100,8 +4247,13 @@ class UI {
       { label: 'HOW TO PLAY', icon: 'book', onPress: () => B.openHowTo() },
     ], { yOff: -0.42 });
     // SAVE FILES: Undertale-style file cards (pixel font, box outline)
-    const card = (id) => ({ face: { cw: 330, ch: 168, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, onPress: () => B.chooseFile(id) });
-    this.saveMenu = new Menu([card('proprietor'), card('kiddie'), card('ringmaster'), { label: 'BACK', icon: 'back', onPress: () => B.closeSaveFiles() }], { yOff: -0.3, radius: 0.86, gap: 0.045 });
+    const card = (id) => ({ face: { cw: 330, ch: 168, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, size: 0.82, onPress: () => B.chooseFile(id) });
+    // the file cards on top; KNOBS' door ("open late") and BACK below
+    const files = Object.keys(BOSSES).map(card);
+    this.saveMenu = new Menu(files.concat([
+      { face: { cw: 330, ch: 120, draw: (g, W, H, b) => this.drawShopDoor(g, W, H, b) }, size: 0.82, onPress: () => B.openShop('files') },
+      { label: 'BACK', icon: 'back', onPress: () => B.closeSaveFiles() },
+    ]), { yOff: -0.26, radius: 1.0, deskR: 2.05, gap: 0.04, split: files.length });
     this.safetyMenu = new Menu([
       { label: 'REDUCED FLASHING (RECOMMENDED)', onPress: () => B.chooseFlashing('reduced'), color: '#2affd5' },
       { label: 'FULL EFFECTS', onPress: () => B.chooseFlashing('full') },
@@ -4119,7 +4271,13 @@ class UI {
       { label: 'BACK', icon: 'back', onPress: () => B.backToMain() },
     ], { yOff: -0.48, gap: 0.04 });
     this.retryMenu = new Menu([{ label: 'RETRY', icon: 'heart', onPress: () => B.retry() }, { label: 'TITLE', icon: 'back', onPress: () => B.toTitle() }], { yOff: -0.4 });
-    this.endMenu = new Menu([{ label: 'RETURN TO TITLE', icon: 'back', onPress: () => B.toTitle() }], { yOff: -0.4 });
+    // after every fight: "* Swing by the shop?"
+    this.endMenu = new Menu([
+      { label: 'YES', icon: 'heart', color: '#ffb347', onPress: () => B.openShop('fight') },
+      { label: 'NO', icon: 'back', onPress: () => B.toTitle() },
+    ], { yOff: -0.42, gap: 0.06 });
+    this.ask = new TextPanel({ w: 0.9, h: 0.11, cw: 450, ch: 55, bg: null, border: null, scale: 3, align: 'center', valign: 'middle', color: '#ffffff', shadow: '#000000', renderOrder: 9 });
+    scene.add(this.ask.mesh); this.ask.mesh.visible = false;
     this.howMenu = new Menu([{ label: 'BACK', icon: 'back', onPress: () => B.closeHowTo() }], { yOff: -0.45 });
     // settings: a panel with tabs (GAME / COMFORT / AUDIO) + arrow buttons per row (+ REPLACE per track) + action buttons
     this.setPanel = new TextPanel({ w: 1.25, h: 1.06, cw: 500, ch: 424, scale: 2, pad: 14, renderOrder: 8 });
@@ -4161,11 +4319,26 @@ class UI {
     const B = G.battle;
     const acts = def.acts.map((a) => ({ label: a.label, onPress: () => B.act(a.key), minChars: a.minChars }));
     acts.push({ label: 'BACK', icon: 'back', onPress: () => B.backToMain() });
-    const items = def.items.map((a) => ({ label: a.label, onPress: () => B.useItem(a.key), minChars: a.minChars || 15 }));
+    // ITEM: this boss's own items on the top row (found in this fight only, never sold), then BAG (what you
+    // bought at KNOBS', usable anywhere) and BACK below
+    const items = def.items.map((a) => ({ label: a.label, onPress: () => B.useItem(a.key), minChars: a.minChars || 0 }));
+    items.push({ label: 'BAG', icon: 'item', onPress: () => B.openBag(), minChars: 6, color: '#2affd5' });
     items.push({ label: 'BACK', icon: 'back', onPress: () => B.backToMain() });
-    m = this.bossMenus[def.id] = { act: new Menu(acts, def.actMenuOpts || { yOff: -0.47, radius: 0.62, gap: 0.025 }), item: new Menu(items, def.itemMenuOpts || { yOff: -0.47, radius: 0.6, gap: 0.03 }) };
+    m = this.bossMenus[def.id] = { act: new Menu(acts, def.actMenuOpts || { yOff: -0.47, radius: 0.62, gap: 0.025 }),
+      item: new Menu(items, Object.assign({ yOff: -0.42, radius: 0.8, gap: 0.03 }, def.itemMenuOpts || {}, { split: def.items.length })) };
+    m.item.buttons[def.items.length].isBag = true;
     return m;
   }
+  // ITEM > BAG: one button per kind of consumable you carry (rebuilt each time it opens)
+  bagMenuFor() {
+    this.closeBag();
+    const B = G.battle, inv = Save.data.inventory, kinds = Object.keys(CONSUMABLES).filter((k) => inv.includes(k));
+    const defs = kinds.map((k) => ({ label: `${CONSUMABLES[k].name} x${inv.filter((x) => x === k).length}`, color: CONSUMABLES[k].color === '#2a2a2a' ? '#c8c8d8' : CONSUMABLES[k].color, onPress: () => B.useBag(k) }));
+    defs.push({ label: 'BACK', icon: 'back', onPress: () => B.closeBagToItems() });
+    this.bagMenu = new Menu(defs, { yOff: -0.42, radius: 0.8, gap: 0.03 });
+    return this.bagMenu;
+  }
+  closeBag() { if (this.bagMenu) { this.bagMenu.hide(); disposeObject(this.bagMenu.group); this.bagMenu = null; } }
   get actMenu() { return this.menusFor(G.def).act; }
   get itemMenu() { return this.menusFor(G.def).item; }
   // leaving a fight: free that boss's ACT / ITEM menus (rebuilt on first use)
@@ -4195,6 +4368,35 @@ class UI {
     }
   }
   refreshSaveCards() { for (const b of this.saveMenu.buttons) if (b.face_) b.draw(); }
+  // the SAVE FILES door into KNOBS' SHOP: warm light round the edges, a neon sign, "open late"
+  drawShopDoor(g, W, H, b) {
+    const t = G.time, hv = b.hover;
+    g.fillStyle = '#05030a'; g.fillRect(0, 0, W, H);
+    const glow = 0.55 + 0.25 * Math.sin(t * 2.2) + (hv ? 0.25 : 0);
+    g.fillStyle = `rgba(255,179,71,${0.25 * glow})`; g.fillRect(16, 10, 92, H - 14);
+    g.fillStyle = '#5a3420'; g.fillRect(22, 14, 80, H - 18);
+    g.fillStyle = `rgba(255,190,110,${0.7 * glow})`; g.fillRect(34, 24, 56, 28);       // the door's window
+    g.fillStyle = '#3a2216'; g.fillRect(34, 60, 56, 40);
+    g.fillStyle = '#d8b04a'; g.fillRect(90, 66, 6, 6);
+    g.fillStyle = `rgba(255,179,71,${0.6 * glow})`; g.fillRect(12, H - 6, 100, 3);  // light under the door
+    g.save(); g.shadowColor = '#ff3cc8'; g.shadowBlur = hv ? 14 : 8;
+    PixelFont.draw(g, "KNOBS'", 128, 20, 5, hv ? '#ffd0f0' : '#ff7ad8');
+    g.restore();
+    g.save(); g.shadowColor = '#2affd5'; g.shadowBlur = 6;
+    PixelFont.draw(g, 'open late', 132, 64, 3, '#8affea');
+    g.restore();
+    PixelFont.draw(g, `${Save.data.gold} G`, 132, 94, 2, '#ffd23c');
+    g.fillStyle = hv ? '#ffe600' : '#ffb347'; g.fillRect(0, 0, W, 3); g.fillRect(0, H - 3, W, 3); g.fillRect(0, 0, 3, H); g.fillRect(W - 3, 0, 3, H);
+  }
+  showEndMenu() {
+    this.endMenu.showArc();
+    const b = this.endMenu.buttons[0].root;
+    Head.update();
+    this.ask.setText('* Swing by the shop?');
+    this.ask.mesh.position.copy(b.position).lerp(this.endMenu.buttons[1].root.position, 0.5); this.ask.mesh.position.y += 0.1;
+    this.ask.mesh.lookAt(Head.pos); this.ask.mesh.visible = true;
+  }
+  hideAsk() { if (this.ask) this.ask.mesh.visible = false; }
   attachWrist(h) {
     const p = h.side === 'left' ? this.wristHP : this.wristTP;
     if (p.mesh.parent) p.mesh.parent.remove(p.mesh);
@@ -4664,7 +4866,7 @@ class UI {
     if (hand) hand.pulse(0.5, 30);
     if (b.onPress) b.onPress(b);
   }
-  hideAllMenus() { for (const m of this.menus.slice()) m.hide(); for (const h of G.input.hands) { h.laser.visible = false; h.laserDot.visible = false; } }
+  hideAllMenus() { for (const m of this.menus.slice()) m.hide(); for (const h of G.input.hands) { h.laser.visible = false; h.laserDot.visible = false; } this.hideAsk(); }
   // ------------------------------------------------------------------ per-frame
   // grip near a grabbable window (pop-up ads) to grab it with either hand; it follows that hand until
   // you let go. Runs before locomotion so the grabbing hand never also pulls you.
@@ -7280,6 +7482,23 @@ class Battle {
     this.releaseBoss();
     G.arena.setTheme('manor'); G.bg.setTheme('manor'); G.bg.setRed(false, true); G.bg.disposeServer();
   }
+  // ------------------------------------------------------------------ KNOBS' SHOP
+  // from the SAVE FILES door or "* Swing by the shop?" after a fight
+  openShop(from) {
+    const U = G.ui;
+    U.hideAllMenus(); U.hideBig(); U.hideFlavor(); U.hideBubble(); U.showTitle(false); U.hideAsk();
+    if (!MusicLibrary.ready('shop')) { this.waitForMusic('shop', () => this.openShop(from)); return; }
+    G.audio.sfx.doorCreak();
+    G.fx.fadeTo(1, 0.35, 0x000000);
+    G.audio.fadeMusic(0, 0.35);
+    this.setState('SHOP_ENTER');
+    this.afterIn('SHOP_ENTER', 0.45, () => Shop.enter(from));
+  }
+  leaveShop() {
+    this.toTitle();
+    this.openSaveFiles();
+    G.fx.fadeT = 1; G.fx.fadeTo(0, 0.7);
+  }
   // ------------------------------------------------------------------ flow: title
   enterWorld() {
     if (G.inWorld) return;
@@ -7295,8 +7514,9 @@ class Battle {
     G.clock.setFreeTime(false); G.fx.tunnelBoost = 0; G.loco.ext = null; G.loco.push.set(0, 0, 0); G.soul.tpMul = 1;
     this.fightUI.hide(); this.danceUI.hide(); this.exitDoor.hide();
     if (this.def.cleanup) this.def.cleanup(this);
+    if (Shop.active) Shop.teardown();
     const U = G.ui;
-    U.hideAllMenus(); U.hideFlavor(); U.hideBubble(); U.hideBig(); U.closeSettingsPanel(); U.closeHowTo();
+    U.hideAllMenus(); U.hideFlavor(); U.hideBubble(); U.hideBig(); U.closeSettingsPanel(); U.closeHowTo(); U.hideAsk(); U.closeBag();
     for (const w of WINDOWS) w.close();
     G.soul.reset(true); G.soul.active = false; G.soul.shield.visible = false;
     G.loco.enabled = false; G.loco.clamp = true; G.loco.setMode('free'); G.loco.platforms = null; G.loco.boost = 1;
@@ -7466,9 +7686,11 @@ class Battle {
     this.def.refreshMenus(this);
     const sp = G.ui.mercyMenu.buttons[0];
     sp.colorN = this.spare >= 100 ? '#ffe600' : '#ff9d1a'; sp.draw();
+    const bag = G.ui.itemMenu.buttons.find((b) => b.isBag);
+    if (bag) { bag.setLabel(`BAG ${Save.data.inventory.length}`); bag.setDisabled(!Save.data.inventory.length); }
   }
   backToMain() {
-    G.ui.actMenu.hide(); G.ui.itemMenu.hide(); G.ui.mercyMenu.hide();
+    G.ui.actMenu.hide(); G.ui.itemMenu.hide(); G.ui.mercyMenu.hide(); G.ui.closeBag();
     this.setState('PLAYER_MENU');
     G.ui.showFlavor(this.lastFlavor);
     G.ui.mainMenu.showArc();
@@ -7480,6 +7702,32 @@ class Battle {
     G.ui.mainMenu.hide(); this.refreshMenus(); this.setState('MERCY');
     G.ui.showFlavor(this.def.mercyPrompt(this));
     G.ui.mercyMenu.showArc();
+  }
+  // ITEM > BAG: the consumables bought at KNOBS' work in every fight
+  openBag() {
+    if (!Save.data.inventory.length) { G.audio.sfx.buzz(); return; }
+    G.ui.itemMenu.hide();
+    G.ui.showFlavor('* Your BAG. Everything in it came from KNOBS\' SHOP.');
+    G.ui.bagMenuFor().showArc();
+  }
+  closeBagToItems() { G.ui.closeBag(); this.menuItem(); }
+  useBag(id) {
+    const inv = Save.data.inventory, i = inv.indexOf(id);
+    if (i < 0) { G.audio.sfx.buzz(); return; }
+    inv.splice(i, 1); Save.write();
+    G.ui.closeBag();
+    const s = G.soul; let text, h = 0;
+    Head.update();
+    if (id === 'lemonade') { h = s.heal(20); text = `* You sip the Lo-fi Lemonade. It tastes like a slow afternoon.\n* You recovered ${h} HP!`; }
+    else if (id === 'bassbar') { h = s.heal(999); text = '* You bite the Bass Drop Bar. The floor wobbles.\n* HP fully restored!'; }
+    else if (id === 'vinyl') { s.vinyl = true; text = '* You spin up the Vinyl Shield. A record orbits your SOUL.\n* It will block the next hit.'; G.audio.sfx.recordScratch(); }
+    else { s.addTP(50); text = '* You plug in the TP Battery. Bzzt.\n* +50% TP!'; G.audio.sfx.tone({ type: 'square', f: 220, f2: 880, dur: 0.3, vol: 0.06 }); }
+    if (id === 'lemonade' || id === 'bassbar') {
+      G.audio.sfx.crunch(); this.after(0.3, () => G.audio.sfx.heal());
+      G.fx.heal(Head.rel(_v1, 0, -0.25, 0.6));
+      G.fx.damageNumber(Head.rel(_v2, 0, -0.05, 0.9), '+' + h + ' HP', '#3dff5a', 0.9);
+    }
+    this.narrate(text, () => this.afterAction([this.def.itemLine(this)]));
   }
   addSpare(x) {
     const cap = this.def.spareCap(this);
@@ -7674,6 +7922,9 @@ class Battle {
   }
   onBeat(b, when) {
     G.fx.onBeat(b); if (G.boss) G.boss.onBeat(b); G.arena.onBeat(b);
+    if (Shop.active) Shop.onBeat(b, when);
+    // METRONOME tape: bullets tick on the beat
+    if (this.state === 'BOSS_ATTACK' && Stats.metronome() && G.bullets.total > 0) G.audio.sfx.tick(when);
     const M = G.clock.bpb;
     if (G.debug.beatGrid) { G.audio.sfx.metro(when, ((b % M) + M) % M === 0); this.beatFlash(b); }
     if (this.state === 'BOSS_ATTACK' && this.pattern) {
@@ -7828,7 +8079,7 @@ class Battle {
       this.reward = null;
     }
     G.ui.showBig(text, { type: true, scale, dist: 1.8, y: 0.18 });
-    this.afterIn('RESULTS', 2.4, () => { G.ui.endMenu.showArc({ yOff: -0.45 }); if (this.def.afterResults) this.def.afterResults(this); });
+    this.afterIn('RESULTS', 2.4, () => { G.ui.showEndMenu(); if (this.def.afterResults) this.def.afterResults(this); });
   }
   // campaign: boss 1's ending gets hijacked -> "lol wait dont leave yet" -> boss 2
   hijack() {
@@ -7841,7 +8092,7 @@ class Battle {
       U.chat.name = 'SCR1PT_K1DD1E'; U.chat.setStatus('busy');
       U.chat.place(Head.rel(_v1, 0, 0.36, 2.6), Head.pos);
       U.chat.say('lol wait dont leave yet', { mood: 'smug', speed: 20 }); U.chat.win.glitch = 0.3;
-      U.showPrompt('(RETURN TO TITLE TO SKIP)', 4, '#888888');
+      U.showPrompt('(YES OR NO SKIPS THIS)', 4, '#888888');
       Head.rel(U.prompt.mesh.position, 0, 0.66, 1.5); U.prompt.mesh.lookAt(Head.pos);
     });
     for (let i = 0; i < 10; i++) this.afterIn('RESULTS', 2.2 + i * 0.25, () => { Head.update(); G.fx.glyphs.rain(Head.rel(_v1, -1.4, 0.8, 1.6), Head.rel(_v2, 1.4, 1.4, 2.6), 6, 0.16, 1, 0.84); });
@@ -7856,13 +8107,15 @@ class Battle {
   canPause() {
     const r = G.clock.seg.ramp;
     if (r && r.r1 < 0.5 && G.audio.now < r.t0 + r.dur + 0.15) return false; // mid tape-stop
-    return G.inWorld && !['BOOT', 'TITLE', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT'].includes(this.state);
+    return G.inWorld && !['BOOT', 'TITLE', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT', 'LOADING', 'SHOP_ENTER'].includes(this.state) && !(this.state === 'SHOP' && Shop.exiting);
   }
   pause() {
     if (!this.canPause()) return;
     this.prevState = this.state;
     this.setState('PAUSED');
-    G.clock.pause();
+    // in the shop the music keeps playing (nothing is coming at you)
+    this.softPause = this.prevState === 'SHOP';
+    if (!this.softPause) G.clock.pause();
     this.pausedMenus = G.ui.menus.slice();
     for (const m of this.pausedMenus) m.group.visible = false;
     G.ui.menus.length = 0;
@@ -7872,6 +8125,12 @@ class Battle {
     if (this.state === 'SETTINGS') { G.ui.closeSettingsPanel(); G.ui.showTitle(true); this.setState('TITLE'); G.ui.titleMenu.showArc(); return; }
     if (this.state !== 'PAUSED') return;
     G.ui.closeSettingsPanel();
+    if (this.softPause) {
+      this.softPause = false;
+      for (const m of this.pausedMenus || []) { m.group.visible = true; if (!G.ui.menus.includes(m)) G.ui.menus.push(m); }
+      this.pausedMenus = null; this.state = this.prevState;
+      return;
+    }
     this.setState('COUNT_IN'); this.ciLabel = '';
     G.clock.resume(() => {
       for (const m of this.pausedMenus || []) { m.group.visible = true; if (!G.ui.menus.includes(m)) G.ui.menus.push(m); }
@@ -7960,6 +8219,7 @@ class Battle {
       case 'BOSS_ATTACK': if (this.pattern) this.pattern.update(dt); break;
       case 'COUNT_IN': this.updateCountIn(); break;
       case 'EXIT_DOOR': this.updateExitDoor(dt); break;
+      case 'SHOP': Shop.update(dt, rdt); break;
       case 'HOW_TO': break;
       default: if (this.def.updateState && !frozen) this.def.updateState(this, this.state, dt, rdt);
     }
@@ -8112,6 +8372,7 @@ BOSSES.proprietor = {
   },
   actPrompt(B) { return B.phase >= 2 ? '* What will you do?\n* (Something tells you to RSVP.)' : '* What will you do?'; },
   itemPrompt() { return '* Your pockets are full of party favors.'; },
+  itemLine() { return pick(LINES.item); },
   mercyPrompt(B) { return B.spare >= 100 ? '* THE PROPRIETOR is ready to let you go.' : `* Mercy: ${Math.floor(B.spare)}%.`; },
   spareCap(B) { return B.rsvp ? 100 : 75; },
   act(B, k) {
@@ -10264,7 +10525,7 @@ BOSSES.kiddie = {
     { key: 'ctrlz', label: 'CTRL+Z 35%TP' }, { key: 'teach', label: 'TEACH HIM' }, { key: 'gg', label: 'SAY "GG"' },
   ],
   actMenuOpts: { yOff: -0.47, radius: 0.76, gap: 0.022 },
-  items: [{ key: 'drink', label: 'ENERGY DRINK x2', minChars: 16 }, { key: 'pizza', label: 'COLD PIZZA x2', minChars: 16 }, { key: 'av', label: 'ANTIVIRUS.EXE x1', minChars: 16 }],
+  items: [{ key: 'drink', label: 'ENERGY DRINK x2' }, { key: 'pizza', label: 'COLD PIZZA x2' }, { key: 'av', label: 'ANTIVIRUS.EXE x1' }],
   fightType: 'type',
   shatterStyle: 'hex',
   glitchWords: ['404', 'SUDO', 'LAG', 'PWNED', 'GG EZ'],
@@ -10308,6 +10569,7 @@ BOSSES.kiddie = {
   },
   actPrompt(B) { return B.phase >= 2 && B.teachDone ? '* What will you do?\n* (Maybe he just wants someone to say it.)' : '* What will you do?'; },
   itemPrompt() { return '* Your inventory smells like a LAN party.'; },
+  itemLine() { return { text: pick(KLINES.item) }; },
   mercyPrompt(B) { return B.spare >= 100 ? "* SCR1PT_K1DD1E's status: online." : `* Mercy: ${Math.floor(B.spare)}%.`; },
   spareCap(B) { return B.gg ? 100 : 75; },
   act(B, k) {
@@ -14606,7 +14868,7 @@ function admitTicketCampaign(B) {
   MusicLibrary.getTrack('ringmaster');   // decode boss 3's music while the ticket flutters down
   B.afterIn('RESULTS', 1.4, () => {
     if (!K.ticket) K.ticket = new AdmitTicket();
-    G.ui.showPrompt('A TICKET FLUTTERS DOWN...  (RETURN TO TITLE TO SKIP)', 4, '#ffc83c');
+    G.ui.showPrompt('A TICKET FLUTTERS DOWN...  (YES OR NO SKIPS IT)', 4, '#ffc83c');
     Head.rel(G.ui.prompt.mesh.position, 0, 0.72, 1.5); G.ui.prompt.mesh.lookAt(Head.pos);   // above the results text
     K.ticket.show(() => {
       G.audio.fadeMusic(0, 0.9);
@@ -14643,7 +14905,7 @@ BOSSES.ringmaster = {
     { key: 'heckle', label: 'HECKLE' }, { key: 'encore', label: 'ENCORE 40%TP' }, { key: 'bow', label: 'TAKE A BOW' },
   ],
   actMenuOpts: { yOff: -0.47, radius: 0.76, gap: 0.022 },
-  items: [{ key: 'candy', label: 'COTTON CANDY x2', minChars: 16 }, { key: 'popcorn', label: 'POPCORN x2', minChars: 16 }, { key: 'peanuts', label: 'PEANUT BAG x1', minChars: 16 }],
+  items: [{ key: 'candy', label: 'COTTON CANDY x2' }, { key: 'popcorn', label: 'POPCORN x2' }, { key: 'peanuts', label: 'PEANUT BAG x1' }],
   fightType: 'juggle',
   shatterStyle: 'confetti',
   glitchWords: ['BRAVO', 'ENCORE', 'SOLD OUT'],
@@ -14705,6 +14967,7 @@ BOSSES.ringmaster = {
   },
   actPrompt(B) { return B.phase >= 2 && B.applauds >= 2 ? '* What will you do?\n* (Every show ends with a bow.)' : B.phase >= 2 ? '* What will you do?\n* (He lights up whenever you applaud.)' : '* What will you do?'; },
   itemPrompt() { return '* Your pockets are full of concessions.'; },
+  itemLine() { return { text: pick(RLINES.item) }; },
   mercyPrompt(B) { return B.spare >= 100 ? '* GRANDIOSO is ready for the final bow.' : `* Mercy: ${Math.floor(B.spare)}%.`; },
   spareCap(B) { return B.bowed ? 100 : 75; },
   act(B, k) {
@@ -15365,6 +15628,1307 @@ const _ensure = AudioEngine.prototype.ensure;
 AudioEngine.prototype.ensure = function () { const had = !!this.ctx; _ensure.call(this); if (!had && this._droneWanted) this.drone(true); };
 
 // ============================================================================
+//  KNOBS' SHOP - a cozy late-night record shop floating in the void. Reached from
+//  the SAVE FILES door ("KNOBS' - open late") or after any fight. You walk here
+//  (room-scale + left stick, snap turn; no flying), pick things up with grip, set
+//  them on the glowing pad and poke BUY. Warm amber + teal light, everything
+//  procedural. Built when you walk in, freed when you leave (ShopKit).
+// ============================================================================
+const SHOP = {
+  W: 4, D: 4, H: 2.7,                       // the room (x -2..2, z -2..2, floor at y 0)
+  COUNTER: { x0: -1.2, x1: 1.2, z0: -1.15, z1: -0.55, top: 0.98 },
+  PAD: new THREE.Vector3(-0.62, 0.985, -0.74),   // the glowing pad you set things on
+  SLIDE: new THREE.Vector3(-0.18, 0.99, -0.95),  // where KNOBS slides it to ring it up
+  DECK: new THREE.Vector3(0.58, 1.04, -0.97),    // the tape deck's slot
+  DRAWER: new THREE.Vector3(0.98, 1.02, -0.78),  // the cash drawer
+  KNOBS: new THREE.Vector3(0, 0, -1.4),
+  MIRROR: { x: -1.965, y: 1.45, z: 1.15, w: 0.62, h: 0.95 },
+  SPAWN: new THREE.Vector3(0, 0, 2.95),          // outside the door, on the stoop
+  STOCK: { lemonade: 4, bassbar: 2, vinyl: 2, battery: 3 },   // consumables: restocked after every boss fight
+};
+// the walkable floor: inside, the doorway, the stoop outside (your head is kept in their union)
+const SHOP_AREAS = [
+  { x0: -1.72, x1: 1.72, z0: -0.32, z1: 1.74 },   // inside (clear of the counter and the walls)
+  { x0: -0.3, x1: 0.3, z0: 1.74, z1: 2.3, door: true },
+  { x0: -1.25, x1: 1.25, z0: 2.3, z1: 3.4 },      // the stoop
+];
+function shopClamp(p) {
+  const S = Shop;
+  let best = null, bd = 1e9;
+  for (const a of SHOP_AREAS) {
+    if (a.door && !S.doorOpen) continue;
+    if (!S.doorOpen && a.z0 >= 2.3 && S.inside) continue;   // the door shut behind you
+    if (!S.doorOpen && a.z1 <= 1.74 && !S.inside) continue;  // still outside, door closed
+    const x = clamp(p.x, a.x0, a.x1), z = clamp(p.z, a.z0, a.z1), d = (x - p.x) ** 2 + (z - p.z) ** 2;
+    if (d < bd) { bd = d; best = [x, z]; }
+  }
+  if (best) { p.x = best[0]; p.z = best[1]; }
+}
+
+// ---------------------------------------------------------------- shop textures (canvas)
+function drawPlanks(g, w, h) {
+  const rows = 8, rh = h / rows;
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * w * 0.37;
+    for (let k = -1; k < 3; k++) {
+      const x0 = off + k * w * 0.62, tone = 0.8 + 0.35 * ((r * 7 + k * 3) % 5) / 5;
+      g.fillStyle = `rgb(${Math.round(120 * tone)},${Math.round(72 * tone)},${Math.round(42 * tone)})`;
+      g.fillRect(x0, r * rh, w * 0.62, rh);
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x0, r * rh, 2, rh);
+      for (let i = 0; i < 5; i++) { g.fillStyle = 'rgba(60,30,14,0.35)'; g.fillRect(x0 + 6 + Math.random() * w * 0.5, r * rh + 3 + Math.random() * (rh - 6), 18 + Math.random() * 40, 1); }
+    }
+    g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(0, r * rh, w, 2);
+  }
+}
+function drawRug(g, w, h) {
+  g.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2;
+  const ring = (r, col) => { g.fillStyle = col; g.beginPath(); g.ellipse(cx, cy, r, r * 0.68, 0, 0, TAU); g.fill(); };
+  ring(w * 0.5, '#5a1e1a'); ring(w * 0.46, '#c8783a'); ring(w * 0.43, '#3a1418'); ring(w * 0.36, '#1f5a5a'); ring(w * 0.33, '#3a1418');
+  ring(w * 0.22, '#a8442a'); ring(w * 0.18, '#e8b06a'); ring(w * 0.1, '#1f5a5a');
+  g.strokeStyle = '#e8b06a'; g.lineWidth = 3;
+  for (let i = 0; i < 16; i++) { const a = i / 16 * TAU; g.beginPath(); g.moveTo(cx + Math.cos(a) * w * 0.24, cy + Math.sin(a) * w * 0.24 * 0.68); g.lineTo(cx + Math.cos(a) * w * 0.31, cy + Math.sin(a) * w * 0.31 * 0.68); g.stroke(); }
+}
+function drawWallpaper(g, w, h) {
+  g.fillStyle = '#2a1712'; g.fillRect(0, 0, w, h);
+  for (let x = 0; x < w; x += 32) { g.fillStyle = '#321c15'; g.fillRect(x, 0, 14, h); g.fillStyle = 'rgba(232,176,106,0.10)'; g.fillRect(x + 15, 0, 1, h); }
+  for (let y = 8; y < h; y += 32) for (let x = 0; x < w; x += 32) { g.fillStyle = 'rgba(232,176,106,0.08)'; g.fillRect(x + 20, y, 4, 4); }
+}
+function drawBrick(g, w, h) {
+  g.fillStyle = '#1a0e0c'; g.fillRect(0, 0, w, h);
+  const bh = 16, bw = 44;
+  for (let r = 0; r * bh < h; r++) for (let k = -1; k * bw < w; k++) {
+    const x = k * bw + (r % 2) * bw / 2, t = 0.75 + 0.35 * Math.random();
+    g.fillStyle = `rgb(${Math.round(92 * t)},${Math.round(40 * t)},${Math.round(30 * t)})`; g.fillRect(x + 2, r * bh + 2, bw - 3, bh - 3);
+  }
+}
+// record spines on a shelf (one texture, every shelf row)
+function drawSpines(g, w, h) {
+  g.fillStyle = '#120a08'; g.fillRect(0, 0, w, h);
+  const cols = ['#e8283c', '#ffc83c', '#2affd5', '#ff9d1a', '#f4f0e8', '#c23cff', '#3ca8ff', '#3cff6e', '#ff5fb4', '#8a6a4a', '#1e1e24', '#d8d0c0'];
+  let x = 0;
+  while (x < w) {
+    const sw = 3 + Math.floor(Math.random() * 7), c = pick(cols), hh = h * (0.86 + Math.random() * 0.14);
+    g.fillStyle = c; g.fillRect(x, h - hh, sw - 1, hh);
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + sw - 2, h - hh, 1, hh);
+    if (Math.random() < 0.3) { g.fillStyle = 'rgba(255,255,255,0.4)'; g.fillRect(x + 1, h - hh * 0.6, sw - 3, 3); }
+    x += sw;
+  }
+}
+// "KNOBS'" in neon tubes (+ "open late" for the outside sign)
+function drawNeonSign(g, w, h, sub) {
+  g.clearRect(0, 0, w, h);
+  const word = "KNOBS'", s = Math.floor(h * (sub ? 0.5 : 0.7) / 7);
+  const tw = PixelFont.width(word, s), x = Math.round((w - tw) / 2), y = Math.round(h * 0.08);
+  g.save(); g.shadowColor = '#ff3cc8'; g.shadowBlur = 16;
+  PixelFont.draw(g, word, x, y, s, '#ff7ad8');
+  PixelFont.draw(g, word, x, y, s, '#ffd0f0');
+  g.restore();
+  if (sub) {
+    const s2 = Math.max(2, Math.floor(s * 0.45)), t2 = 'open late', w2 = PixelFont.width(t2, s2);
+    g.save(); g.shadowColor = '#2affd5'; g.shadowBlur = 12;
+    PixelFont.draw(g, t2, Math.round((w - w2) / 2), y + 8 * s + 6, s2, '#8affea');
+    g.restore();
+  }
+}
+// an analog VU meter face (the needle is its own mesh)
+function drawVU(g, w, h) {
+  g.fillStyle = '#f2dca8'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#3a2a1a'; g.lineWidth = 3; g.strokeRect(2, 2, w - 4, h - 4);
+  const cx = w / 2, cy = h * 0.95, R = h * 0.75;
+  g.lineWidth = 2;
+  for (let i = 0; i <= 10; i++) {
+    const a = Math.PI * (1.18 + i * 0.064), red = i >= 8;
+    g.strokeStyle = red ? '#c8281e' : '#3a2a1a';
+    g.beginPath(); g.moveTo(cx + Math.cos(a) * R * 0.86, cy + Math.sin(a) * R * 0.86); g.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R); g.stroke();
+  }
+  g.strokeStyle = '#c8281e'; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, R * 0.93, Math.PI * 1.69, Math.PI * 1.82); g.stroke();
+  PixelFont.draw(g, 'VU', Math.round(cx - 11), Math.round(h * 0.48), 2, '#3a2a1a');
+}
+// the jukebox / sound test name sign above KNOBS' turntable
+function drawJukeName(g, w, h, title, color) {
+  g.clearRect(0, 0, w, h);
+  if (!title) return;
+  const s = PixelFont.width(title, 3) <= w - 20 ? 3 : 2, tw = PixelFont.width(title, s);
+  g.save(); g.shadowColor = color; g.shadowBlur = 12;
+  PixelFont.draw(g, title, Math.round((w - tw) / 2), Math.round((h - 7 * s) / 2), s, color);
+  g.restore();
+}
+
+// ---------------------------------------------------------------- the shop's things
+// a cassette tape (the label colour is the tape's own)
+function cassetteGeo(col) {
+  return mergeGeos([
+    { geo: new THREE.BoxGeometry(0.1, 0.064, 0.013), color: 0x26222c },
+    { geo: new THREE.BoxGeometry(0.084, 0.03, 0.0136), matrix: M4(0, 0.012, 0), color: col },
+    { geo: new THREE.BoxGeometry(0.044, 0.016, 0.014), matrix: M4(0, -0.008, 0), color: 0x0c0a10 },
+    { geo: new THREE.CylinderGeometry(0.0085, 0.0085, 0.0142, 8).rotateX(Math.PI / 2), matrix: M4(-0.016, -0.008, 0), color: 0xf4f0e8 },
+    { geo: new THREE.CylinderGeometry(0.0085, 0.0085, 0.0142, 8).rotateX(Math.PI / 2), matrix: M4(0.016, -0.008, 0), color: 0xf4f0e8 },
+    { geo: new THREE.BoxGeometry(0.06, 0.008, 0.014), matrix: M4(0, -0.028, 0), color: 0x3a3440 },
+  ]);
+}
+function consumableGeo(id) {
+  if (id === 'lemonade') return mergeGeos([   // a tall can
+    { geo: new THREE.CylinderGeometry(0.032, 0.032, 0.12, 14), color: 0xfff36b },
+    { geo: new THREE.CylinderGeometry(0.0322, 0.0322, 0.05, 14), matrix: M4(0, 0.005, 0), color: 0x2affd5 },
+    { geo: new THREE.CylinderGeometry(0.028, 0.032, 0.008, 14), matrix: M4(0, 0.064, 0), color: 0xc8c8d0 },
+    { geo: new THREE.CylinderGeometry(0.032, 0.028, 0.008, 14), matrix: M4(0, -0.064, 0), color: 0xc8c8d0 },
+  ]);
+  if (id === 'bassbar') return mergeGeos([    // a candy bar in a wrapper
+    { geo: new THREE.BoxGeometry(0.15, 0.022, 0.05), color: 0x5a2c18 },
+    { geo: new THREE.BoxGeometry(0.1, 0.0235, 0.052), color: 0xc23cff },
+    { geo: new THREE.BoxGeometry(0.03, 0.024, 0.053), matrix: M4(0.02, 0, 0), color: 0xffd23c },
+  ]);
+  if (id === 'vinyl') return mergeGeos([      // a 7" in a sleeve
+    { geo: new THREE.BoxGeometry(0.18, 0.18, 0.006), color: 0xe8e0d0 },
+    { geo: new THREE.CylinderGeometry(0.085, 0.085, 0.004, 22).rotateX(Math.PI / 2), matrix: M4(0.04, 0, 0.0035), color: 0x141018 },
+    { geo: new THREE.CylinderGeometry(0.028, 0.028, 0.0045, 14).rotateX(Math.PI / 2), matrix: M4(0.04, 0, 0.0038), color: 0xff9d1a },
+  ]);
+  return mergeGeos([                          // battery
+    { geo: new THREE.CylinderGeometry(0.026, 0.026, 0.1, 12), color: 0x1e1e24 },
+    { geo: new THREE.CylinderGeometry(0.0262, 0.0262, 0.045, 12), matrix: M4(0, 0.02, 0), color: 0xff9d1a },
+    { geo: new THREE.CylinderGeometry(0.01, 0.01, 0.01, 8), matrix: M4(0, 0.055, 0), color: 0xc8c8d0 },
+  ]);
+}
+function pinGeo(id) {
+  const back = { geo: new THREE.CylinderGeometry(0.045, 0.045, 0.008, 18).rotateX(Math.PI / 2), color: 0x1a1418 };
+  const heart = (col) => ({ geo: buildVoxelHeart(0.009, 0.01), matrix: M4(0, 0, 0.008), color: col });
+  if (id === 'gold') return mergeGeos([back, heart(0xffd23c)]);
+  if (id === 'cassette') return mergeGeos([back, heart(0xff0033), { geo: new THREE.BoxGeometry(0.05, 0.03, 0.006), matrix: M4(0, -0.004, 0.016), color: 0xff9d1a }]);
+  if (id === 'disco') return mergeGeos([back, { geo: new THREE.IcosahedronGeometry(0.03, 1), matrix: M4(0, 0, 0.012), color: 0xd8e4ff }]);
+  if (id === 'neon') return mergeGeos([back, { geo: new THREE.BoxGeometry(0.05, 0.05, 0.004), matrix: M4(0, 0, 0.008), color: 0xff3cc8 }, { geo: new THREE.BoxGeometry(0.036, 0.036, 0.005), matrix: M4(0, 0, 0.009), color: 0x1a1418 }, { geo: new THREE.BoxGeometry(0.02, 0.02, 0.006), matrix: M4(0, 0, 0.01), color: 0x2affd5 }]);
+  return mergeGeos([back, { geo: new THREE.CylinderGeometry(0.036, 0.036, 0.004, 14), matrix: M4(0, -0.01, 0.01, Math.PI / 2, 0, 0, 1, 1, 0.6), color: 0x8a4a22 },
+    { geo: new THREE.CylinderGeometry(0.015, 0.018, 0.022, 10), matrix: M4(0, 0.003, 0.012, Math.PI / 2, 0, 0), color: 0x9a5628 }]);
+}
+
+// ---------------------------------------------------------------- KNOBS
+// The shopkeeper: a speaker-cabinet head (a woofer that pumps with the bass, one tweeter for an eye, an LED
+// dot-matrix mouth), oversized headphones he never takes off, an olive bomber with a cassette patch, fingerless
+// gloves and a gold chain with a cassette pendant. Idles on the beat: nods, twiddles knobs, rides a fader,
+// glances up at you, keeps a record spinning.
+class KnobsModel {
+  constructor() {
+    const root = this.root = new THREE.Group();
+    root.position.copy(SHOP.KNOBS);
+    const lit = (o) => CircusShade.material(Object.assign({ gloss: 0.3, shine: 30, rim: 0.4, emit: 0.12, wrap: 0.5 }, o));
+    this.mat = lit({});
+    const OLIVE = 0x5c6b35, OLIVE_D = 0x46522a, RIB = 0x2c321f, GOLD = 0xd8b04a, WOOD = 0x7a4a2a, WOOD_D = 0x4a2a16, BLACK = 0x141018;
+    // body (only the top half shows over the counter)
+    this.body = new THREE.Group(); root.add(this.body);
+    const bodyGeo = mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.24, 0.21, 0.62, 14), matrix: M4(0, 1.16, 0, 0, 0, 0, 1, 1, 0.78), color: OLIVE },
+      { geo: new THREE.SphereGeometry(0.245, 14, 8, 0, TAU, 0, Math.PI / 2), matrix: M4(0, 1.46, 0, 0, 0, 0, 1, 0.42, 0.8), color: OLIVE_D },
+      { geo: new THREE.TorusGeometry(0.13, 0.03, 6, 16), matrix: M4(0, 1.53, 0, Math.PI / 2, 0, 0, 1, 0.8, 1), color: RIB },        // collar
+      { geo: new THREE.CylinderGeometry(0.215, 0.215, 0.06, 14), matrix: M4(0, 0.86, 0, 0, 0, 0, 1, 1, 0.8), color: RIB },          // waistband
+      { geo: new THREE.BoxGeometry(0.012, 0.5, 0.012), matrix: M4(0, 1.18, 0.19), color: 0xb8b8c0 },                               // zip
+      // cassette patch on the chest
+      { geo: new THREE.BoxGeometry(0.1, 0.064, 0.01), matrix: M4(-0.11, 1.3, 0.183, 0, -0.35, 0), color: 0xe8dcc0 },
+      { geo: new THREE.BoxGeometry(0.07, 0.022, 0.012), matrix: M4(-0.11, 1.31, 0.185, 0, -0.35, 0), color: 0xff9d1a },
+      { geo: new THREE.CylinderGeometry(0.009, 0.009, 0.013, 8).rotateX(Math.PI / 2), matrix: M4(-0.128, 1.288, 0.19, 0, -0.35, 0), color: 0x26222c },
+      { geo: new THREE.CylinderGeometry(0.009, 0.009, 0.013, 8).rotateX(Math.PI / 2), matrix: M4(-0.092, 1.288, 0.177, 0, -0.35, 0), color: 0x26222c },
+      // gold chain + cassette pendant
+      { geo: new THREE.TorusGeometry(0.14, 0.007, 4, 22, Math.PI), matrix: M4(0, 1.5, 0.12, Math.PI * 0.62, 0, Math.PI), color: GOLD },
+      { geo: new THREE.BoxGeometry(0.056, 0.036, 0.01), matrix: M4(0, 1.35, 0.2, -0.2, 0, 0), color: GOLD },
+      { geo: new THREE.BoxGeometry(0.03, 0.01, 0.011), matrix: M4(0, 1.344, 0.201, -0.2, 0, 0), color: 0x6a5020 },
+      // neck
+      { geo: new THREE.CylinderGeometry(0.05, 0.06, 0.12, 8), matrix: M4(0, 1.58, 0), color: 0x2a2a30 },
+    ]);
+    this.body.add(new THREE.Mesh(bodyGeo, this.mat));
+    // arms: shoulder -> upper arm (+z) -> elbow -> forearm (+z) -> glove (2-bone IK toward a target)
+    this.armA = 0.34; this.armB = 0.32;
+    const upper = new THREE.CylinderGeometry(0.055, 0.05, this.armA, 8).rotateX(Math.PI / 2).translate(0, 0, this.armA / 2);
+    const fore = new THREE.CylinderGeometry(0.048, 0.042, this.armB, 8).rotateX(Math.PI / 2).translate(0, 0, this.armB / 2);
+    const glove = mergeGeos([
+      { geo: new THREE.BoxGeometry(0.075, 0.03, 0.08), matrix: M4(0, 0, 0.04), color: BLACK },
+      { geo: new THREE.BoxGeometry(0.068, 0.022, 0.03), matrix: M4(0, -0.004, 0.092), color: 0x8a5a3a },   // fingertips poke out
+      { geo: new THREE.BoxGeometry(0.022, 0.022, 0.04), matrix: M4(0.045, 0, 0.035, 0, 0.5, 0), color: 0x8a5a3a },
+    ]);
+    const sleeveGeo = mergeGeos([{ geo: upper, color: OLIVE }]), foreGeo = mergeGeos([{ geo: fore, color: OLIVE }, { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.04, 8).rotateX(Math.PI / 2), matrix: M4(0, 0, this.armB - 0.02), color: RIB }]);
+    this.arms = [-1, 1].map((side) => {
+      const sh = new THREE.Group(); sh.position.set(side * 0.265, 1.44, 0.02); this.body.add(sh);
+      sh.add(new THREE.Mesh(sleeveGeo, this.mat));
+      const el = new THREE.Group(); el.position.z = this.armA; sh.add(el);
+      el.add(new THREE.Mesh(foreGeo, this.mat));
+      const hand = new THREE.Mesh(glove, this.mat); hand.position.z = this.armB; el.add(hand);
+      return { side, sh, el, hand, target: new THREE.Vector3(), cur: new THREE.Vector3(side * 0.2, 1.05, -1.0) };
+    });
+    // head: the speaker cabinet
+    this.head = new THREE.Group(); this.head.position.set(0, 1.62, 0); this.body.add(this.head);
+    const cab = mergeGeos([
+      { geo: new THREE.BoxGeometry(0.44, 0.56, 0.34), matrix: M4(0, 0.28, 0), color: WOOD },
+      { geo: new THREE.BoxGeometry(0.455, 0.02, 0.345), matrix: M4(0, 0.005, 0), color: WOOD_D },
+      { geo: new THREE.BoxGeometry(0.455, 0.02, 0.345), matrix: M4(0, 0.555, 0), color: WOOD_D },
+      { geo: new THREE.BoxGeometry(0.41, 0.52, 0.012), matrix: M4(0, 0.28, 0.168), color: BLACK },            // the baffle
+      { geo: new THREE.TorusGeometry(0.128, 0.02, 6, 26), matrix: M4(0, 0.17, 0.175), color: 0x2a2a30 },       // woofer surround
+      { geo: new THREE.TorusGeometry(0.046, 0.009, 5, 18), matrix: M4(0, 0.465, 0.176), color: 0xa0a0ac },     // tweeter ring
+      { geo: new THREE.BoxGeometry(0.17, 0.056, 0.006), matrix: M4(0, 0.36, 0.175), color: 0x050508 },          // LED window
+      // headphones: band over the top, big cups
+      { geo: new THREE.TorusGeometry(0.29, 0.024, 6, 22, Math.PI), matrix: M4(0, 0.3, 0.0), color: 0x24242a },
+      { geo: new THREE.BoxGeometry(0.16, 0.03, 0.06), matrix: M4(0, 0.585, 0), color: 0x3a3a44 },
+      { geo: new THREE.CylinderGeometry(0.115, 0.115, 0.08, 18).rotateZ(Math.PI / 2), matrix: M4(-0.262, 0.3, 0), color: 0x24242a },
+      { geo: new THREE.CylinderGeometry(0.115, 0.115, 0.08, 18).rotateZ(Math.PI / 2), matrix: M4(0.262, 0.3, 0), color: 0x24242a },
+      { geo: new THREE.TorusGeometry(0.1, 0.016, 5, 18).rotateY(Math.PI / 2), matrix: M4(-0.305, 0.3, 0), color: 0x2affd5 },
+      { geo: new THREE.TorusGeometry(0.1, 0.016, 5, 18).rotateY(Math.PI / 2), matrix: M4(0.305, 0.3, 0), color: 0x2affd5 },
+    ]);
+    this.head.add(new THREE.Mesh(cab, this.mat));
+    // the woofer cone pumps with the bass
+    this.cone = new THREE.Mesh(mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.112, 0.04, 0.05, 22, 1, true).rotateX(-Math.PI / 2), matrix: M4(0, 0, -0.02), color: 0x1e1e24 },
+      { geo: new THREE.SphereGeometry(0.042, 12, 6, 0, TAU, 0, Math.PI / 2).rotateX(Math.PI / 2), matrix: M4(0, 0, -0.04), color: 0x3a3a44 },
+    ]), lit({ side: THREE.DoubleSide, gloss: 0.6 }));
+    this.cone.position.set(0, 0.17, 0.2); this.head.add(this.cone);
+    // the tweeter eye (dims when you're LV 3+)
+    this.eyeMat = new THREE.MeshBasicMaterial({ color: 0x2affd5 });
+    this.eye = new THREE.Mesh(new THREE.SphereGeometry(0.034, 14, 8, 0, TAU, 0, Math.PI / 2).rotateX(Math.PI / 2), this.eyeMat);
+    this.eye.position.set(0, 0.465, 0.172); this.head.add(this.eye);
+    // LED dot-matrix mouth
+    this.mouthTex = canvasTex(68, 22); this.mouthG = this.mouthTex.userData.ctx;
+    this.mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.052), new THREE.MeshBasicMaterial({ map: this.mouthTex, transparent: true }));
+    this.mouth.position.set(0, 0.36, 0.1795); this.head.add(this.mouth);
+    this.mouthT = 0; this.talking = false; this.mouthLv = new Float32Array(17);
+    // his gear behind the counter: a turntable and a little mixer
+    const gear = this.gear = new THREE.Group(); root.add(gear); gear.position.set(-SHOP.KNOBS.x, 0, -SHOP.KNOBS.z);   // gear in room coords
+    gear.add(new THREE.Mesh(mergeGeos([
+      { geo: new THREE.BoxGeometry(0.44, 0.05, 0.34), matrix: M4(-0.38, 1.005, -0.98), color: 0x2a2028 },
+      { geo: new THREE.BoxGeometry(0.34, 0.04, 0.24), matrix: M4(0.12, 1.0, -0.99), color: 0x1e1e26 },
+      { geo: new THREE.BoxGeometry(0.012, 0.012, 0.16), matrix: M4(-0.22, 1.05, -0.93, 0, 0.4, 0), color: 0xc8c8d0 },   // tone arm
+      { geo: new THREE.CylinderGeometry(0.018, 0.018, 0.03, 8), matrix: M4(-0.2, 1.04, -1.06), color: 0x9a9aa8 },
+    ]), this.mat));
+    this.platter = new THREE.Group(); this.platter.position.set(-0.4, 1.034, -0.98); gear.add(this.platter);
+    this.recordMat = new THREE.MeshBasicMaterial({ color: 0xff9d1a });
+    this.platter.add(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.008, 28), lit({ color: 0x141018, gloss: 0.9, shine: 60 })));
+    const lab = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.0086, 18), this.recordMat); this.platter.add(lab);
+    const groove = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.14, 28, 1, 0, 0.6).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x4a4458, transparent: true, opacity: 0.6 }));
+    groove.position.y = 0.0046; this.platter.add(groove);
+    // knobs + faders on the mixer
+    this.knobs = []; this.faders = [];
+    const kGeo = new THREE.CylinderGeometry(0.013, 0.015, 0.022, 10), fGeo = new THREE.BoxGeometry(0.022, 0.02, 0.03);
+    const kMat = lit({ color: 0xd8d0c0, gloss: 0.7 }), fMat = lit({ color: 0xff9d1a, gloss: 0.5 });
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) { const k = new THREE.Mesh(kGeo, kMat); k.position.set(0.02 + c * 0.05, 1.031, -1.06 + r * 0.05); gear.add(k); this.knobs.push(k); }
+    for (let c = 0; c < 3; c++) { const f = new THREE.Mesh(fGeo, fMat); f.position.set(0.2 + c * 0.032 - 0.032, 1.03, -0.95); gear.add(f); this.faders.push({ m: f, v: 0.5, slam: 0 }); }
+    // animation state
+    this.nod = 0; this.glance = 0; this.glanceT = 3; this.lookYaw = 0; this.lookPitch = 0;
+    this.reach = null;     // { pos: Vector3 (world), arm: 0|1, until }
+    this.taskT = 0; this.task = 'knobs'; this.slam = 0; this.eyeDim = false; this.bob = 0;
+    this.drawMouth(0);
+  }
+  drawMouth(t) {
+    const g = this.mouthG, W = 68, H = 22;
+    g.fillStyle = '#050508'; g.fillRect(0, 0, W, H);
+    for (let c = 0; c < 17; c++) {
+      let lv;
+      if (this.talking) lv = this.mouthLv[c];
+      else { const x = (c - 8) / 8; lv = 0.3 + 0.25 * (1 - x * x) + 0.12 * Math.sin(t * 2 + c * 0.4) * 0; }   // a resting smile
+      const n = Math.round(clamp(lv, 0, 1) * 5);
+      for (let r = 0; r < 5; r++) {
+        const on = this.talking ? Math.abs(r - 2) <= n / 2 : r === (Math.abs(c - 8) > 5 ? 2 : 3);
+        g.fillStyle = on ? (this.eyeDim ? '#1aa890' : '#2affd5') : '#0d2420';
+        g.fillRect(1 + c * 4, 1 + r * 4, 3, 3);
+      }
+    }
+    this.mouthTex.needsUpdate = true;
+  }
+  onBeat(b) { this.nod = 1; if (this.task === 'knobs' && chance(0.35)) this.taskT = 0; }
+  // 2-bone IK: point the upper arm at the target, bend the elbow down so the glove lands on it
+  solveArm(A, target) {
+    const a = this.armA, b = this.armB;
+    A.sh.getWorldPosition(_v1);
+    const d = clamp(_v1.distanceTo(target), 0.08, a + b - 0.005);
+    const alpha = Math.acos(clamp((a * a + d * d - b * b) / (2 * a * d), -1, 1));
+    const beta = Math.acos(clamp((a * a + b * b - d * d) / (2 * a * b), -1, 1));
+    A.sh.lookAt(target);
+    A.sh.rotateZ(A.side * 0.55);   // elbows out a little
+    A.sh.rotateX(alpha);
+    A.el.rotation.set(-(Math.PI - beta), 0, 0);
+    A.hand.rotation.set(0.35, 0, 0);
+  }
+  update(dt, rdt, bass, treble, beatPhase) {
+    const t = G.time;
+    this.nod = Math.max(0, this.nod - rdt * 3.2);
+    // the beat: nod, a little body bob
+    const nodK = Math.pow(this.nod, 2);
+    this.body.position.y = -0.012 * nodK;
+    this.body.rotation.x = 0.04 * nodK;
+    // look: down at the gear, a glance up at you every few seconds (always at you while talking)
+    this.glanceT -= rdt;
+    if (this.glanceT <= 0) { this.glance = this.glance > 0.5 ? 0 : 1; this.glanceT = this.glance ? rand(1.2, 2.2) : rand(2.5, 5.5); }
+    const atYou = this.glance > 0.5 || this.talking;
+    Head.update();
+    _v1.copy(Head.pos).sub(this.root.position);
+    const yawYou = Math.atan2(_v1.x, _v1.z), pitchYou = -Math.atan2(_v1.y - 1.9, Math.hypot(_v1.x, _v1.z));
+    this.lookYaw = damp(this.lookYaw, atYou ? clamp(yawYou, -0.8, 0.8) : 0.12 * Math.sin(t * 0.3), 5, rdt);
+    this.lookPitch = damp(this.lookPitch, atYou ? clamp(pitchYou, -0.3, 0.3) : 0.32, 5, rdt);
+    this.head.rotation.set(this.lookPitch + 0.18 * nodK, this.lookYaw, 0.03 * Math.sin(t * 0.7));
+    // speaker bits: woofer pumps with the bass, the eye glows with the highs
+    this.cone.position.z = 0.2 + 0.022 * bass;
+    const eb = (this.eyeDim ? 0.32 : 1) * (0.75 + 0.35 * treble);
+    this.eyeMat.color.setRGB(0.16 * eb, 1.0 * eb, 0.84 * eb);
+    this.eye.getWorldPosition(_v2);
+    G.fx.glow.add(_v2.x, _v2.y, _v2.z, this.eyeDim ? 0.06 : 0.11, 0.16, 1, 0.84, this.eyeDim ? 0.35 : 0.7, 0);
+    // the mouth (LED matrix): a smile, or levels while he talks
+    this.mouthT -= rdt;
+    if (this.mouthT <= 0) {
+      this.mouthT = 0.07;
+      if (this.talking) for (let c = 0; c < 17; c++) { const x = (c - 8) / 8; this.mouthLv[c] = (1 - x * x) * rand(0.3, 1); }
+      this.drawMouth(t);
+    }
+    // the record spins (33 1/3)
+    this.platter.rotation.y -= rdt * 3.49;
+    // hands: busy at the gear, or reaching for something on the counter
+    this.taskT -= rdt;
+    const L = this.arms[1], R = this.arms[0];   // his left hand (+x: the mixer) and right hand (-x: the turntable)
+    if (this.taskT <= 0) { this.taskT = rand(1.2, 2.6); this.task = pick(['knobs', 'knobs', 'fader']); this.rTask = pick(['record', 'record', 'rest']); this.knobIdx = randi(0, 5); this.faderIdx = randi(0, 2); }
+    const k = this.knobs[this.knobIdx || 0], f = this.faders[this.faderIdx || 0];
+    // right hand: rides the record (a little scratch on the beat), or rests on the plinth
+    if (this.reach && this.reach.arm === 0) R.target.copy(this.reach.pos);
+    else if (this.talking && Math.sin(t * 1.3) > 0.4) R.target.set(-0.3, 1.3 + 0.04 * Math.sin(t * 4), -1.1);
+    else if (this.rTask === 'record') R.target.set(-0.42 + 0.05 * Math.sin(t * 1.1), 1.06 + 0.012 * this.nod, -0.93 + 0.025 * Math.sin(t * 7.3) * this.nod);
+    else R.target.set(-0.22, 1.05, -0.98);
+    // left hand: twiddles knobs, rides a fader (slams on a purchase), gestures while talking
+    if (this.reach && this.reach.arm === 1) L.target.copy(this.reach.pos);
+    else if (this.talking && Math.sin(t * 1.7) > 0.3) L.target.set(0.25, 1.32 + 0.04 * Math.sin(t * 5), -1.08);
+    else if (this.task === 'knobs') { k.getWorldPosition(L.target); L.target.y += 0.04; L.target.x += Math.sin(t * 9) * 0.006; k.rotation.y += rdt * 2.5 * Math.sin(t * 1.3); }
+    else { f.m.getWorldPosition(L.target); L.target.y += 0.035; }
+    for (const F of this.faders) { F.slam = Math.max(0, F.slam - rdt * 2); F.m.position.z = -0.95 - 0.04 * (F.slam > 0 ? 1 : F.v - 0.5) ; }
+    if (this.task === 'fader' && !this.reach) f.v = 0.5 + 0.4 * Math.sin(t * 1.5);
+    for (const A of this.arms) { A.cur.lerp(A.target, 1 - Math.exp(-10 * rdt)); this.solveArm(A, A.cur); }
+    if (this.reach && G.time > this.reach.until) this.reach = null;
+  }
+  // purchase: slam a fader up on the beat
+  slamFader() { for (const F of this.faders) F.slam = 1; this.nod = 1; }
+  reachFor(pos, arm, dur) { this.reach = { pos: pos.clone(), arm, until: G.time + dur }; }
+  dispose() { disposeObject(this.root); }
+}
+
+// ---------------------------------------------------------------- the room
+const ShopKit = {
+  ready: false,
+  init() {
+    if (this.ready) return;
+    const root = this.root = new THREE.Group(); root.name = 'shop'; scene.add(root);
+    const lit = (o) => CircusShade.material(Object.assign({ gloss: 0.18, shine: 24, rim: 0.22, emit: 0.1, wrap: 0.55 }, o));
+    const tex = (w, h, f, rep) => canvasTex(w, h, f, rep ? { repeat: true, mipmaps: true } : {});
+    this.texPlank = tex(256, 256, drawPlanks, true); this.texWall = tex(128, 128, drawWallpaper, true); this.texBrick = tex(256, 128, drawBrick, true);
+    this.texSpines = tex(512, 64, drawSpines, true); this.texRug = tex(256, 256, drawRug);
+    this.matLit = lit({});
+    const { W, D, H } = SHOP, C = SHOP.COUNTER;
+    // floor, rug, ceiling
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2), lit({ map: this.texPlank, mapST: [3, 3, 0, 0], gloss: 0.25 }));
+    root.add(floor);
+    const rug = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), lit({ map: this.texRug, gloss: 0.02, rim: 0.1 }));
+    rug.scale.set(1.15, 1, 0.78); rug.position.set(0, 0.004, 0.62); root.add(rug);
+    // walls: back, left, right, and the front wall around the door (wallpaper inside, brick facade outside)
+    const panel = (w, h, x, y, z, ry, tw, th) => { const g = new THREE.PlaneGeometry(w, h), uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / tw, uv.getY(i) * h / th); return { geo: g, matrix: M4(x, y, z, 0, ry, 0) }; };
+    const dw = 0.92, dh = 2.08, side = (W - dw) / 2;
+    const WP = [W, H, 0, H / 2, -D / 2, 0, D, H, -W / 2, H / 2, 0, Math.PI / 2, D, H, W / 2, H / 2, 0, -Math.PI / 2,
+      side, H, -(dw / 2 + side / 2), H / 2, D / 2, Math.PI, side, H, dw / 2 + side / 2, H / 2, D / 2, Math.PI, dw, H - dh, 0, dh + (H - dh) / 2, D / 2, Math.PI];
+    const wallParts = []; for (let i = 0; i < WP.length; i += 6) wallParts.push(panel(WP[i], WP[i + 1], WP[i + 2], WP[i + 3], WP[i + 4], WP[i + 5], 1, 1.2));
+    root.add(new THREE.Mesh(mergeGeos(wallParts), lit({ map: this.texWall, gloss: 0.05 })));
+    const BP = [side + 0.2, H + 0.2, -(dw / 2 + side / 2) - 0.1, H / 2, side + 0.2, H + 0.2, dw / 2 + side / 2 + 0.1, H / 2, dw, H - dh + 0.2, 0, dh + (H - dh + 0.2) / 2];
+    const brickParts = []; for (let i = 0; i < BP.length; i += 4) brickParts.push(panel(BP[i], BP[i + 1], BP[i + 2], BP[i + 3], D / 2 + 0.08, 0, 0.8, 1.1));
+    root.add(new THREE.Mesh(mergeGeos(brickParts), lit({ map: this.texBrick, gloss: 0.05 })));
+    // outer side walls + roof edge so nothing looks hollow from the stoop
+    const P = [];
+    const B = (x, y, z, w, h, d, col, rx = 0, ry = 0, rz = 0) => P.push({ geo: new THREE.BoxGeometry(w, h, d), matrix: M4(x, y, z, rx, ry, rz), color: col });
+    const CY = (x, y, z, r0, r1, h, seg, col) => P.push({ geo: new THREE.CylinderGeometry(r0, r1, h, seg), matrix: M4(x, y, z), color: col });
+    B(-W / 2 - 0.05, H / 2, 0.04, 0.1, H + 0.1, D + 0.18, 0x24140f); B(W / 2 + 0.05, H / 2, 0.04, 0.1, H + 0.1, D + 0.18, 0x24140f);
+    B(0, H + 0.05, 0.04, W + 0.22, 0.1, D + 0.18, 0x1a0e0a); B(0, -0.04, 0.04, W + 0.22, 0.08, D + 0.18, 0x120a08);
+    B(0, H - 0.02, 0, W, 0.04, D, 0x241510);                         // ceiling
+    for (const z of [-1.2, 0, 1.2]) B(0, H - 0.07, z, W, 0.08, 0.14, 0x3a2216);   // beams
+    // door frame + the stoop outside
+    B(-dw / 2 - 0.04, dh / 2, D / 2 + 0.02, 0.08, dh, 0.22, 0x3a2216); B(dw / 2 + 0.04, dh / 2, D / 2 + 0.02, 0.08, dh, 0.22, 0x3a2216); B(0, dh + 0.04, D / 2 + 0.02, dw + 0.16, 0.08, 0.22, 0x3a2216);
+    B(0, -0.02, 2.85, 2.6, 0.06, 1.3, 0x2a1a14); B(0, 0.03, 2.25, 1.3, 0.04, 0.2, 0x4a2a1a);
+    // the counter: a wooden body, a lighter top, a recessed front (the LED equalizer lives there)
+    const cx = (C.x0 + C.x1) / 2, cz = (C.z0 + C.z1) / 2, cw = C.x1 - C.x0, cd = C.z0 - C.z1;
+    B(cx, C.top / 2 - 0.02, cz, cw, C.top - 0.04, -cd, 0x4a2a18);
+    B(cx, C.top - 0.02, cz + 0.02, cw + 0.06, 0.04, -cd + 0.08, 0x8a5a34);
+    B(cx, 0.55, C.z1 + 0.005, cw - 0.16, 0.6, 0.01, 0x140c0a);
+    B(cx, 0.06, C.z1 + 0.03, cw, 0.12, 0.06, 0x2a1810);
+    // KNOBS' wall shelves (records) behind him and on the left wall, the tape rack on the right wall
+    for (const sx of [-1, 1]) for (let r = 0; r < 3; r++) B(sx * 1.3, 1.2 + r * 0.42, -1.86, 1.1, 0.03, 0.26, 0x5a3420);
+    for (let r = 0; r < 3; r++) B(-1.86, 0.9 + r * 0.42, -0.85, 0.26, 0.03, 1.5, 0x5a3420);
+    B(1.94, 1.3, -0.25, 0.06, 0.78, 1.1, 0x3a2216); for (let r = 0; r < 4; r++) B(1.9, 0.96 + r * 0.22, -0.25, 0.08, 0.018, 1.1, 0x6a4026);
+    // crates of records on the floor
+    for (const [x, z, ry] of [[-1.55, -0.1, 0.1], [-1.55, 0.45, -0.06], [1.5, 0.35, 0.05]]) {
+      B(x, 0.16, z, 0.42, 0.32, 0.36, 0x6a4a2a, 0, ry); B(x, 0.33, z, 0.38, 0.04, 0.32, 0x1a1214, 0, ry);
+    }
+    // a side table (consumables) by the right wall, a pin board + the mirror on the left wall
+    B(1.55, 0.36, 1.05, 0.62, 0.04, 0.5, 0x7a4a2a); for (const [x, z] of [[1.28, 0.84], [1.82, 0.84], [1.28, 1.26], [1.82, 1.26]]) B(x, 0.17, z, 0.04, 0.34, 0.04, 0x4a2a18);
+    B(-1.975, 1.5, 0.35, 0.03, 0.5, 0.62, 0x9a6a3a); B(-1.96, 1.5, 0.35, 0.01, 0.44, 0.56, 0x6a4a2a);
+    const M = SHOP.MIRROR;
+    B(-1.985, M.y, M.z, 0.03, M.h + 0.1, M.w + 0.1, 0xc8a050);
+    // plants in pots
+    for (const [x, z, s] of [[-1.72, 1.72, 1], [1.72, -1.62, 0.85], [1.75, 1.72, 0.7]]) {
+      CY(x, 0.17 * s, z, 0.13 * s, 0.1 * s, 0.34 * s, 10, 0xb0583a); CY(x, 0.33 * s, z, 0.12 * s, 0.12 * s, 0.03, 10, 0x2a1a10);
+      for (let i = 0; i < 9; i++) { const a = i / 9 * TAU, l = (0.35 + 0.25 * ((i * 7) % 3) / 2) * s; P.push({ geo: new THREE.ConeGeometry(0.05 * s, l, 4), matrix: M4(x + Math.cos(a) * 0.08 * s, 0.34 * s + l * 0.42, z + Math.sin(a) * 0.08 * s, Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5, 1, 1, 0.35), color: i % 2 ? 0x3a7a3a : 0x2a5a2a }); }
+    }
+    // pendant lamps (cord + shade)
+    for (const [x, y, z] of [[0.82, 2.4, -0.8], [0, 2.3, 0.85]]) { B(x, (y + 2.7) / 2, z, 0.01, 2.7 - y, 0.01, 0x101010); P.push({ geo: new THREE.ConeGeometry(0.2, 0.18, 14, 1, true), matrix: M4(x, y - 0.09, z), color: 0x2a5a5a }); }
+    this.roomMesh = new THREE.Mesh(mergeGeos(P), lit({ side: THREE.DoubleSide })); root.add(this.roomMesh);
+    // record spines on every shelf + inside the crates
+    const spMat = lit({ map: this.texSpines, mapST: [2, 1, 0, 0], gloss: 0.3 });
+    const SP = [];
+    for (const sx of [-1, 1]) for (let r = 0; r < 3; r++) SP.push({ geo: new THREE.PlaneGeometry(1.06, 0.31), matrix: M4(sx * 1.3, 1.37 + r * 0.42, -1.76) });
+    for (let r = 0; r < 3; r++) SP.push({ geo: new THREE.PlaneGeometry(1.46, 0.31), matrix: M4(-1.76, 1.07 + r * 0.42, -0.85, 0, Math.PI / 2, 0) });
+    for (const [x, z, ry] of [[-1.55, -0.1, 0.1], [-1.55, 0.45, -0.06], [1.5, 0.35, 0.05]]) SP.push({ geo: new THREE.PlaneGeometry(0.36, 0.2), matrix: M4(x, 0.36, z, -Math.PI / 2 + 0.25, ry, 0) });
+    root.add(new THREE.Mesh(mergeGeos(SP), spMat));
+    // ---- glowing things (unlit)
+    const add = (geo, mat, x, y, z, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; root.add(m); return m; };
+    // neon signs: inside above KNOBS, outside above the door
+    this.texNeon = tex(512, 128, (g, w, h) => drawNeonSign(g, w, h, false));
+    this.texNeonOut = tex(512, 192, (g, w, h) => drawNeonSign(g, w, h, true));
+    this.neonMat = new THREE.MeshBasicMaterial({ map: this.texNeon, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.neonOutMat = new THREE.MeshBasicMaterial({ map: this.texNeonOut, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    add(new THREE.PlaneGeometry(1.1, 0.275), this.neonMat, 0, 2.38, -1.97);
+    add(new THREE.PlaneGeometry(1.2, 0.45), this.neonOutMat, 0, 2.4, D / 2 + 0.1);
+    // VU meters either side of the sign
+    this.texVU = tex(128, 80, drawVU);
+    this.needles = [];
+    for (const sx of [-1, 1]) {
+      add(new THREE.PlaneGeometry(0.34, 0.21), new THREE.MeshBasicMaterial({ map: this.texVU }), sx * 0.95, 2.36, -1.965);
+      const n = new THREE.Group(); n.position.set(sx * 0.95, 2.36 - 0.095, -1.955); root.add(n);
+      const nm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.16, 0.003).translate(0, 0.08, 0), new THREE.MeshBasicMaterial({ color: 0x1a1010 })); n.add(nm);
+      this.needles.push({ g: n, v: 0 });
+    }
+    // the LED equalizer on the counter front: 12 columns x 8 segments (bass on the left, treble on the right)
+    this.ledCols = 12; this.ledRows = 8;
+    this.leds = new THREE.InstancedMesh(new THREE.BoxGeometry(0.13, 0.05, 0.012), new THREE.MeshBasicMaterial({ color: 0xffffff }), this.ledCols * this.ledRows);
+    for (let c = 0; c < this.ledCols; c++) for (let r = 0; r < this.ledRows; r++) {
+      _m1.makeTranslation(C.x0 + 0.17 + c * 0.155, 0.31 + r * 0.068, C.z1 + 0.012); this.leds.setMatrixAt(c * this.ledRows + r, _m1);
+      this.leds.setColorAt(c * this.ledRows + r, _c1.setRGB(0, 0, 0));
+    }
+    root.add(this.leds); this.ledLv = new Float32Array(this.ledCols);
+    // lava lamps: a glass column with slow glowing blobs
+    this.lamps = [];
+    for (const [x, y, z, col] of [[-1.08, C.top, -0.98, 0xff6a1a], [1.72, 0.38, 1.16, 0x2affd5]]) {
+      const g = new THREE.Group(); g.position.set(x, y, z); root.add(g);
+      g.add(new THREE.Mesh(mergeGeos([
+        { geo: new THREE.CylinderGeometry(0.06, 0.075, 0.07, 12), matrix: M4(0, 0.035, 0), color: 0xb8b8c8 },
+        { geo: new THREE.CylinderGeometry(0.03, 0.05, 0.05, 12), matrix: M4(0, 0.42, 0), color: 0xb8b8c8 },
+      ]), this.matLit));
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.065, 0.32, 14, 1, true), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      glass.position.y = 0.23; g.add(glass);
+      const bm = new THREE.MeshBasicMaterial({ color: col });
+      const blobs = [];
+      for (let i = 0; i < 4; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), bm); g.add(b); blobs.push({ m: b, ph: rand(0, TAU), sp: rand(0.12, 0.25), r: rand(0.014, 0.024) }); }
+      this.lamps.push({ g, blobs, col: new THREE.Color(col) });
+    }
+    // the counter pad: a glowing ring where you set things down
+    this.padMat = new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    this.pad = add(new THREE.RingGeometry(0.12, 0.155, 36).rotateX(-Math.PI / 2), this.padMat, SHOP.PAD.x, C.top + 0.006, SHOP.PAD.z);
+    this.padDisc = add(new THREE.CircleGeometry(0.12, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3a1a08, transparent: true, opacity: 0.55, depthWrite: false }), SHOP.PAD.x, C.top + 0.004, SHOP.PAD.z);
+    // the tape deck + the cash register
+    root.add(new THREE.Mesh(mergeGeos([
+      { geo: new THREE.BoxGeometry(0.34, 0.09, 0.22), matrix: M4(SHOP.DECK.x, C.top + 0.045, SHOP.DECK.z), color: 0x2a2a32 },
+      { geo: new THREE.BoxGeometry(0.13, 0.05, 0.01), matrix: M4(SHOP.DECK.x - 0.06, C.top + 0.05, SHOP.DECK.z + 0.112), color: 0x0c0c10 },
+      { geo: new THREE.BoxGeometry(0.03, 0.012, 0.012), matrix: M4(SHOP.DECK.x + 0.07, C.top + 0.06, SHOP.DECK.z + 0.112), color: 0xff3c3c },
+      { geo: new THREE.BoxGeometry(0.03, 0.012, 0.012), matrix: M4(SHOP.DECK.x + 0.11, C.top + 0.06, SHOP.DECK.z + 0.112), color: 0x3cff6e },
+      { geo: new THREE.BoxGeometry(0.26, 0.18, 0.26), matrix: M4(SHOP.DRAWER.x, C.top + 0.13, SHOP.DRAWER.z - 0.1, -0.2, 0, 0), color: 0x8a6a3a },
+      { geo: new THREE.BoxGeometry(0.2, 0.06, 0.012), matrix: M4(SHOP.DRAWER.x, C.top + 0.2, SHOP.DRAWER.z + 0.04, -0.6, 0, 0), color: 0x101418 },
+    ]), this.matLit));
+    this.deckReels = [];
+    for (const dx of [-0.085, -0.035]) { const r = add(new THREE.CylinderGeometry(0.012, 0.012, 0.006, 8).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xf4f0e8 }), SHOP.DECK.x + dx + 0.02, C.top + 0.05, SHOP.DECK.z + 0.117); this.deckReels.push(r); }
+    this.drawer = add(new THREE.BoxGeometry(0.22, 0.05, 0.2), this.matLit, SHOP.DRAWER.x, C.top + 0.02, SHOP.DRAWER.z - 0.02);
+    this.drawerOut = 0;
+    this.deckLight = add(new THREE.PlaneGeometry(0.12, 0.04), new THREE.MeshBasicMaterial({ color: 0x2affd5, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), SHOP.DECK.x - 0.06, C.top + 0.05, SHOP.DECK.z + 0.118);
+    // the jukebox name sign (SOUND TEST) above KNOBS' turntable
+    this.texJuke = tex(512, 64); this.jukeMat = new THREE.MeshBasicMaterial({ map: this.texJuke, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.jukeSign = add(new THREE.PlaneGeometry(1.0, 0.125), this.jukeMat, -0.4, 2.12, -1.9); this.jukeSign.visible = false;
+    // the mirror: dark glass; your SOUL's reflection floats in it (Shop.updateMirror)
+    this.texGlass = tex(64, 96, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#1c2a30'); gr.addColorStop(0.45, '#0a1114'); gr.addColorStop(0.55, '#24363c'); gr.addColorStop(0.62, '#0a1114'); gr.addColorStop(1, '#141c20');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    add(new THREE.PlaneGeometry(SHOP.MIRROR.w, SHOP.MIRROR.h), new THREE.MeshBasicMaterial({ map: this.texGlass }), M.x + 0.002, M.y, M.z, Math.PI / 2);
+    this.mirrorSoul = new THREE.Mesh(buildVoxelHeart(0.022, 0.03), new THREE.MeshBasicMaterial({ color: CONFIG.COL.red }));
+    root.add(this.mirrorSoul);
+    this.mirrorPin = null;
+    // the door (swings in on its hinge)
+    this.door = new THREE.Group(); this.door.position.set(-dw / 2, 0, D / 2); root.add(this.door);
+    this.door.add(new THREE.Mesh(mergeGeos([
+      { geo: new THREE.BoxGeometry(dw, dh, 0.05), matrix: M4(dw / 2, dh / 2, 0), color: 0x5a3420 },
+      { geo: new THREE.BoxGeometry(dw - 0.16, 0.5, 0.06), matrix: M4(dw / 2, 1.45, 0), color: 0x3a2216 },
+      { geo: new THREE.SphereGeometry(0.03, 8, 6), matrix: M4(dw - 0.1, 1.0, 0.04), color: 0xd8b04a },
+      { geo: new THREE.SphereGeometry(0.03, 8, 6), matrix: M4(dw - 0.1, 1.0, -0.04), color: 0xd8b04a },
+    ]), this.matLit));
+    this.doorWin = new THREE.Mesh(new THREE.PlaneGeometry(dw - 0.22, 0.42), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.55 }));
+    this.doorWin.position.set(dw / 2, 1.45, 0.032); this.door.add(this.doorWin);
+    this.doorA = 0; this.doorTarget = 0;
+    // KNOBS
+    this.knobs = new KnobsModel(); root.add(this.knobs.root);
+    // talk panel: an LCD strip above the counter
+    this.talk = new TextPanel({ w: 1.15, h: 0.3, cw: 552, ch: 144, bg: 'rgba(3,22,22,0.94)', border: '#2affd5', borderPx: 4, color: '#9affea', scale: 3, pad: 14, renderOrder: 7 });
+    this.talk.mesh.position.set(0.66, 1.9, -1.08); root.add(this.talk.mesh); this.talk.mesh.visible = false;
+    this.talkTW = new Typewriter(this.talk);
+    // the price / info tag that floats over whatever you're holding
+    this.tag = new TextPanel({ w: 0.34, h: 0.19, cw: 272, ch: 152, bg: 'rgba(8,4,2,0.94)', border: '#ffb347', borderPx: 3, color: '#ffffff', scale: 2, pad: 10, renderOrder: 20, depthTest: false });
+    root.add(this.tag.mesh); this.tag.mesh.visible = false; this.tagItem = null;
+    // the haggle meter: 8 lamps on the counter front
+    this.hagLamps = [];
+    for (let i = 0; i < 8; i++) { const l = add(new THREE.CircleGeometry(0.022, 14), new THREE.MeshBasicMaterial({ color: 0x302018 }), -0.42 + i * 0.12, C.top - 0.07, C.z1 + 0.016); this.hagLamps.push(l); }
+    this.buildItems();
+    this.ready = true;
+  },
+  // everything for sale: tapes on the right-wall rack, consumables on the side table, pins on the board
+  buildItems() {
+    const root = this.root;
+    this.items = [];
+    this.itemMat = CircusShade.material({ gloss: 0.5, shine: 40, rim: 0.45, emit: 0.2 });
+    const mk = (id, kind, geo, x, y, z, ry, extra = {}) => {
+      const m = new THREE.Mesh(geo, this.itemMat); m.position.set(x, y, z); m.rotation.y = ry; root.add(m);
+      const it = Object.assign({ id, kind, mesh: m, home: m.position.clone(), homeQ: m.quaternion.clone(), state: 'home', hand: null, t: 0, r: 0.08 }, extra);
+      this.items.push(it); return it;
+    };
+    Object.keys(TAPES).forEach((id, i) => {
+      const r = Math.floor(i / 3), c = i % 3;
+      mk(id, 'tape', cassetteGeo(new THREE.Color(TAPES[id].color).getHex()), 1.86, 1.62 - r * 0.22, -0.6 + c * 0.32, -Math.PI / 2, { r: 0.07 });
+    });
+    Object.keys(CONSUMABLES).forEach((id, i) => {
+      const geo = consumableGeo(id), x = 1.34 + (i % 2) * 0.3, z = 0.92 + Math.floor(i / 2) * 0.24;
+      const y = 0.38 + (id === 'lemonade' ? 0.06 : id === 'battery' ? 0.05 : id === 'vinyl' ? 0.09 : 0.012);
+      const it = mk(id, 'cons', geo, x, y, z, id === 'vinyl' ? -Math.PI / 2 + 0.3 : 0.4, { r: 0.09 });
+      if (id === 'vinyl') it.mesh.rotation.x = -0.25;
+    });
+    Object.keys(PINS).forEach((id, i) => {
+      mk(id, 'pin', pinGeo(id), -1.955, 1.62 - Math.floor(i / 3) * 0.2, 0.17 + (i % 3) * 0.18, Math.PI / 2, { r: 0.06 });
+    });
+  },
+  update(dt, rdt) {
+    if (!this.ready) return;
+    const A = G.audio, bass = A.bass, treble = A.treble, t = G.time;
+    // VU needles (bass left, highs right)
+    this.needles.forEach((n, i) => { const v = i === 0 ? bass : treble * 1.6; n.v = damp(n.v, clamp(v, 0, 1), v > n.v ? 18 : 5, rdt); n.g.rotation.z = 0.62 - n.v * 1.24; });
+    // LED equalizer from the analyser bands
+    const f = A.freq;
+    if (f && A.ctx) {
+      const binHz = A.ctx.sampleRate / A.analyser.fftSize, cols = this.ledCols, rows = this.ledRows;
+      for (let c = 0; c < cols; c++) {
+        const f0 = 40 * Math.pow(2, c * 0.78), f1 = f0 * 1.72;
+        let s = 0, n = 0; for (let k = Math.max(1, Math.floor(f0 / binHz)); k <= Math.min(f.length - 1, Math.ceil(f1 / binHz)); k++) { s += f[k]; n++; }
+        const v = n ? s / n / 255 : 0;
+        this.ledLv[c] = v > this.ledLv[c] ? v : damp(this.ledLv[c], v, Flash.reduced ? 3 : 7, rdt);
+        const lit = Math.round(clamp((this.ledLv[c] - 0.12) * 1.5, 0, 1) * rows);
+        for (let r = 0; r < rows; r++) {
+          const on = r < lit, k = r / (rows - 1);
+          if (on) _c1.setRGB(k > 0.8 ? 1 : k > 0.55 ? 1 : 0.16, k > 0.8 ? 0.24 : k > 0.55 ? 0.82 : 1, k > 0.55 ? 0.1 : 0.84);
+          else _c1.setRGB(0.05, 0.04, 0.035);
+          this.leds.setColorAt(c * rows + r, _c1);
+        }
+      }
+      this.leds.instanceColor.needsUpdate = true;
+    }
+    // lava lamps
+    for (const L of this.lamps) for (const b of L.blobs) {
+      const y = 0.1 + 0.26 * (0.5 + 0.5 * Math.sin(t * b.sp + b.ph));
+      b.m.position.set(Math.sin(t * 0.4 + b.ph) * 0.012, y, Math.cos(t * 0.3 + b.ph) * 0.012);
+      b.m.scale.set(b.r * (1 + 0.15 * Math.sin(t + b.ph)), b.r * (1.3 + 0.3 * Math.sin(t * 0.7 + b.ph)), b.r);
+    }
+    // the pad breathes; it glows brighter when you're holding something
+    const holding = Shop.holding();
+    this.padMat.opacity = (holding ? 0.75 : 0.45) + 0.2 * Math.sin(t * 3) + 0.2 * G.fx.beatPulse;
+    // neon: a slow shimmer (reduced flashing: no flicker at all)
+    this.neonMat.opacity = Flash.reduced ? 0.95 : (Math.random() < 0.004 ? 0.4 : 0.95);
+    // door
+    this.doorA = damp(this.doorA, this.doorTarget, 4, rdt);
+    this.door.rotation.y = this.doorA * 1.45;
+    // deck + drawer
+    this.drawerOut = Math.max(0, this.drawerOut - rdt * 0.8);
+    this.drawer.position.z = SHOP.DRAWER.z - 0.02 + 0.14 * Math.min(1, this.drawerOut * 2);
+    if (Shop.deckT > 0) { for (const r of this.deckReels) r.rotation.z += rdt * 8; this.deckLight.material.opacity = Math.min(1, Shop.deckT) * 0.8; } else this.deckLight.material.opacity = 0;
+    this.knobs.update(dt, rdt, bass, treble);
+    this.talkTW.update(rdt);
+  },
+};
+registerKit(ShopKit, function () { this.items = []; this.knobs = null; this.tagItem = null; });
+
+// ---------------------------------------------------------------- KNOBS' lines (lowercase, laid back)
+const KNOBS_LINES = {
+  first: ['oh. hey. come on in, the door sticks.', "welcome to knobs'. records, tapes, snacks. everything's for sale except the headphones.", "grab whatever. set it on the pad, i'll ring you up."],
+  greet: ['hey hey. take your time.', 'back again. nice.', "oh it's you. the good kind of you.", 'mm. late one tonight, huh.', 'come in, come in. mind the crates.', 'the night shift returns.'],
+  pacifist: ["you didn't hurt anybody out there, huh.", "...respect. ten percent off. for good. don't tell anyone."],
+  lv3: ["you've been... busy out there.", "it's cool. i don't judge. the speakers do, a little."],
+  boss: {
+    'proprietor:fight': 'heard the manor went quiet. like, quiet quiet. that was you?',
+    'proprietor:spare': 'the old house guy left his front door open tonight. said a guest finally said goodbye.',
+    'kiddie:fight': "some kid's been crying in the server room. the lag's gone though. so. win?",
+    'kiddie:spare': 'you made a friend in the wires? cool. tell him to stop sending me memes at 3am.',
+    'ringmaster:fight': "the big top's dark tonight. no more shows. ...kinda miss the calliope.",
+    'ringmaster:spare': "grandioso came by. bought a kazoo. wouldn't stop thanking you.",
+    'outlaw:fight': 'a hat came in the mail today. no note. heavy hat.',
+    'outlaw:spare': 'an outlaw tipped his hat at my window last night. said you would know why.',
+  },
+  price: ["that one's {P}. you good?", '{P}. fair, right?', '{P} gold. good pick.', "mm. {P}. it's worth it."],
+  priceTape: ['{N}. {P} gold. it slaps.', 'that tape? {P}. poke buy when you\'re ready.'],
+  short: ["you're short, my guy. it'll be here.", "not enough gold. it's cool. it's not going anywhere.", "come back with {P}. i'll hold it. not really. but kinda."],
+  bought: ['nice.', 'good pick.', 'enjoy that.', 'pleasure doing business.', 'cha-ching.'],
+  tapeIn: ['lemme slot that in for you.', 'one sec. gotta warm it up.'],
+  pinOn: ['looks good on you. check the mirror.'],
+  bag: ['in the bag. literally.'],
+  nothing: ['set something on the pad first.', "pad's empty, friend."],
+  soldOut: ['out of those. i restock after your next fight.'],
+  maxed: ["that tape's maxed out. it can't get any louder."],
+  owned: ['you already got that one. the mirror lets you wear it.'],
+  bagFull: ["your bag's full. use something. or sell it to me."],
+  locked: ["that one's not for sale yet. ...the desert, maybe. someday."],
+  haggleIntro: ['aight. tap the counter with me. eight beats.', 'four to count in, then eight. on the beat.'],
+  haggle8: ['...okay. that was clean. fifteen off, all night.'],
+  haggle6: ['close enough. five off.'],
+  haggleFail: ["nah. you'll get it next time."],
+  haggleUsed: ['we already did the thing. one haggle a night.'],
+  sellIntro: ["i'll take it. half price. it's the rules. my rules."],
+  sellNone: ["you got nothing i'd buy. ...that came out wrong."],
+  sold: ['aight. here.', 'pleasure.', 'deal.'],
+  soundTest: ['spin whatever. i got time.', "jukebox's yours."],
+  soundTestNone: ["you haven't heard much yet. go out there. listen."],
+  leave: ['later. push the door, it sticks.', 'stay safe out there.', 'come back anytime. i never close.', 'peace.'],
+  idle: ['that rack is alphabetical. kinda.', "the lava lamp's older than me.", 'try the lemonade. trust.', "don't mind the crates. they're load-bearing.", 'this one goes out to the night shift.'],
+  headphones: ['these? ...hey, have you tried the lemonade?', 'what headphones.', 'long story. short shop.', "they're for listening. mostly.", "ask me again later. ...no wait, don't.", 'oh look, a customer. oh. it\'s you. hi.'],
+  mirror: ['looking good.', 'that one suits you.', 'very you.'],
+};
+const KNOBS_TOPICS = [
+  { id: 'shop', label: 'THE SHOP', lines: [["i built this place out of old speaker boxes. it floats. don't ask me how.", 'i just do the books.'], ["it's always late here. so i'm always open.", 'convenient.']] },
+  { id: 'music', label: 'THE MUSIC', lines: [['everything in here has a beat. even the quiet.', 'especially the quiet.'], ["this beat? i made it to practice mastering.", "still practicing. it's on loop. so am i."]] },
+  { id: 'manor', label: 'THE MANOR', needs: 'proprietor', lines: [['the old house guy throws one party. it never ends.', 'he used to come in for candles. so many candles.'], ['he paid in ious. i kept them.', "they all say 'stay'."]] },
+  { id: 'server', label: 'THE SERVER', needs: 'kiddie', lines: [["that kid hacked my register once. it said 'lol' for a week.", "honestly? best week of sales i've had."], ['he talks tough. types fast.', 'lonely, i think. most loud people are.']] },
+  { id: 'bigtop', label: 'THE BIG TOP', needs: 'ringmaster', lines: [['grandioso orders confetti by the ton.', "i don't sell confetti. he keeps asking."], ['he did a show in here once. one guest. me.', 'standing ovation. i was already standing.']] },
+  { id: 'frontier', label: 'THE FRONTIER', needs: 'ringmaster', lines: [["out past the big top there's a desert. a guy out there's been waiting for sundown a long time.", 'he never misses. he never shoots first, either.'], ['the clock in that ghost town stopped at noon.', 'everybody out there is waiting for something.']] },
+  { id: 'sundown', label: 'SUNDOWN', needs: 'outlaw', lines: [['he came in once. bought nothing.', 'listened to a record all the way through. tipped his hat. left.'], ['you know he only ever wanted somebody to stay for the sunset?', 'same, man. same.']] },
+  { id: 'headphones', label: "WHAT'S WITH THE HEADPHONES?", lines: null },
+];
+
+// ---------------------------------------------------------------- the shop: flow, KNOBS, shopping
+const Shop = {
+  active: false, inside: false, doorOpen: false, mode: 'browse', deckT: 0, pulse: 0,
+  queue: [], talkCur: null, padItem: null, deskHeld: null, sub: null, hag: null, juke: null, idleT: 30, exiting: false,
+  get kit() { return ShopKit; },
+  holding() { return !!(ShopKit.items && ShopKit.items.some((it) => it.state === 'held')); },
+  // ------------------------------------------------------------ walking in / out
+  enter(from) {
+    const B = G.battle;
+    B.cleanup(); B.unloadBoss();
+    MusicLibrary.retain(['shop']);
+    G.coins.clear(); G.audio.drone(false);
+    ShopKit.init();
+    Object.assign(this, { active: true, inside: false, doorOpen: false, mode: 'outside', deckT: 0, pulse: 0, queue: [], talkCur: null, padItem: null, deskHeld: null, sub: null, hag: null, juke: null, idleT: 35, exiting: false, from });
+    this.visit = { haggle: 0, haggled: false };
+    const K = Save.data.knobs;
+    if (K.restock || !K.stock) { K.stock = Object.assign({}, SHOP.STOCK); K.restock = false; Save.write(); }
+    this.refreshShelves();
+    ShopKit.knobs.eyeDim = Save.data.lv >= 3;
+    // the void outside, no battle box
+    G.arena.visible = false; G.bg.setTheme('shop');
+    G.soul.reset(true); G.soul.active = true;
+    G.loco.walk = { speed: 1.4, clamp: shopClamp }; G.loco.enabled = true; G.loco.clamp = false;
+    // stand on the stoop facing the door
+    rig.position.set(0, 0, 0); rig.rotation.set(0, 0, 0); Head.update();
+    if (!G.xr) { G.input.desk.yaw = 0; G.input.desk.pitch = -0.04; camera.rotation.set(G.input.desk.pitch, 0, 0, 'YXZ'); }
+    else G.loco.turnBy(-Head.yaw);
+    Head.update(); rig.position.x += SHOP.SPAWN.x - Head.pos.x; rig.position.z += SHOP.SPAWN.z - Head.pos.z; Head.update();
+    // the shop beat, muffled through the closed door
+    B.useTrack(MusicLibrary.live.shop);
+    G.audio.setLowpass(350, 0.02); G.audio.fadeMusic(1, 0.2);
+    G.clock.play('L', { pos: 0, xloop: SHOP_MUSIC.xfade });
+    Save.heard('shop');
+    B.setState('SHOP');
+    G.fx.fadeT = 1; G.fx.fadeTo(0, 0.8);
+    G.ui.setBattleHUD(false); G.ui.deskHud.style.display = G.desktop ? 'block' : 'none'; G.ui.refreshHUD();
+    this.showConsole();
+    B.afterIn('SHOP', 0.9, () => this.openDoor());
+    B.afterIn('SHOP', 1.2, () => G.ui.showPrompt(G.xr ? 'WALK IN: LEFT STICK (OR YOUR FEET)\nRIGHT STICK TURNS' : 'WALK IN: WASD + MOUSE', 3.2, '#ffd8a0'));
+  },
+  openDoor() {
+    if (this.doorOpen) return;
+    this.doorOpen = true; ShopKit.doorTarget = 1;
+    G.audio.sfx.doorCreak();
+    G.audio.setLowpass(20000, 0.8);   // the music spills out of the open door
+  },
+  // LEAVE (button) or walking out the door
+  exit(how) {
+    if (this.exiting) return;
+    this.exiting = true; this.mode = 'leaving';
+    this.closeSub(); this.stopHaggle();
+    if (how === 'door') { ShopKit.doorTarget = 0; G.audio.sfx.doorShut(); }
+    G.audio.setLowpass(350, 0.8);
+    G.fx.fadeTo(1, 0.9);
+    G.battle.afterIn('SHOP', 1.0, () => G.battle.leaveShop());
+  },
+  teardown() {
+    this.closeSub(); this.stopHaggle();
+    if (ShopKit.console) ShopKit.console.hide();
+    G.loco.walk = null;
+    G.audio.setDuck(false);
+    G.ui.deskHud.style.display = 'none';
+    ShopKit.dispose();
+    G.bg.setTheme('manor');
+    this.active = false; this.padItem = null; this.deskHeld = null;
+  },
+  // ------------------------------------------------------------ KNOBS talks (an LCD strip above the counter)
+  say(lines, then, interrupt) {
+    if (interrupt) { this.queue = this.queue.filter((q) => q.fn); }
+    for (const l of [].concat(lines)) if (l) this.queue.push({ text: l });
+    if (then) this.queue.push({ fn: then });
+    if (!this.talkCur || interrupt) this.nextLine();
+  },
+  nextLine() {
+    const K = ShopKit;
+    while (this.queue.length && this.queue[0].fn) this.queue.shift().fn();
+    if (!this.queue.length) { this.talkCur = null; K.talk.mesh.visible = false; K.knobs.talking = false; G.audio.setDuck(false); return; }
+    const l = this.queue.shift();
+    this.talkCur = { text: l.text, doneT: 0 };
+    K.talk.mesh.visible = true; K.talkTW.start(l.text, { voice: 'knobs', speed: 28 });
+    K.knobs.talking = true; if (!this.hag) G.audio.setDuck(true);
+  },
+  updateTalk(rdt) {
+    const c = this.talkCur, K = ShopKit; if (!c) return;
+    K.talk.mesh.lookAt(Head.pos);
+    K.knobs.talking = !K.talkTW.done;
+    if (K.talkTW.done) c.doneT += rdt;
+    if (c.doneT > 1.6 + c.text.length * 0.025) this.nextLine();
+  },
+  fill(l, it) { return l.replace('{P}', this.price(it)).replace('{N}', it ? this.itemName(it).toLowerCase() : ''); },
+  // ------------------------------------------------------------ stock + prices
+  itemName(it) { return (it.kind === 'tape' ? TAPES : it.kind === 'cons' ? CONSUMABLES : PINS)[it.id].name; },
+  price(it) {
+    let base;
+    if (it.kind === 'tape') { base = TAPES[it.id].prices[Save.data.upgrades[it.id] || 0]; if (base === undefined) return 0; }
+    else base = (it.kind === 'cons' ? CONSUMABLES : PINS)[it.id].price;
+    let k = 1;
+    if (Save.data.knobs.pacifist) k *= 0.9;
+    if (this.visit && this.visit.haggle) k *= 1 - this.visit.haggle;
+    return Math.max(1, Math.round(base * k));
+  },
+  // why you can't buy it right now (null: you can)
+  whyNot(it) {
+    const D = Save.data;
+    if (it.kind === 'tape' && (D.upgrades[it.id] || 0) >= TAPES[it.id].prices.length) return 'maxed';
+    if (it.kind === 'cons' && !(D.knobs.stock[it.id] > 0)) return 'soldOut';
+    if (it.kind === 'cons' && D.inventory.length >= Stats.slots()) return 'bagFull';
+    if (it.kind === 'pin' && D.cosmetics.owned.includes(it.id)) return 'owned';
+    if (it.kind === 'pin' && PINS[it.id].needs && !Save.beaten(PINS[it.id].needs)) return 'locked';
+    if (D.gold < this.price(it)) return 'short';
+    return null;
+  },
+  refreshShelves() {
+    for (const it of ShopKit.items) {
+      if (it.state === 'sold') continue;
+      if (it.kind === 'cons') it.mesh.visible = Save.data.knobs.stock[it.id] > 0;
+      if (it.kind === 'pin' && PINS[it.id].needs) it.mesh.visible = !!Save.beaten(PINS[it.id].needs);
+    }
+  },
+  // ------------------------------------------------------------ the console on the counter (BUY + the rest)
+  showConsole() {
+    const K = ShopKit;
+    if (!K.console) {
+      K.console = new Menu([
+        { label: 'BUY', scale: 4, size: 1.25, color: '#3cff6e', hoverColor: '#b8ffc8', onPress: () => this.buy() },
+        { label: 'SELL', scale: 2, onPress: () => this.sellMenu() },
+        { label: 'TALK', scale: 2, onPress: () => this.talkMenu() },
+        { label: 'SOUND TEST', scale: 2, color: '#2affd5', onPress: () => this.soundTestMenu() },
+        { label: 'HAGGLE', scale: 2, onPress: () => this.haggle() },
+        { label: 'LEAVE', scale: 2, icon: 'back', color: '#ffffff', onPress: () => this.leave() },
+      ], { primary: false, gap: 0.03 });
+    }
+    const C = SHOP.COUNTER, btns = K.console.buttons, pos = [];
+    let x = -0.4;
+    for (const b of btns) { pos.push(new THREE.Vector3(x + b.w / 2, C.top + 0.012 + b.h * 0.3, C.z1 - 0.07)); x += b.w + 0.03; }
+    // tilted up toward you like a mixing desk
+    K.console.showAt(pos, new THREE.Vector3(0, 99, 0));
+    for (const b of btns) { b.root.rotation.set(-0.95, 0, 0); }
+  },
+  closeSub() { if (this.sub) { this.sub.hide(); disposeObject(this.sub.group); this.sub = null; } },
+  openSub(defs, o = {}) {
+    this.closeSub();
+    defs.push({ label: 'BACK', icon: 'back', scale: 2, onPress: () => this.closeSub() });
+    this.sub = new Menu(defs, Object.assign({ yOff: -0.32, radius: 0.62, gap: 0.03 }, o));
+    this.sub.showArc();
+  },
+  busy() { return this.mode !== 'browse' || this.exiting; },
+  // ------------------------------------------------------------ BUY
+  buy() {
+    if (this.busy()) return;
+    const it = this.padItem;
+    if (!it || it.state !== 'counter') { G.audio.sfx.buzz(); this.say(pick(KNOBS_LINES.nothing), null, true); return; }
+    const why = this.whyNot(it);
+    if (why) { G.audio.sfx.buzz(); this.say(this.fill(pick(KNOBS_LINES[why]), it), null, true); if (why !== 'short') this.sendHome(it); return; }
+    const D = Save.data, p = this.price(it);
+    D.gold -= p;
+    let line = pick(KNOBS_LINES.bought);
+    if (it.kind === 'tape') { D.upgrades[it.id] = (D.upgrades[it.id] || 0) + 1; line = pick(KNOBS_LINES.tapeIn); }
+    else if (it.kind === 'cons') { D.inventory.push(it.id); D.knobs.stock[it.id]--; line = pick(KNOBS_LINES.bag); }
+    else { D.cosmetics.owned.push(it.id); D.cosmetics.equipped = it.id; line = pick(KNOBS_LINES.pinOn); }
+    Save.write(); G.ui.refreshHUD();
+    // coins fly from your wrist into the drawer; the till rings on the next beat after they land
+    const n = clamp(Math.round(p / 12), 3, 14), from = G.coins.wristPos(new THREE.Vector3());
+    const drawer = new THREE.Vector3(SHOP.DRAWER.x, SHOP.COUNTER.top + 0.06, SHOP.DRAWER.z);
+    for (let i = 0; i < n; i++) G.coins.fly(_v1.copy(from).add(_v2.set(rand(-0.03, 0.03), rand(-0.02, 0.02), rand(-0.03, 0.03))), { to: drawer, delay: i * 0.045, dur: 0.6, arc: 0.3, onLand: () => G.audio.sfx.tink() });
+    const land = G.audio.now + 0.6 + n * 0.045 + 0.05, c = G.clock;
+    const when = c.running ? c.timeOfBeat(Math.ceil(c.beat + (land - G.audio.now) / c.beatDur)) : land;
+    G.audio.sfx.chaChing(when); G.audio.sfx.bassDrop(when);
+    c.after(when, () => {
+      if (!this.active) return;
+      ShopKit.knobs.slamFader(); ShopKit.drawerOut = 1; this.pulse = 1;
+      G.audio.sfx.faderSlam(G.audio.now); G.input.pulseAll(0.75, 90);
+      this.deliver(it);
+    });
+    it.state = 'paid'; this.padItem = null;
+    this.mode = 'paying';
+    this.say(line, null, true);
+  },
+  // after the till rings: the tape goes into the deck (your SOUL glows), snacks into your bag, pins onto your SOUL
+  deliver(it) {
+    const K = ShopKit;
+    if (it.kind === 'tape') {
+      it.state = 'toDeck'; it.t = 0; it.from = it.mesh.position.clone();
+      K.knobs.reachFor(SHOP.DECK, 1, 1.0);   // his left hand slots it in
+    } else { it.state = 'toYou'; it.t = 0; it.from = it.mesh.position.clone(); }
+  },
+  afterDeliver(it) {
+    const D = Save.data;
+    this.mode = 'browse';
+    if (it.kind === 'tape') {
+      const T = TAPES[it.id], tier = D.upgrades[it.id];
+      this.deckT = 3;
+      const c = G.clock, when = c.running ? c.timeOfBeat(Math.ceil(c.beat + 0.1)) : G.audio.now;
+      G.audio.sfx.tapeStinger(when);
+      c.after(when, () => {
+        G.soul.glowT = 2.2; G.soul.maxHp = Stats.maxHp(); G.soul.hp = G.soul.maxHp; G.soul.setRadius(); G.ui.refreshHUD();
+        G.ui.showPrompt(`${T.name}${T.prices.length > 1 ? ' ' + ROMAN[tier] : ''}\n${T.effect}`, 2.8, T.color);
+      });
+    } else if (it.kind === 'pin') {
+      G.soul.applyPin(it.id); G.soul.glowT = 1.2;
+      G.ui.showPrompt(`${PINS[it.id].name}: EQUIPPED`, 2.2, PINS[it.id].color);
+    } else {
+      G.ui.showPrompt(`${CONSUMABLES[it.id].name} -> YOUR BAG (${D.inventory.length}/${Stats.slots()})`, 2.2, '#2affd5');
+      G.audio.sfx.pick();
+    }
+    // back on the shelf if there's more of it (sold-out snacks stay gone until the next restock)
+    it.state = 'home'; it.mesh.position.copy(it.home); it.mesh.quaternion.copy(it.homeQ);
+    it.mesh.visible = it.kind !== 'cons' || D.knobs.stock[it.id] > 0;
+    this.refreshShelves();
+  },
+  // ------------------------------------------------------------ the pad
+  placeOnPad(it) {
+    if (this.padItem && this.padItem !== it) this.sendHome(this.padItem);
+    this.padItem = it; it.state = 'pad'; it.t = 0; it.hand = null;
+    it.mesh.position.set(SHOP.PAD.x, SHOP.PAD.y + this.restY(it), SHOP.PAD.z);
+    it.mesh.quaternion.copy(this.restQ(it));
+    G.audio.sfx.place();
+    ShopKit.knobs.reachFor(SHOP.PAD, 0, 1.0);
+  },
+  restY(it) { return it.kind === 'cons' ? (it.id === 'lemonade' ? 0.065 : it.id === 'battery' ? 0.055 : 0.015) : 0.01; },
+  restQ(it) { return _q1.setFromEuler(new THREE.Euler(it.kind === 'cons' && it.id !== 'vinyl' && it.id !== 'bassbar' ? 0 : -Math.PI / 2, 0.3, 0)); },
+  sendHome(it) {
+    if (!it) return;
+    if (this.padItem === it) this.padItem = null;
+    if (this.deskHeld === it) this.deskHeld = null;
+    it.state = 'return'; it.t = 0; it.hand = null; it.from = it.mesh.position.clone(); it.fromQ = it.mesh.quaternion.clone();
+  },
+  // KNOBS slid it over: he names the price (or why not)
+  priceCheck(it) {
+    const why = this.whyNot(it);
+    if (why && why !== 'short') { this.say(this.fill(pick(KNOBS_LINES[why]), it), null, true); return; }
+    if (why === 'short') { this.say(this.fill(pick(KNOBS_LINES.short), it), null, true); return; }
+    this.say(this.fill(pick(it.kind === 'tape' ? KNOBS_LINES.priceTape : KNOBS_LINES.price), it), null, true);
+  },
+  // ------------------------------------------------------------ SELL (consumables, half price)
+  sellMenu() {
+    if (this.busy()) return;
+    const inv = Save.data.inventory, kinds = Object.keys(CONSUMABLES).filter((k) => inv.includes(k));
+    if (!kinds.length) { this.say(pick(KNOBS_LINES.sellNone), null, true); return; }
+    this.say(pick(KNOBS_LINES.sellIntro), null, true);
+    this.openSub(kinds.map((k) => ({ label: `${CONSUMABLES[k].name} x${inv.filter((x) => x === k).length}  +${Math.floor(CONSUMABLES[k].price / 2)}G`, scale: 2, onPress: () => this.sell(k) })));
+  },
+  sell(id) {
+    const D = Save.data, i = D.inventory.indexOf(id); if (i < 0) return;
+    D.inventory.splice(i, 1);
+    const g = Math.floor(CONSUMABLES[id].price / 2);
+    D.gold += g; D.knobs.stock[id] = Math.min((D.knobs.stock[id] || 0) + 1, SHOP.STOCK[id] + 2);
+    Save.write();
+    G.coins.toWrist(new THREE.Vector3(SHOP.DRAWER.x, SHOP.COUNTER.top + 0.1, SHOP.DRAWER.z), g, Math.min(6, Math.max(2, g)));
+    ShopKit.drawerOut = 1; G.audio.sfx.chaChing();
+    this.refreshShelves();
+    this.say(pick(KNOBS_LINES.sold), null, true);
+    this.sellMenu();
+  },
+  // ------------------------------------------------------------ TALK
+  talkMenu() {
+    if (this.busy()) return;
+    const topics = KNOBS_TOPICS.filter((t) => !t.needs || Save.beaten(t.needs));
+    this.openSub(topics.map((t) => ({ label: t.label, scale: 2, color: t.id === 'headphones' ? '#2affd5' : '#ff9d1a', onPress: () => this.talkAbout(t) })), { split: Math.ceil((topics.length + 1) / 2) });
+  },
+  talkAbout(t) {
+    this.closeSub();
+    if (!t.lines) { this.say(pick(KNOBS_LINES.headphones), null, true); return; }   // never answered
+    const L = Save.data.knobs.lore || (Save.data.knobs.lore = {});
+    const i = (L[t.id] || 0) % t.lines.length; L[t.id] = i + 1; Save.write();
+    this.say(t.lines[i], null, true);
+  },
+  // ------------------------------------------------------------ SOUND TEST (the jukebox)
+  soundTestMenu() {
+    if (this.busy()) return;
+    const heard = MUSIC_KEYS.filter((k) => k === 'shop' || Save.data.soundTest.includes(k));
+    if (heard.length <= 1) this.say(pick(KNOBS_LINES.soundTestNone), null, true); else this.say(pick(KNOBS_LINES.soundTest), null, true);
+    const defs = heard.map((k) => ({ label: (k === 'shop' ? 'SHOP: ' : MUSIC_INFO[k].label + ': ') + MUSIC_INFO[k].title.toUpperCase().slice(0, 26), scale: 2, color: this.juke && this.juke.key === k ? '#ffe600' : '#2affd5', onPress: () => this.playSong(k) }));
+    this.openSub(defs, { split: Math.ceil((defs.length + 1) / 2) });
+  },
+  songColor(k) { return { proprietor: '#c23cff', kiddie: '#3cff6e', ringmaster: '#ffc83c', outlaw: '#ff7a2a', shop: '#2affd5' }[k] || '#ffffff'; },
+  playSong(key) {
+    this.closeSub();
+    const K = ShopKit;
+    if (key === 'shop') { this.backToShopMusic(); return; }
+    this.juke = { key };
+    K.jukeSign.visible = true; drawJukeName(K.texJuke.userData.ctx, 512, 64, 'LOADING...', '#ffffff'); K.texJuke.needsUpdate = true;
+    G.audio.fadeMusic(0, 0.6);
+    MusicLibrary.getTrack(key).then((t) => {
+      if (!this.active || !this.juke || this.juke.key !== key) return;
+      MusicLibrary.retain(['shop', key]);
+      G.battle.useTrack(t);
+      const secs = Object.keys(t.sections).sort((a, b) => t.sections[a].start - t.sections[b].start);
+      G.clock.play(secs[0], { pos: 0, loopEnd: t.buffer.duration - 0.02 });
+      G.audio.fadeMusic(1, 0.4);
+      const col = this.songColor(key);
+      drawJukeName(K.texJuke.userData.ctx, 512, 64, MUSIC_INFO[key].title.toUpperCase(), col); K.texJuke.needsUpdate = true;
+      K.knobs.recordMat.color.set(col);
+    });
+  },
+  backToShopMusic() {
+    const K = ShopKit;
+    this.juke = null; K.jukeSign.visible = false; K.knobs.recordMat.color.set('#ff9d1a');
+    G.audio.fadeMusic(0, 0.35);
+    G.battle.afterIn('SHOP', 0.4, () => {
+      if (!this.active) return;
+      G.battle.useTrack(MusicLibrary.live.shop); MusicLibrary.retain(['shop']);
+      G.clock.play('L', { pos: SHOP_MUSIC.loopStart, xloop: SHOP_MUSIC.xfade });
+      G.audio.fadeMusic(1, 0.5);
+    });
+  },
+  // ------------------------------------------------------------ HAGGLE: tap the counter on 8 beats
+  haggle() {
+    if (this.busy()) return;
+    if (this.visit.haggled) { this.say(pick(KNOBS_LINES.haggleUsed), null, true); return; }
+    if (this.juke) this.backToShopMusic();
+    this.visit.haggled = true; this.mode = 'haggle';
+    this.closeSub();
+    const c = G.clock, b0 = (Math.ceil(c.beat / 4 + 0.05) + 2) * 4;   // count in over the bar before b0
+    this.hag = { b0, hits: [false, false, false, false, false, false, false, false], taps: 0, done: false, prevY: [9, 9] };
+    this.say(KNOBS_LINES.haggleIntro, null, true);
+    G.ui.showPrompt(G.xr ? 'TAP THE COUNTER ON THE BEAT' : 'CLICK (OR SPACE) ON THE BEAT', 3, '#ffd8a0');
+    for (const l of ShopKit.hagLamps) l.material.color.setHex(0x302018);
+  },
+  stopHaggle() { this.hag = null; if (this.mode === 'haggle') this.mode = 'browse'; },
+  hagTap(t) {
+    const H = this.hag; if (!H || H.done) return;
+    const c = G.clock, pb = c.beatAt(t), n = Math.round(pb), i = n - H.b0;
+    const good = i >= 0 && i < 8 && Math.abs(pb - n) * c.beatDur <= 0.12 && !H.hits[i];
+    G.audio.sfx.counterTap(G.audio.now, good);
+    if (good) { H.hits[i] = true; ShopKit.hagLamps[i].material.color.setHex(0x3cff6e); G.input.pulseAll(0.4, 30); }
+    else if (i >= 0 && i < 8 && !H.hits[i]) ShopKit.hagLamps[i].material.color.setHex(0xff3c3c);
+    H.taps++;
+  },
+  finishHaggle() {
+    const H = this.hag; if (!H || H.done) return;
+    H.done = true;
+    const n = H.hits.filter(Boolean).length;
+    if (n >= 8) { this.visit.haggle = 0.15; this.say(KNOBS_LINES.haggle8, null, true); G.audio.sfx.levelUp(); }
+    else if (n >= 6) { this.visit.haggle = 0.05; this.say(KNOBS_LINES.haggle6, null, true); }
+    else this.say(KNOBS_LINES.haggleFail, null, true);
+    G.ui.showPrompt(`${n}/8 ON THE BEAT` + (n >= 6 ? `  (-${Math.round(this.visit.haggle * 100)}%)` : ''), 2.4, n >= 6 ? '#3cff6e' : '#ff9d1a');
+    G.battle.afterIn('SHOP', 2.5, () => { for (const l of ShopKit.hagLamps) l.material.color.setHex(0x302018); });
+    this.hag = null; this.mode = 'browse';
+  },
+  leave() {
+    if (this.exiting) return;
+    this.closeSub();
+    this.say(pick(KNOBS_LINES.leave), () => this.exit('button'), true);
+  },
+  // ------------------------------------------------------------ the beat
+  onBeat(b, when) {
+    if (!this.active) return;
+    ShopKit.knobs.onBeat(b);
+    const H = this.hag;
+    if (H && !H.done) {
+      const k = b - H.b0;
+      if (k >= -4 && k < 0) { G.audio.sfx.metro(when, k === -4); G.ui.showPrompt(String(-k), 0.4, '#ffffff'); }
+      else if (k >= 0 && k < 8) { const l = ShopKit.hagLamps[k]; if (!H.hits[k]) l.material.color.setHex(0x8a6a3a); G.audio.sfx.tick(when); }
+      else if (k >= 8) this.finishHaggle();
+    }
+    // METRONOME tape: a soft tick on every beat
+    if (Stats.metronome() && !H) G.audio.sfx.tick(when);
+  },
+  // ------------------------------------------------------------ per frame
+  update(dt, rdt) {
+    if (!this.active) return;
+    const K = ShopKit;
+    Head.update();
+    // walked in: KNOBS says hi (once a visit); walked out: leave
+    if (!this.inside && Head.pos.z < 1.7) { this.inside = true; this.mode = 'browse'; this.greet(); G.ui.prompt.mesh.visible = false; }
+    if (this.inside && !this.exiting && Head.pos.z > 2.34) this.exit('door');
+    // the light pulses with a purchase (the bass drop)
+    this.pulse = Math.max(0, this.pulse - rdt * 2.2);
+    this.lights(rdt);
+    this.deckT = Math.max(0, this.deckT - rdt);
+    K.update(dt, rdt);
+    this.updateTalk(rdt);
+    this.updateItems(rdt);
+    this.updateMirror();
+    if (this.hag && !this.hag.done) this.updateHaggleTaps();
+    // idle chatter, now and then
+    if (this.inside && !this.talkCur && this.mode === 'browse') { this.idleT -= rdt; if (this.idleT <= 0) { this.idleT = rand(40, 70); this.say(pick(KNOBS_LINES.idle)); } }
+  },
+  greet() {
+    const D = Save.data, K = D.knobs, lines = [];
+    K.visits = (K.visits || 0) + 1;
+    if (!K.met) { K.met = true; lines.push(...KNOBS_LINES.first); } else lines.push(pick(KNOBS_LINES.greet));
+    K.said = K.said || {};
+    for (const id of ['outlaw', 'ringmaster', 'kiddie', 'proprietor']) {
+      const how = D.beaten[id]; if (!how) continue;
+      const key = id + ':' + how; if (K.said[key]) continue;
+      K.said[key] = true; lines.push(KNOBS_LINES.boss[key]); break;   // one bit of news a visit, newest first
+    }
+    const clears = Object.keys(D.clears);
+    if (!K.pacifist && clears.length && !clears.some((k) => k.endsWith(':fight'))) { K.pacifist = true; lines.push(...KNOBS_LINES.pacifist); }
+    if (D.lv >= 3 && !K.lv3) { K.lv3 = true; lines.push(...KNOBS_LINES.lv3); }
+    Save.write();
+    this.say(lines);
+  },
+  // warm amber + teal: the shared lit-material light block (CircusShade) for this room
+  lights(rdt) {
+    const U = CircusShade.uniforms(), p = 1 + this.pulse * 0.8, t = G.time, bass = G.audio.bass;
+    U.uKeyDir.value.set(-0.25, 0.9, 0.42).normalize();
+    U.uKeyCol.value.set(0.42 * p, 0.27 * p, 0.15 * p);
+    U.uSky.value.set(0.05, 0.13, 0.15); U.uGround.value.set(0.11, 0.055, 0.03); U.uRimCol.value.set(0.25, 0.85, 0.8);
+    const lava = 0.75 + 0.25 * Math.sin(t * 0.9);
+    const pts = [
+      [0.5, 2.2, -0.8, 3.6, 1.0 * p, 0.6 * p, 0.28 * p],
+      [-1.08, 1.2, -0.98, 1.7, 0.95 * lava, 0.42 * lava, 0.12 * lava],
+      [0, 2.3, -1.85, 2.4, (0.75 + 0.2 * bass) * p, 0.16, 0.5],
+      [1.72, 0.65, 1.16, 1.9, 0.12 * lava, 0.75 * lava, 0.68 * lava],
+    ];
+    U.uPtN.value = 4;
+    pts.forEach((q, i) => { U.uPtPos.value[i].set(q[0], q[1], q[2], q[3]); U.uPtCol.value[i].set(q[4], q[5], q[6]); });
+    U.uSpN.value = 0;
+    // glows: lamp bulbs, lava lamps, the pad
+    const glow = G.fx.glow;
+    glow.add(0.82, 2.27, -0.8, 0.35, 1, 0.7, 0.35, 0.55, 0); glow.add(0, 2.17, 0.85, 0.3, 1, 0.7, 0.35, 0.45, 0);
+    glow.add(-1.08, 1.2, -0.98, 0.22, 1, 0.45, 0.12, 0.45 * lava, 0); glow.add(1.72, 0.6, 1.16, 0.22, 0.15, 1, 0.84, 0.45 * lava, 0);
+    if (this.pulse > 0.05) glow.add(SHOP.DRAWER.x, SHOP.COUNTER.top + 0.15, SHOP.DRAWER.z, 0.35 * this.pulse, 1, 0.85, 0.4, 0.8 * this.pulse, 0);
+  },
+  // ------------------------------------------------------------ picking things up
+  updateItems(rdt) {
+    const K = ShopKit, items = K.items;
+    let tagIt = null;
+    // VR: grip near a thing to pick it up; let go over the pad to set it down
+    if (G.xr) {
+      for (const h of G.input.hands) {
+        if (!h.connected) continue;
+        const held = items.find((it) => it.state === 'held' && it.hand === h);
+        if (held) {
+          if (!h.b.grip) this.release(held);
+          else {
+            held.mesh.position.copy(held.grabOff).applyQuaternion(h.quat).add(h.pos);
+            held.mesh.quaternion.copy(h.quat).multiply(held.grabQ);
+            tagIt = held;
+          }
+          continue;
+        }
+        let best = null, bd = 1e9;
+        for (const it of items) {
+          if (!it.mesh.visible || (it.state !== 'home' && it.state !== 'counter' && it.state !== 'pad')) continue;
+          const d = it.mesh.position.distanceTo(h.pos) - it.r;
+          if (d < bd) { bd = d; best = it; }
+        }
+        if (best && bd < 0.07 && !tagIt) tagIt = best;
+        if (best && bd < 0.07 && h.down('grip') && !this.busy()) this.grab(best, h);
+      }
+    } else this.updateDesk();
+    if (!tagIt && this.deskHeld) tagIt = this.deskHeld;
+    if (!tagIt && G.desktop) { const r = this.rayItem(); if (r && r.d < 2.6) tagIt = r.item; }
+    if (!tagIt && this.padItem && this.padItem.state === 'counter') tagIt = this.padItem;
+    // animate the things in motion
+    for (const it of items) {
+      const m = it.mesh;
+      if (it.state === 'return') {
+        it.t = Math.min(1, it.t + rdt / 0.5); const e = easeInOut(it.t);
+        m.position.lerpVectors(it.from, it.home, e); m.position.y += Math.sin(it.t * Math.PI) * 0.15;
+        m.quaternion.slerpQuaternions(it.fromQ, it.homeQ, e);
+        if (it.t >= 1) it.state = 'home';
+      } else if (it.state === 'pad') {
+        it.t += rdt;
+        if (it.t > 0.35) { it.state = 'slide'; it.t = 0; it.from = m.position.clone(); }
+      } else if (it.state === 'slide') {
+        // KNOBS slides it across to his side of the counter
+        it.t = Math.min(1, it.t + rdt / 0.55);
+        m.position.lerpVectors(it.from, _v1.set(SHOP.SLIDE.x, SHOP.PAD.y + this.restY(it), SHOP.SLIDE.z), easeInOut(it.t));
+        if (it.t >= 1) { it.state = 'counter'; this.priceCheck(it); }
+      } else if (it.state === 'toDeck') {
+        it.t = Math.min(1, it.t + rdt / 0.6);
+        m.position.lerpVectors(it.from, SHOP.DECK, easeInOut(it.t)); m.position.y += Math.sin(it.t * Math.PI) * 0.08;
+        if (it.t >= 1) { m.visible = false; this.afterDeliver(it); }
+      } else if (it.state === 'toYou') {
+        it.t = Math.min(1, it.t + rdt / 0.6);
+        m.position.lerpVectors(it.from, G.soul.pos, easeInOut(it.t)); m.scale.setScalar(1 - 0.7 * it.t);
+        if (it.t >= 1) { m.visible = false; m.scale.setScalar(1); this.afterDeliver(it); }
+      }
+    }
+    this.drawTag(tagIt);
+  },
+  grab(it, h) {
+    if (this.padItem === it) this.padItem = null;
+    it.state = 'held'; it.hand = h;
+    _q2.copy(h.quat).invert();
+    it.grabOff = _v1.subVectors(it.mesh.position, h.pos).applyQuaternion(_q2).clone();
+    if (it.grabOff.length() > 0.06) it.grabOff.setLength(0.06);
+    it.grabQ = _q2.clone().multiply(it.mesh.quaternion);
+    h.pulse(0.4, 25); G.audio.sfx.pick();
+  },
+  release(it) {
+    it.hand = null;
+    const p = it.mesh.position, P = SHOP.PAD;
+    if (Math.hypot(p.x - P.x, p.z - P.z) < 0.22 && p.y > P.y - 0.08 && p.y < P.y + 0.4) this.placeOnPad(it);
+    else this.sendHome(it);
+  },
+  // desktop: look at a thing + click to pick it up; click again while looking at the pad to set it down
+  rayItem() {
+    _v4.set(0, 0, -1).applyQuaternion(Head.quat);
+    let best = null, bd = 1e9;
+    for (const it of ShopKit.items) {
+      if (!it.mesh.visible || (it.state !== 'home' && it.state !== 'counter')) continue;
+      _v5.subVectors(it.mesh.position, Head.pos);
+      const tt = _v5.dot(_v4); if (tt < 0) continue;
+      const d2 = _v5.lengthSq() - tt * tt, rr = it.r + 0.03;
+      if (d2 < rr * rr && tt < bd) { bd = tt; best = it; }
+    }
+    return best ? { item: best, d: bd } : null;
+  },
+  rayButtons() {
+    _v4.set(0, 0, -1).applyQuaternion(Head.quat);
+    let bd = 1e9;
+    for (const m of G.ui.menus) for (const b of m.buttons) { if (b.hidden) continue; const d = b.rayHit(Head.pos, _v4); if (d >= 0 && d < bd) bd = d; }
+    return bd;
+  },
+  // where the camera ray meets the counter top (null if it misses)
+  rayCounter(out) {
+    _v4.set(0, 0, -1).applyQuaternion(Head.quat);
+    if (_v4.y > -0.05) return null;
+    const tt = (SHOP.COUNTER.top - Head.pos.y) / _v4.y; if (tt < 0 || tt > 3) return null;
+    out.copy(Head.pos).addScaledVector(_v4, tt);
+    const C = SHOP.COUNTER;
+    return out.x > C.x0 && out.x < C.x1 && out.z > C.z0 && out.z < C.z1 + 0.05 ? out : null;
+  },
+  updateDesk() {
+    const I = G.input, held = this.deskHeld;
+    if (held) {
+      Head.rel(held.mesh.position, 0.13, -0.15, 0.42);
+      held.mesh.lookAt(Head.pos);
+    }
+    if (!I.desk.click) return;
+    const btn = this.rayButtons(), hit = this.rayItem();
+    if (held) {
+      if (btn < 1e8) return;   // a console button gets the click
+      I.desk.click = false;
+      const c = this.rayCounter(_v6);
+      if (c && Math.hypot(c.x - SHOP.PAD.x, c.z - SHOP.PAD.z) < 0.45) { held.state = 'held'; this.deskHeld = null; this.placeOnPad(held); }
+      else this.sendHome(held);
+      return;
+    }
+    if (hit && hit.d < 3 && hit.d < btn && !this.busy()) {
+      I.desk.click = false;
+      if (this.padItem === hit.item) this.padItem = null;
+      hit.item.state = 'held'; this.deskHeld = hit.item; G.audio.sfx.pick();
+      return;
+    }
+    // the mirror: click it to try on your pins
+    if (btn > 1e8 && this.rayMirror()) { I.desk.click = false; this.cyclePin(); }
+  },
+  // ------------------------------------------------------------ the info tag over what you're holding / looking at
+  drawTag(it) {
+    const K = ShopKit, P = K.tag;
+    if (!it) { P.mesh.visible = false; K.tagItem = null; return; }
+    P.mesh.visible = true;
+    P.mesh.position.copy(it.mesh.position); P.mesh.position.y += it.state === 'held' && G.desktop ? 0.13 : 0.17;
+    P.mesh.lookAt(Head.pos);
+    const key = it.id + '|' + it.state + '|' + Save.data.gold + '|' + (Save.data.upgrades[it.id] || 0) + '|' + (this.visit.haggle || 0) + '|' + Save.data.inventory.length + '|' + (Save.data.knobs.stock[it.id] || 0) + '|' + Save.data.cosmetics.equipped;
+    if (K.tagItem === key) return;
+    K.tagItem = key;
+    const g = P.ctx, W = P.o.cw, H = P.o.ch, D = Save.data;
+    const col = it.kind === 'tape' ? TAPES[it.id].color : it.kind === 'cons' ? CONSUMABLES[it.id].color : PINS[it.id].color;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(8,4,2,0.94)'; g.fillRect(0, 0, W, H);
+    g.fillStyle = col === '#2a2a2a' ? '#c8c8d8' : col; g.fillRect(0, 0, W, 3); g.fillRect(0, H - 3, W, 3); g.fillRect(0, 0, 3, H); g.fillRect(W - 3, 0, 3, H);
+    const def = it.kind === 'tape' ? TAPES[it.id] : it.kind === 'cons' ? CONSUMABLES[it.id] : PINS[it.id];
+    let y = 12;
+    PixelFont.draw(g, def.name, 12, y, 2, '#ffffff'); y += 22;
+    drawWrapped(g, def.effect, 12, y, W - 24, 2, '#2affd5'); y += wrappedH(def.effect, W - 24, 2) + 4;
+    const why = this.whyNot(it), p = this.price(it);
+    let status = '', sc = '#bbbbbb';
+    if (it.kind === 'tape') { const tier = D.upgrades[it.id] || 0, max = def.prices.length; status = tier >= max ? 'MAXED OUT' : max > 1 ? `TIER ${tier ? ROMAN[tier] : '-'} -> ${ROMAN[tier + 1]}` : 'ONE TIER'; sc = tier >= max ? '#ffd23c' : '#bbbbbb'; }
+    else if (it.kind === 'cons') { const s = D.knobs.stock[it.id] || 0; status = s > 0 ? `STOCK ${s}   BAG ${D.inventory.length}/${Stats.slots()}` : 'SOLD OUT'; }
+    else status = D.cosmetics.owned.includes(it.id) ? (D.cosmetics.equipped === it.id ? 'EQUIPPED' : 'OWNED: USE THE MIRROR') : 'A PIN FOR YOUR SOUL';
+    PixelFont.draw(g, status, 12, y, 2, sc); y += 22;
+    if (why !== 'maxed' && why !== 'owned' && why !== 'locked') {
+      const pt = `${p} G`;
+      PixelFont.draw(g, pt, 12, H - 30, 3, why === 'short' ? '#ff4466' : '#ffd23c');
+      if (this.visit.haggle || D.knobs.pacifist) PixelFont.draw(g, 'DEAL!', W - 12 - PixelFont.width('DEAL!', 2), H - 26, 2, '#3cff6e');
+    } else if (why === 'locked') PixelFont.draw(g, 'NOT FOR SALE YET', 12, H - 26, 2, '#ff9d1a');
+    P.tex.needsUpdate = true;
+  },
+  // ------------------------------------------------------------ the mirror (your SOUL's reflection; poke it to try pins on)
+  rayMirror() {
+    _v4.set(0, 0, -1).applyQuaternion(Head.quat);
+    const M = SHOP.MIRROR; if (_v4.x > -0.05) return false;
+    const tt = (M.x - Head.pos.x) / _v4.x; if (tt < 0 || tt > 4) return false;
+    const y = Head.pos.y + _v4.y * tt, z = Head.pos.z + _v4.z * tt;
+    return Math.abs(y - M.y) < M.h / 2 && Math.abs(z - M.z) < M.w / 2;
+  },
+  cyclePin() {
+    const C = Save.data.cosmetics, list = [null].concat(C.owned.filter((k) => PINS[k]));
+    if (list.length <= 1) { this.say("that's a mirror. ...pins look good in it. i sell pins.", null, true); return; }
+    const i = list.indexOf(C.equipped), n = list[(i + 1) % list.length];
+    C.equipped = n; Save.write(); G.soul.applyPin(n);
+    G.audio.sfx.ding();
+    G.ui.showPrompt(n ? PINS[n].name : 'NO PIN', 1.6, n ? PINS[n].color : '#ffffff');
+    if (n && chance(0.5)) this.say(pick(KNOBS_LINES.mirror));
+  },
+  updateMirror() {
+    const K = ShopKit, M = SHOP.MIRROR, s = G.soul.pos, ms = K.mirrorSoul;
+    // reflect the heart across the mirror plane; show it only where it would be seen in the glass
+    const rx = 2 * M.x - s.x;
+    const k = (M.x - Head.pos.x) / (rx - Head.pos.x);
+    const y = Head.pos.y + (s.y - Head.pos.y) * k, z = Head.pos.z + (s.z - Head.pos.z) * k;
+    ms.visible = k > 0 && k < 1 && Math.abs(y - M.y) < M.h / 2 - 0.03 && Math.abs(z - M.z) < M.w / 2 - 0.03 && G.soul.heart.visible;
+    if (ms.visible) {
+      ms.position.set(rx, s.y, s.z); ms.quaternion.copy(G.soul.heart.quaternion); ms.scale.copy(G.soul.heart.scale);
+      ms.material.color.copy(G.soul.mat.color);
+      if (K.mirrorPin !== G.soul.pin) {
+        K.mirrorPin = G.soul.pin;
+        for (const c of ms.children.slice()) { ms.remove(c); disposeObject(c); }
+        const p = G.soul.pin, b = p === 'cassette' ? buildPinCassette(0.022) : p === 'hat' ? buildPinHat(0.022) : p === 'disco' ? buildPinDisco(0.022) : null;
+        if (b) ms.add(b);
+      }
+    }
+    // VR: poke the glass to try your pins on
+    if (G.xr) for (const h of G.input.hands) {
+      if (!h.connected) continue;
+      const near = Math.abs(h.tip.x - M.x) < 0.04 && Math.abs(h.tip.y - M.y) < M.h / 2 && Math.abs(h.tip.z - M.z) < M.w / 2;
+      if (near && !h.mirrorArmed) { h.mirrorArmed = true; h.pulse(0.4, 30); this.cyclePin(); }
+      else if (!near && Math.abs(h.tip.x - M.x) > 0.1) h.mirrorArmed = false;
+    }
+  },
+  // VR haggle: a hand slapping down onto the counter top counts as a tap
+  updateHaggleTaps() {
+    const H = this.hag, C = SHOP.COUNTER, I = G.input;
+    if (G.xr) {
+      I.hands.forEach((h, i) => {
+        if (!h.connected) return;
+        const y = h.pos.y, onTop = h.pos.x > C.x0 && h.pos.x < C.x1 && h.pos.z > C.z0 - 0.05 && h.pos.z < C.z1 + 0.12;
+        if (onTop && H.prevY[i] > C.top + 0.05 && y <= C.top + 0.05) this.hagTap(G.audio.now);
+        H.prevY[i] = y;
+      });
+    } else if (I.desk.click || I.keyDown('Space')) { this.hagTap(I.desk.click ? I.desk.clickAt || G.audio.now : I.desk.pressedAt.Space || G.audio.now); I.desk.click = false; }
+  },
+};
+
+// ============================================================================
 //  boot: build every system
 // ============================================================================
 G.def = BOSSES.proprietor;        // active boss definition (switched by Battle.loadBoss)
@@ -15383,7 +16947,8 @@ G.soul = new Soul();
 G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
-window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX } };
+G.soul.applyPin(Save.data.cosmetics.equipped);
+window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX } };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)
@@ -15480,7 +17045,7 @@ document.getElementById('btnDesktop').addEventListener('click', () => {
   G.input.lockPointer();
   if (!G.inWorld) G.battle.enterWorld();
 });
-document.getElementById('btnSettings').addEventListener('click', () => { document.getElementById('panelSettings').classList.toggle('show'); document.getElementById('panelHow').classList.remove('show'); });
+document.getElementById('btnSettings').addEventListener('click', () => { buildOverlaySettings(); document.getElementById('panelSettings').classList.toggle('show'); document.getElementById('panelHow').classList.remove('show'); });
 document.getElementById('btnHow').addEventListener('click', () => { document.getElementById('panelHow').classList.toggle('show'); document.getElementById('panelSettings').classList.remove('show'); });
 function buildOverlaySettings() {
   const form = document.getElementById('settingsForm');
@@ -15493,7 +17058,13 @@ function buildOverlaySettings() {
     const row = document.createElement('div'); row.className = 'setrow';
     const lab = document.createElement('label'); lab.textContent = sc.label; row.appendChild(lab);
     let input;
-    if (sc.type === 'num') {
+    if (sc.type === 'pin') {
+      input = document.createElement('select');
+      const L = Settings.pinList();
+      L.forEach((k, i) => { const op = document.createElement('option'); op.value = String(i); op.textContent = k ? PINS[k].name : 'NONE'; input.appendChild(op); });
+      input.value = String(Math.max(0, L.indexOf(Save.data.cosmetics.equipped)));
+      input.addEventListener('change', () => Settings.setPin(L[parseInt(input.value, 10)]));
+    } else if (sc.type === 'num') {
       input = document.createElement('input'); input.type = 'range'; input.min = sc.min; input.max = sc.max; input.step = sc.step;
       input.value = Settings.data[sc.key];
       input.addEventListener('input', () => Settings.set(sc.key, parseFloat(input.value)));
@@ -15509,6 +17080,7 @@ function buildOverlaySettings() {
 function syncOverlaySettings() {
   for (const el of document.querySelectorAll('#settingsForm [data-key]')) {
     const sc = Settings.schema.find((s) => s.key === el.dataset.key);
+    if (sc.type === 'pin') continue;
     el.value = sc.type === 'num' ? Settings.data[sc.key] : String(sc.options.indexOf(Settings.data[sc.key]));
   }
 }
