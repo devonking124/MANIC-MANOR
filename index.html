@@ -564,10 +564,29 @@ const GlyphAtlas = {
 //  and progress simply lasts for the session.
 // ============================================================================
 const SAVE_KEY = 'manicManor.save.v2';
+// LV: total EXP needed for LV 1..6 (LV 6 is the cap)
+const LV_TABLE = [0, 100, 300, 650, 1100, 1700];
+const lvForExp = (exp) => { let lv = 1; for (let i = 1; i < LV_TABLE.length; i++) if (exp >= LV_TABLE[i]) lv = i + 1; return lv; };
+// clear rewards [EXP, GOLD]: the first clear of a route in full, replays at 50%; SPARE = no EXP, +25% gold
+const REWARDS = {
+  proprietor: { fight: [300, 120], spare: [0, 150] },
+  kiddie: { fight: [420, 69], spare: [0, 86] },
+  ringmaster: { fight: [600, 300], spare: [0, 375] },
+  outlaw: { fight: [800, 400], spare: [0, 500] },
+};
 const Save = {
-  data: { beaten: { proprietor: null, kiddie: null, ringmaster: null }, settings: {} },
+  data: {
+    beaten: { proprietor: null, kiddie: null, ringmaster: null, outlaw: null }, settings: {},
+    gold: 0, exp: 0, lv: 1,
+    upgrades: {},                              // shop tapes: id -> tier
+    inventory: [],                             // shop consumables (ids), 8 slots (+2 with B-SIDE POCKETS)
+    cosmetics: { owned: [], equipped: null },  // SOUL pins
+    soundTest: [],                             // music keys heard (KNOBS' jukebox)
+    clears: {},                                // 'boss:route' -> times cleared (first clear = full reward)
+    knobs: {},                                 // KNOBS' SHOP memory: lines said, lore unlocked, discounts
+  },
   // each file unlocks when the previous boss is beaten (either ending)
-  REQUIRES: { kiddie: 'proprietor', ringmaster: 'kiddie' },
+  REQUIRES: { kiddie: 'proprietor', ringmaster: 'kiddie', outlaw: 'ringmaster' },
   persistent: true,
   load() {
     try {
@@ -577,6 +596,7 @@ const Save = {
         if (o && typeof o === 'object') {
           if (o.beaten && typeof o.beaten === 'object') for (const k in this.data.beaten) { const v = o.beaten[k]; this.data.beaten[k] = v === 'fight' || v === 'spare' ? v : null; }
           if (o.settings && typeof o.settings === 'object') this.data.settings = o.settings;
+          this.migrate(o);
         }
       } else {
         // migrate the v1 settings key once
@@ -584,6 +604,29 @@ const Save = {
         if (old) { const o = JSON.parse(old); if (o && typeof o === 'object') this.data.settings = o; }
       }
     } catch { this.persistent = false; }
+  },
+  // v4 fields, each checked on its own (a v2/v3 save simply lacks them): bad or missing values get defaults
+  migrate(o) {
+    const D = this.data, num = (v) => (typeof v === 'number' && isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+    const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    const strs = (v, n) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, n) : []);
+    D.gold = Math.min(num(o.gold), 999999); D.exp = Math.min(num(o.exp), 999999);
+    for (const [k, v] of Object.entries(obj(o.upgrades))) if (num(v)) D.upgrades[k] = num(v);
+    D.inventory = strs(o.inventory, 12);
+    const c = obj(o.cosmetics);
+    D.cosmetics = { owned: strs(c.owned, 32), equipped: typeof c.equipped === 'string' ? c.equipped : null };
+    D.soundTest = strs(o.soundTest, 16);
+    for (const [k, v] of Object.entries(obj(o.clears))) if (num(v)) D.clears[k] = num(v);
+    D.knobs = obj(o.knobs);
+    if (o.gold === undefined) {
+      // a save from before the economy: pay out the first-clear rewards for every boss already beaten
+      for (const id in D.beaten) {
+        const how = D.beaten[id]; if (!how || !REWARDS[id]) continue;
+        D.clears[id + ':' + how] = 1; D.exp += REWARDS[id][how][0]; D.gold += REWARDS[id][how][1];
+        if (!D.soundTest.includes(id)) D.soundTest.push(id);
+      }
+    }
+    D.lv = lvForExp(D.exp);
   },
   write() {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(this.data)); this.persistent = true; } catch { this.persistent = false; }
@@ -596,6 +639,8 @@ const Save = {
     if (Settings.data.unlockAll) return true;
     return !!(this.data.beaten[req] || this.data.beaten[id]);   // once open, it stays open
   },
+  // a music track was heard (the shop's SOUND TEST lists these)
+  heard(key) { if (key && !this.data.soundTest.includes(key)) { this.data.soundTest.push(key); this.write(); } },
 };
 Save.load();
 
@@ -606,6 +651,7 @@ const Settings = {
   data: {
     musicVol: 0.8, sfxVol: 0.8, flashing: 'reduced', vignette: true, turn: 'snap', hand: 'right',
     difficulty: 'normal', seated: false, beatHaptics: true, refresh: 72, unlockAll: false, assists: true,
+    purist: false,   // ignore LV bonuses and shop upgrades (the original challenge)
   },
   schema: [
     { key: 'musicVol', label: 'MUSIC VOLUME', type: 'num', min: 0, max: 1, step: 0.1, page: 'audio' },
@@ -620,6 +666,7 @@ const Settings = {
     { key: 'refresh', label: 'REFRESH RATE', type: 'enum', options: [72, 90], names: ['72 HZ', '90 HZ'], page: 'comfort' },
     { key: 'unlockAll', label: 'UNLOCK ALL BOSSES', type: 'enum', options: [false, true], names: ['OFF', 'ON'], page: 'game' },
     { key: 'assists', label: 'AUDIENCE ASSISTS', type: 'enum', options: [true, false], names: ['ON', 'OFF'], page: 'game' },
+    { key: 'purist', label: 'PURIST MODE', type: 'enum', options: [false, true], names: ['OFF', 'ON'], page: 'game' },
   ],
   // the in-world settings panel's tabs (the page groups the same rows under headings)
   pages: [{ id: 'game', name: 'GAME' }, { id: 'comfort', name: 'COMFORT' }, { id: 'audio', name: 'AUDIO' }],
@@ -644,6 +691,58 @@ const Settings = {
   get reduced() { return this.data.flashing !== 'full'; },
 };
 Settings.load();
+
+// ============================================================================
+//  KNOBS' SHOP catalog: tapes (permanent upgrades, by tier), consumables (the BAG), SOUL pins
+// ============================================================================
+const TAPES = {
+  bass:    { name: 'BASS BOOST', effect: '+6 MAX HP', prices: [60, 120, 200, 300], color: '#ff5a3c' },
+  sharp:   { name: 'SHARP EDIT', effect: '+10% DAMAGE', prices: [80, 150, 250, 350], color: '#ff2a6a' },
+  padded:  { name: 'PADDED MIX', effect: '-1 DAMAGE TAKEN (MIN 1)', prices: [100, 200, 320], color: '#3ca8ff' },
+  magnet:  { name: 'GRAZE MAGNET', effect: '+0.05 M GRAZE, +15% TP', prices: [50, 110, 200], color: '#ffd23c' },
+  after:   { name: 'AFTERIMAGE', effect: '+0.15 S INVINCIBILITY', prices: [120, 240], color: '#c23cff' },
+  grip:    { name: 'GRIP TAPE', effect: '+10% PULL SPEED', prices: [70, 150], color: '#3cff6e' },
+  pockets: { name: 'B-SIDE POCKETS', effect: '+2 BAG SLOTS', prices: [90], color: '#ff9d1a' },
+  wind:    { name: 'SECOND WIND', effect: 'SURVIVE A LETHAL HIT AT 25% HP, ONCE A FIGHT', prices: [450], color: '#fff4dc' },
+  metro:   { name: 'METRONOME', effect: 'BULLETS TICK ON THE BEAT, TELEGRAPHS +25%', prices: [25], color: '#2affd5' },
+};
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
+const CONSUMABLES = {
+  lemonade: { name: 'LO-FI LEMONADE', effect: 'HEALS 20 HP', price: 15, color: '#fff36b' },
+  bassbar:  { name: 'BASS DROP BAR', effect: 'HEALS ALL HP', price: 80, color: '#8a4a2a' },
+  vinyl:    { name: 'VINYL SHIELD', effect: 'BLOCKS THE NEXT HIT', price: 50, color: '#2a2a2a' },
+  battery:  { name: 'TP BATTERY', effect: '+50% TP', price: 40, color: '#ff9d1a' },
+};
+const PINS = {
+  gold:     { name: 'GOLD SOUL', effect: 'YOUR SOUL, IN GOLD', price: 60, color: '#ffd23c' },
+  cassette: { name: 'CASSETTE SOUL', effect: 'A TINY TAPE FOR A HEART', price: 120, color: '#ff9d1a' },
+  disco:    { name: 'DISCO SOUL', effect: 'A MIRRORBALL HEART', price: 150, color: '#c8d8ff' },
+  neon:     { name: 'NEON BOX', effect: 'THE BATTLE BOX GLOWS NEON', price: 100, color: '#ff3cc8' },
+  hat:      { name: 'SUNDOWN HAT', effect: 'A TINY HAT FOR YOUR SOUL', price: 200, color: '#c4532e', needs: 'outlaw' },
+};
+
+// ============================================================================
+//  Stats - the SOUL's numbers: LV bonuses (+4 MAX HP, +5% damage a LV) and the
+//  tapes' tiers. PURIST MODE ignores both (pins and BAG items still work).
+// ============================================================================
+const Stats = {
+  get purist() { return !!Settings.data.purist; },
+  tier(id) { return this.purist ? 0 : Math.min(Save.data.upgrades[id] || 0, TAPES[id] ? TAPES[id].prices.length : 0); },
+  get lv() { return Save.data.lv; },
+  lvBonus() { return this.purist ? 0 : this.lv - 1; },
+  maxHp() { return (CONFIG.PLAYER_HP[Settings.data.difficulty] || 40) + 4 * this.lvBonus() + 6 * this.tier('bass'); },
+  atkMul() { return (1 + 0.05 * this.lvBonus()) * (1 + 0.1 * this.tier('sharp')); },
+  atk(dmg) { return Math.max(1, Math.round(dmg * this.atkMul())); },
+  def() { return this.tier('padded'); },
+  taken(dmg) { return dmg > 0 ? Math.max(1, dmg - this.def()) : dmg; },
+  grazeR() { return CONFIG.GRAZE_R + 0.05 * this.tier('magnet'); },
+  tpMul() { return 1 + 0.15 * this.tier('magnet'); },
+  iframes() { return CONFIG.INVULN_TIME + 0.15 * this.tier('after'); },
+  pullMul() { return 1 + 0.1 * this.tier('grip'); },
+  slots() { return 8 + 2 * Math.min(Save.data.upgrades.pockets || 0, 1); },   // capacity, so PURIST MODE keeps it
+  secondWind() { return this.tier('wind') > 0; },
+  metronome() { return this.tier('metro') > 0; },
+};
 
 // flashing policy (section 7): reduced = <=3 luminance changes/s, glitch x0.3; full = <=8 Hz, never full-field white
 const Flash = {
@@ -1606,6 +1705,29 @@ class Sfx {
     for (let i = 0; i < 3; i++) this.tone({ type: 'sine', f: 3000 + Math.random() * 4000, t: base + Math.random() * 0.12, dur: 0.22, vol: 0.05 * vol });
   }
   tink() { if (this.a.gate('tink', 0.07)) this.tone({ type: 'sine', f: 4200 + Math.random() * 1500, dur: 0.06, vol: 0.03 }); }
+  // ---- economy ----
+  // a gold coin landing on your wrist
+  coin(t) {
+    if (!this.a.gate('coin', 0.035)) return;
+    const b = t !== undefined ? t : this.a.now, f = 2637 * (1 + (Math.random() - 0.5) * 0.04);
+    this.tone({ type: 'sine', f, t: b, dur: 0.08, vol: 0.06 }); this.tone({ type: 'sine', f: f * 1.5, t: b + 0.045, dur: 0.18, vol: 0.05 });
+    this.tone({ type: 'triangle', f: f * 2, t: b + 0.045, dur: 0.06, vol: 0.015 });
+  }
+  recordScratch(t) {
+    const b = t !== undefined ? t : this.a.now;
+    this.noise({ type: 'bandpass', f: 1800, f2: 420, Q: 3, t: b, dur: 0.17, vol: 0.32 });
+    this.noise({ type: 'bandpass', f: 520, f2: 2300, Q: 3, t: b + 0.13, dur: 0.15, vol: 0.26 });
+  }
+  secondWind() {
+    const t = this.a.now;
+    [392, 523, 659, 784, 1046].forEach((f, i) => this.tone({ type: 'triangle', f, t: t + i * 0.05, dur: 0.55, vol: 0.09 }));
+    this.noise({ type: 'highpass', f: 1500, f2: 6000, dur: 0.6, vol: 0.12, attack: 0.25 });
+  }
+  levelUp(t) {
+    const b = t !== undefined ? t : this.a.now;
+    [523, 659, 784, 1046, 1318].forEach((f, i) => { this.tone({ type: 'square', f, t: b + i * 0.07, dur: 0.16, vol: 0.06 }); this.tone({ type: 'triangle', f: f / 2, t: b + i * 0.07, dur: 0.2, vol: 0.08 }); });
+    this.tone({ type: 'triangle', f: 1568, t: b + 0.38, dur: 0.9, vol: 0.09, vib: 6, vibRate: 6 });
+  }
   bassHit(t) { this.tone({ type: 'sine', f: 95, f2: 36, t, dur: 0.38, vol: 0.55 }); this.noise({ type: 'lowpass', f: 400, t, dur: 0.1, vol: 0.3 }); }
   slam(t) { this.bassHit(t); this.noise({ type: 'bandpass', f: 220, t, dur: 0.16, vol: 0.3 }); }
   keys(t) { const b = t !== undefined ? t : this.a.now; for (let i = 0; i < 4; i++) this.tone({ type: 'sine', f: 2000 + Math.random() * 2200, t: b + i * 0.03, dur: 0.09, vol: 0.03 }); }
@@ -2160,7 +2282,8 @@ class PullLocomotion {
       _v1.divideScalar(this.histN);
       this.vel.copy(_v1).negate();
       if (this.mode === 'blue') this.vel.multiplyScalar(CONFIG.BLUE_JUMP_BOOST);
-      if (this.vel.length() > CONFIG.PULL_MAX_SPEED * this.boost) this.vel.setLength(CONFIG.PULL_MAX_SPEED * this.boost);
+      const vmax = CONFIG.PULL_MAX_SPEED * this.boost * Stats.pullMul();
+      if (this.vel.length() > vmax) this.vel.setLength(vmax);
       if (this.vel.length() > 2.5) G.audio.sfx.tone({ type: 'sine', f: 220, f2: 440, dur: 0.12, vol: 0.04 });
     }
     this.grabbing = false; this.histN = 0; this.histI = 0;
@@ -2187,7 +2310,8 @@ class PullLocomotion {
       }
       if (n > 0) {
         _v1.divideScalar(n);
-        if (this.boost !== 1) _v1.multiplyScalar(this.boost);
+        const k = this.boost * Stats.pullMul();
+        if (k !== 1) _v1.multiplyScalar(k);
         if (_v1.lengthSq() < 0.09) {
           rig.position.sub(_v1);
           if (dt > 1e-4 && dt < 0.1) {
@@ -2218,7 +2342,7 @@ class PullLocomotion {
       if (inp.key('KeyD')) { _v1.x += rx; _v1.z += rz; }
       if (inp.key('KeyA')) { _v1.x -= rx; _v1.z -= rz; }
       if (!blue) { if (inp.key('KeyE')) _v1.y += 1; if (inp.key('KeyQ')) _v1.y -= 1; }
-      if (_v1.lengthSq() > 0) rig.position.addScaledVector(_v1.normalize(), CONFIG.DESKTOP_MOVE_SPEED * this.boost * dt);
+      if (_v1.lengthSq() > 0) rig.position.addScaledVector(_v1.normalize(), CONFIG.DESKTOP_MOVE_SPEED * this.boost * Stats.pullMul() * dt);
       if (inp.keyDown('Space')) {
         if (blue) {
           if (this.grounded || this.coyote > 0) { this.vel.y = 4.4; this.grounded = false; this.coyote = 0; this.onPlatform = null; }
@@ -2349,15 +2473,23 @@ class Soul {
     this.shatterT = -1; this.shatterStyle = 'heart'; this.hexBurst = false;
     // CYAN: the heart detaches and rides a cable network (the rig never moves)
     this.wire = null; this.wireK = 0; this.wireLast = new THREE.Vector3();
+    // VINYL SHIELD (a BAG item): a little record orbiting the heart that eats the next hit
+    this.vinyl = false; this.vinylT = 0;
+    this.vinylMesh = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.003, 20).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x141018 }));
+    const lab = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.0034, 14).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff9d1a }));
+    const shine = new THREE.Mesh(new THREE.RingGeometry(0.018, 0.026, 20, 1, 0.3, 1.1), new THREE.MeshBasicMaterial({ color: 0x9a90b0, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
+    shine.position.z = 0.002;
+    this.vinylMesh.add(disc, lab, shine); this.vinylMesh.visible = false; scene.add(this.vinylMesh);
     this.setRadius();
   }
   get hitR() { return CONFIG.HITBOX_R * (Settings.data.difficulty === 'hard' ? 1.3 : 1); }
-  get grazeR() { return CONFIG.GRAZE_R; }
+  get grazeR() { return Stats.grazeR(); }
   setRadius() {
     this.aura.scale.setScalar(this.hitR); this.dbgHit.scale.setScalar(this.hitR); this.dbgGraze.scale.setScalar(this.grazeR);
   }
   reset(full) {
-    this.maxHp = CONFIG.PLAYER_HP[Settings.data.difficulty] || 40;
+    this.maxHp = Stats.maxHp();
     if (full) { this.hp = this.maxHp; this.tp = 0; }
     this.invuln = 0; this.alive = true; this.shatterT = -1; this.hexBurst = false;
     this.wire = null; this.wireK = 0; this.tpMul = 1;
@@ -2410,6 +2542,15 @@ class Soul {
     this.aura.visible = this.active && this.alive && this.shatterT < 0;
     this.aura.material.opacity = 0.07 + this.grazeGlow * 0.12;
     this.dbgHit.visible = this.dbgGraze.visible = G.debug.hitboxes && this.active;
+    // the VINYL SHIELD orbits the heart
+    const vv = this.vinyl && this.active && this.alive && this.shatterT < 0;
+    this.vinylMesh.visible = vv;
+    if (vv) {
+      this.vinylT += dt;
+      const a = this.vinylT * 3.1, r = G.xr ? 0.075 : 0.06;
+      this.vinylMesh.position.set(this.pos.x + Math.cos(a) * r, this.pos.y + Math.sin(a * 0.5) * 0.015, this.pos.z + Math.sin(a) * r);
+      this.vinylMesh.lookAt(Head.pos); this.vinylMesh.rotateZ(this.vinylT * 9);
+    }
     // shield follows the dominant hand (VR) or floats ahead of the soul (desktop)
     if (this.shield.visible) {
       const h = G.xr ? G.input.dominant : null;
@@ -2429,8 +2570,13 @@ class Soul {
   // returns true if damage was applied
   hurt(dmg) {
     if (!this.alive || !this.active || this.invuln > 0 || G.debug.god) return false;
-    this.hp = Math.max(0, this.hp - dmg);
-    this.invuln = CONFIG.INVULN_TIME;
+    if (this.vinyl) { this.breakVinyl(); return false; }
+    let hp = this.hp - Stats.taken(dmg);
+    const B = G.battle;
+    if (hp <= 0 && B && B.lethalSave) { const sv = B.lethalSave(); if (sv) { hp = sv.hp; this.lethalSaved(sv); } }
+    if (B && B.minHp) hp = Math.max(hp, B.minHp);   // e.g. a scene where you can't fall (SUNDOWN's final duel)
+    this.hp = Math.max(0, hp);
+    this.invuln = Stats.iframes();
     G.audio.sfx.hurt();
     G.input.pulseAll(1.0, 140);
     G.fx.hitFlash();
@@ -2438,6 +2584,20 @@ class Soul {
     G.ui.refreshHUD();
     if (this.hp <= 0) { this.alive = false; G.battle.onPlayerDeath(); }
     return true;
+  }
+  // VINYL SHIELD: the record takes the hit and shatters
+  breakVinyl() {
+    this.vinyl = false; this.invuln = 0.6;
+    G.audio.sfx.recordScratch(); G.audio.sfx.glass(undefined, 0.6);
+    G.fx.burst(this.vinylMesh.position, 16, 1, 0.1, 0.2, 1.2);
+    G.input.pulseAll(0.5, 60);
+    G.ui.showPrompt('VINYL SHIELD!', 1.2, '#ff9d1a');
+  }
+  // SECOND WIND / LUCKY HORSESHOE caught a knockout
+  lethalSaved(sv) {
+    G.ui.showPrompt(sv.text, 1.8, sv.col);
+    G.audio.sfx.secondWind();
+    G.fx.sparkle(this.pos, 24);
   }
   heal(n) {
     const before = this.hp;
@@ -2449,7 +2609,8 @@ class Soul {
   // first contact with a bullet's graze zone
   graze(src) {
     this.grazeCount++;
-    this.addTP(CONFIG.TP_PER_GRAZE * this.tpMul);
+    this.addTP(CONFIG.TP_PER_GRAZE * this.tpMul * Stats.tpMul());
+    if (G.battle && G.battle.onGraze) G.battle.onGraze(this.pos);
     this.grazeGlow = 1;
     G.audio.sfx.graze();
     if (src) { _v1.lerpVectors(this.pos, src, 0.5); G.fx.sparkle(_v1, 5); }
@@ -2463,7 +2624,7 @@ class Soul {
   grazeHold(dt) {
     if (this.grazeContT > 0) return;
     this.grazeContT = dt * 0.5;
-    this.tp = clamp(this.tp + CONFIG.TP_GRAZE_PER_SEC * this.tpMul * dt, 0, 100);
+    this.tp = clamp(this.tp + CONFIG.TP_GRAZE_PER_SEC * this.tpMul * Stats.tpMul() * dt, 0, 100);
     this.grazeGlow = Math.max(this.grazeGlow, 0.5);
   }
   shatter(style) {
@@ -3786,6 +3947,69 @@ class ChatBox {
 }
 
 // ============================================================================
+//  Coins - little gold coins that fly to your wrist (GOLD found, rewards) or from it
+//  (KNOBS' SHOP: into the cash drawer). Pooled meshes; a coin's value lands with it.
+// ============================================================================
+class Coins {
+  constructor() {
+    const geo = new THREE.CylinderGeometry(0.011, 0.011, 0.0026, 14).rotateX(Math.PI / 2);
+    const edge = new THREE.CylinderGeometry(0.0115, 0.0115, 0.002, 14, 1, true).rotateX(Math.PI / 2);
+    this.mat = new THREE.MeshBasicMaterial({ color: 0xffd23c });
+    this.edgeMat = new THREE.MeshBasicMaterial({ color: 0xb8860b });
+    this.pool = [];
+    for (let i = 0; i < 40; i++) {
+      const m = new THREE.Group(); m.add(new THREE.Mesh(geo, this.mat), new THREE.Mesh(edge, this.edgeMat));
+      m.visible = false; scene.add(m);
+      this.pool.push({ m, on: false, t: 0, dur: 0.6, from: new THREE.Vector3(), ctrl: new THREE.Vector3(), to: null, toPos: new THREE.Vector3(), value: 0, wrist: false, onLand: null, spin: 0 });
+    }
+    this.pendingWrist = 0;   // gold still in the air toward your wrist (the wrist shows the total minus this)
+  }
+  // where your wrist's gold readout is (left controller), or the bottom-left of your view on desktop
+  wristPos(out) {
+    const h = G.input && G.input.hands ? G.input.hands.find((x) => x.side === 'left' && x.connected) : null;
+    if (G.xr && h && G.ui.wristHP.mesh.parent) { G.ui.wristHP.mesh.getWorldPosition(out); return out; }
+    Head.update(); return Head.rel(out, -0.3, -0.22, 0.55);
+  }
+  // fly one coin; o: { to: fn(out) | Vector3, toWrist, value, delay, dur, onLand, arc }
+  fly(from, o = {}) {
+    const c = this.pool.find((x) => !x.on); if (!c) { if (o.toWrist) G.ui.refreshHUD(); if (o.onLand) o.onLand(); return; }
+    c.on = true; c.t = -(o.delay || 0); c.dur = o.dur || 0.6; c.from.copy(from); c.value = o.value || 0; c.wrist = !!o.toWrist;
+    c.to = o.to || null; c.onLand = o.onLand || null; c.spin = rand(8, 16);
+    c.ctrl.copy(from).add(_v1.set(rand(-0.15, 0.15), o.arc !== undefined ? o.arc : rand(0.2, 0.35), rand(-0.15, 0.15)));
+    if (c.wrist && !o.prepaid) this.pendingWrist += c.value;
+    c.m.visible = false;
+  }
+  // a handful of coins carrying `value` gold to your wrist (prepaid: already counted in pendingWrist)
+  toWrist(from, value, n = Math.min(12, Math.max(1, Math.ceil(value / 5))), prepaid = false) {
+    let left = value;
+    for (let i = 0; i < n; i++) {
+      const v = i === n - 1 ? left : Math.floor(value / n); left -= v;
+      this.fly(_v2.copy(from).add(_v3.set(rand(-0.06, 0.06), rand(-0.04, 0.04), rand(-0.06, 0.06))), { toWrist: true, value: v, delay: i * 0.07, prepaid });
+    }
+  }
+  clear() { for (const c of this.pool) { c.on = false; c.m.visible = false; } this.pendingWrist = 0; }
+  update(rdt) {
+    for (const c of this.pool) {
+      if (!c.on) continue;
+      c.t += rdt;
+      if (c.t < 0) continue;
+      const k = Math.min(1, c.t / c.dur), e = easeInOut(k);
+      if (c.wrist) this.wristPos(c.toPos); else if (typeof c.to === 'function') c.to(c.toPos); else if (c.to) c.toPos.copy(c.to);
+      // quadratic bezier from -> ctrl -> target
+      const a = (1 - e) * (1 - e), b = 2 * (1 - e) * e, d = e * e;
+      c.m.position.set(a * c.from.x + b * c.ctrl.x + d * c.toPos.x, a * c.from.y + b * c.ctrl.y + d * c.toPos.y, a * c.from.z + b * c.ctrl.z + d * c.toPos.z);
+      c.m.visible = true;
+      c.m.rotation.y += c.spin * rdt; c.m.rotation.x = 0.3;
+      if (k >= 1) {
+        c.on = false; c.m.visible = false;
+        if (c.wrist) { this.pendingWrist = Math.max(0, this.pendingWrist - c.value); G.audio.sfx.coin(); const h = G.input.hands.find((x) => x.side === 'left'); if (h && h.connected) h.pulse(0.15, 10); G.ui.refreshHUD(); }
+        if (c.onLand) c.onLand();
+      }
+    }
+  }
+}
+
+// ============================================================================
 //  UI manager: HUD, dialogue panels, screens, pointer interaction
 // ============================================================================
 class UI {
@@ -3844,7 +4068,17 @@ class UI {
     this.titleSub.mesh.position.set(0, -0.41, 0); this.title.add(this.titleSub.mesh);
     this.title.position.set(0, 2.35, -2.4); scene.add(this.title);
     // ---- wrist panels (attached on controller connect) ----
-    this.wristHP = new TextPanel({ w: 0.085, h: 0.0425, cw: 128, ch: 64, bg: 'rgba(0,0,0,0.9)', border: '#ffffff', borderPx: 3, renderOrder: 30 });
+    this.wristHP = new TextPanel({ w: 0.085, h: 0.06375, cw: 128, ch: 96, bg: 'rgba(0,0,0,0.9)', border: '#ffffff', borderPx: 3, renderOrder: 30 });
+    // GOLD under the HP: a little coin spinning beside the number
+    this.wristCoin = new THREE.Group();
+    this.wristCoin.add(new THREE.Mesh(new THREE.CylinderGeometry(0.0062, 0.0062, 0.0016, 14).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd23c })));
+    this.wristCoin.add(new THREE.Mesh(new THREE.CylinderGeometry(0.0066, 0.0066, 0.0012, 14, 1, true).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xb8860b })));
+    this.wristCoin.position.set((17 / 128 - 0.5) * 0.085, (0.5 - 79 / 96) * 0.06375, 0.006); this.wristCoin.renderOrder = 31;
+    this.wristHP.mesh.add(this.wristCoin);
+    this.goldShown = -1;
+    // SOUL STATS (beside the settings / pause panel)
+    this.statsPanel = new TextPanel({ w: 0.56, h: 0.8, cw: 280, ch: 400, scale: 2, pad: 12, renderOrder: 8 });
+    scene.add(this.statsPanel.mesh); this.statsPanel.mesh.visible = false;
     this.wristTP = new TextPanel({ w: 0.036, h: 0.11, cw: 48, ch: 148, bg: 'rgba(0,0,0,0.9)', border: '#ffffff', borderPx: 3, renderOrder: 30 });
     // ---- head-locked beat grid (debug B, VR) ----
     this.beatPanel = new TextPanel({ w: 0.16, h: 0.06, cw: 192, ch: 72, bg: 'rgba(0,0,0,0.8)', border: '#ffffff', borderPx: 2, depthTest: false, renderOrder: 990 });
@@ -3977,9 +4211,9 @@ class UI {
       const g = this.status.ctx, W = this.status.o.cw, H = this.status.o.ch, s = 3;
       g.clearRect(0, 0, W, H);
       const y = Math.round((H - 7 * s) / 2);
-      PixelFont.draw(g, 'SOUL  LV 1', 6, y, s, '#ffffff', { shadow: '#000' });
+      PixelFont.draw(g, `SOUL  LV ${Save.data.lv}`, 6, y, s, '#ffffff', { shadow: '#000' });
       PixelFont.draw(g, 'HP', 222, y + 3, 2, '#ffffff');
-      const bw = Math.round(soul.maxHp * 2.6), bx = 252;
+      const bw = Math.round(clamp(soul.maxHp * 2.6, 60, 130)), bx = 252;
       g.fillStyle = '#c80024'; g.fillRect(bx, y, bw, 7 * s);
       g.fillStyle = '#ffe600'; g.fillRect(bx, y, Math.round(bw * soul.hp / soul.maxHp), 7 * s);
       PixelFont.draw(g, `${Math.ceil(soul.hp)}/${soul.maxHp}`, bx + bw + 12, y, s, '#ffffff', { shadow: '#000' });
@@ -4013,11 +4247,15 @@ class UI {
     }
     // wrists
     {
-      const p = this.wristHP, g = p.ctx; g.fillStyle = '#000'; g.fillRect(0, 0, 128, 64);
-      g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 3); g.fillRect(0, 61, 128, 3); g.fillRect(0, 0, 3, 64); g.fillRect(125, 0, 3, 64);
+      const p = this.wristHP, g = p.ctx; g.fillStyle = '#000'; g.fillRect(0, 0, 128, 96);
+      g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 3); g.fillRect(0, 93, 128, 3); g.fillRect(0, 0, 3, 96); g.fillRect(125, 0, 3, 96);
       PixelFont.draw(g, 'HP', 8, 8, 2, '#ffffff');
       g.fillStyle = '#c80024'; g.fillRect(36, 8, 84, 14); g.fillStyle = '#ffe600'; g.fillRect(36, 8, Math.round(84 * soul.hp / soul.maxHp), 14);
-      const t = `${Math.ceil(soul.hp)}/${soul.maxHp}`; PixelFont.draw(g, t, Math.round((128 - PixelFont.width(t, 3)) / 2), 32, 3, '#ffffff');
+      const t = `${Math.ceil(soul.hp)}/${soul.maxHp}`; PixelFont.draw(g, t, Math.round((128 - PixelFont.width(t, 3)) / 2), 30, 3, '#ffffff');
+      g.fillStyle = '#3a3a3a'; g.fillRect(8, 60, 112, 2);
+      const gold = this.goldNow(); this.goldShown = gold;
+      const gt = `${gold}G`, gs = PixelFont.width(gt, 3) > 92 ? 2 : 3;
+      PixelFont.draw(g, gt, 120 - PixelFont.width(gt, gs), 79 - Math.round(7 * gs / 2), gs, '#ffd23c');
       p.tex.needsUpdate = true;
       const q = this.wristTP, h = q.ctx; h.fillStyle = '#000'; h.fillRect(0, 0, 48, 148);
       h.fillStyle = '#fff'; h.fillRect(0, 0, 48, 3); h.fillRect(0, 145, 48, 3); h.fillRect(0, 0, 3, 148); h.fillRect(45, 0, 3, 148);
@@ -4028,7 +4266,43 @@ class UI {
       const tt = `${Math.floor(soul.tp)}`; PixelFont.draw(h, tt, Math.round((48 - PixelFont.width(tt, 2)) / 2), 128, 2, '#ffffff');
       q.tex.needsUpdate = true;
     }
-    this.deskHud.textContent = `HP ${Math.ceil(soul.hp)}/${soul.maxHp}   TP ${Math.floor(soul.tp)}%`;
+    this.deskHud.textContent = `LV ${Save.data.lv}   HP ${Math.ceil(soul.hp)}/${soul.maxHp}   TP ${Math.floor(soul.tp)}%   ${this.goldNow()} G`;
+    if (this.statsPanel.mesh.visible) this.drawStats();
+  }
+  // the gold your wrist shows: banked + found this fight, minus coins still flying in
+  goldNow() {
+    const B = G.battle, f = B && B.fightGold ? B.fightGold : 0;
+    return Math.max(0, Save.data.gold + f - (G.coins ? Math.round(G.coins.pendingWrist) : 0));
+  }
+  // ------------------------------------------------------------------ SOUL STATS
+  drawStats() {
+    const P = this.statsPanel, g = P.ctx, W = P.o.cw, H = P.o.ch, D = Save.data;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(0,0,0,0.94)'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, 4); g.fillRect(0, H - 4, W, 4); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
+    PixelFont.drawIcon(g, 'heart', 14, 16, 3, '#ff0033');
+    PixelFont.draw(g, 'SOUL STATS', 44, 16, 3, '#ffffff');
+    const rows = [
+      ['LV', String(D.lv)], ['EXP', D.lv >= LV_TABLE.length ? `${D.exp} MAX` : `${D.exp}/${LV_TABLE[D.lv]}`], ['GOLD', `${D.gold} G`],
+      ['HP', String(Stats.maxHp())], ['ATK', `+${Math.round((Stats.atkMul() - 1) * 100)}%`], ['DEF', String(Stats.def())],
+      ['GRAZE', `${Stats.grazeR().toFixed(2)} M`], ['I-FRAMES', `${Stats.iframes().toFixed(2)} S`], ['PULL', `x${Stats.pullMul().toFixed(2)}`],
+    ];
+    rows.forEach(([k, v], i) => {
+      const y = 52 + i * 25;
+      PixelFont.draw(g, k, 16, y, 2, '#bbbbbb');
+      PixelFont.draw(g, v, W - 16 - PixelFont.width(v, 2), y, 2, k === 'GOLD' ? '#ffd23c' : '#2affd5');
+    });
+    let y = 52 + rows.length * 25 + 8;
+    g.fillStyle = '#333'; g.fillRect(14, y - 6, W - 28, 2);
+    if (Stats.purist) { PixelFont.draw(g, 'PURIST MODE:', 16, y, 2, '#ff9d1a'); PixelFont.draw(g, 'LV + TAPES IGNORED', 16, y + 18, 2, '#ff9d1a'); return void (P.tex.needsUpdate = true); }
+    const owned = Object.keys(TAPES).filter((k) => (D.upgrades[k] || 0) > 0);
+    if (!owned.length) PixelFont.draw(g, 'NO TAPES YET', 16, y, 2, '#666666');
+    owned.slice(0, 5).forEach((k, i) => {
+      const n = D.upgrades[k], name = TAPES[k].name + (TAPES[k].prices.length > 1 ? ' ' + ROMAN[n] : '');
+      PixelFont.draw(g, name, 16, y + i * 18, 2, TAPES[k].color);
+    });
+    if (owned.length > 5) PixelFont.draw(g, `+${owned.length - 5} MORE`, 16, y + 90, 2, '#888888');
+    P.tex.needsUpdate = true;
   }
   setBattleHUD(on) { this.status.mesh.visible = on; this.bossBar.mesh.visible = on; this.deskHud.style.display = on ? 'block' : 'none'; }
   // ------------------------------------------------------------------ text helpers
@@ -4208,6 +4482,10 @@ class UI {
     this.setActions.showAt(ap, _v2.copy(Head.pos));
     for (const b of this.setActions.buttons) b.root.quaternion.copy(p.quaternion);
     if (!acts.length) this.setActions.hide();
+    // SOUL STATS to the left of the panel
+    const sp = this.statsPanel.mesh;
+    sp.position.copy(p.localToWorld(_v1.set(-(1.25 / 2 + 0.04 + 0.28), 0.13, 0))); sp.quaternion.copy(p.quaternion); sp.visible = true;
+    this.drawStats();
   }
   drawSettings() {
     const P = this.setPanel, g = P.ctx, W = P.o.cw, H = P.o.ch;
@@ -4235,7 +4513,7 @@ class UI {
     });
     P.tex.needsUpdate = true;
   }
-  closeSettingsPanel() { this.setPanel.mesh.visible = false; this.setArrows.hide(); this.setTabs.hide(); this.setActions.hide(); }
+  closeSettingsPanel() { this.setPanel.mesh.visible = false; this.statsPanel.mesh.visible = false; this.setArrows.hide(); this.setTabs.hide(); this.setActions.hide(); }
   // ------------------------------------------------------------------ "tuning instruments..."
   showLoading(on) {
     const m = this.loading.mesh;
@@ -4333,9 +4611,10 @@ class UI {
   titleLines() {
     const n = MUSIC_KEYS.filter((k) => MusicLibrary.source(k) !== 'fallback').length;
     const all = MUSIC_KEYS.every((k) => MusicLibrary.source(k) === 'pack' || MusicLibrary.source(k) === 'override');
-    if (all) return `♪ SOUNDTRACK BUILT IN  ${n}/${MUSIC_KEYS.length} ✓`;
-    return n === MUSIC_KEYS.length ? `♪ MUSIC  ${n}/${MUSIC_KEYS.length} TRACKS READY ✓`
-      : `♪ MUSIC  ${n}/${MUSIC_KEYS.length} TRACKS READY\nTHE OTHERS PLAY PROCEDURAL MUSIC (SETTINGS > AUDIO)`;
+    const soul = `SOUL LV ${Save.data.lv}   ${Save.data.gold} G`;
+    if (all) return `♪ SOUNDTRACK BUILT IN  ${n}/${MUSIC_KEYS.length} ✓\n${soul}`;
+    return n === MUSIC_KEYS.length ? `♪ MUSIC  ${n}/${MUSIC_KEYS.length} TRACKS READY ✓\n${soul}`
+      : `♪ MUSIC  ${n}/${MUSIC_KEYS.length} TRACKS READY\nTHE OTHERS PLAY PROCEDURAL MUSIC (SETTINGS > AUDIO)\n${soul}`;
   }
   // ------------------------------------------------------------------ pointer interaction
   updateInteraction(dt) {
@@ -4440,6 +4719,8 @@ class UI {
     }
     if (this.howPanel.mesh.visible) this.drawHowTo(rdt);
     if (this.loading.mesh.visible) this.drawLoading(rdt);
+    if (this.wristHP.mesh.parent) this.wristCoin.rotation.y += rdt * 3.4;
+    if (this.goldShown !== this.goldNow()) this.hudDirty = true;
     this.updateInteraction(rdt);
   }
 }
@@ -6898,7 +7179,49 @@ class Battle {
     this.taught = {}; this.volley = 0; this.snapshot = null;
     this.dlg = null; this.nar = null; this.shiftArmed = false;
     this.fight = null; this.dance = null; this.introTalked = false; this.lastFlavor = ''; this.flavorOverride = null;
+    // economy: GOLD found during this fight (grazes, critical hits) is banked when it ends
+    this.fightGold = 0; this.grazeGold = 0; this.reward = null;
+    this.windUsed = false; this.horseshoe = false; this.minHp = 0;
     Object.assign(this, def.newState());   // boss-specific state (items, mercy-route flags, ...)
+  }
+  // ------------------------------------------------------------------ economy
+  inFight() { return !!G.def && !['BOOT', 'TITLE', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'LOADING', 'RESULTS', 'SHOP'].includes(this.state) && !(this.state === 'PAUSED' && this.prevState === 'SHOP'); }
+  // every 15 grazes: +1 G, a coin flies to your wrist
+  onGraze(pos) {
+    if (!G.soul.active) return;
+    this.grazeGold++;
+    if (this.grazeGold % 15 === 0) this.findGold(1, pos);
+  }
+  findGold(n, from) { this.fightGold += n; G.coins.toWrist(from, n, Math.min(n, 4)); }
+  // a critical FIGHT: +2 G
+  critGold() { if (G.boss) this.findGold(2, G.boss.headWorldPos(_v8)); }
+  // a hit that would knock you out: the LUCKY HORSESHOE (1 HP) or SECOND WIND (25% HP, once a fight) catches it
+  lethalSave() {
+    if (this.horseshoe) { this.horseshoe = false; return { hp: 1, text: 'THE LUCKY HORSESHOE HELD!', col: '#ffd23c' }; }
+    if (Stats.secondWind() && !this.windUsed) { this.windUsed = true; return { hp: Math.ceil(G.soul.maxHp * 0.25), text: 'SECOND WIND!', col: '#fff4dc' }; }
+    return null;
+  }
+  // leaving a fight early (GAME OVER, quitting): you keep half the gold you found
+  bankHalf() {
+    const kept = Math.floor(this.fightGold / 2);
+    if (kept) { Save.data.gold += kept; Save.write(); }
+    this.fightGold = 0;
+    return kept;
+  }
+  // a boss beaten: EXP + GOLD (first clear of that route in full, replays at 50%) + the gold found
+  grantClear(how) {
+    const id = this.def.id, key = id + ':' + how, D = Save.data;
+    const first = !D.clears[key], r = REWARDS[id] ? REWARDS[id][how] : [0, 0], k = first ? 1 : 0.5;
+    const exp = Math.round(r[0] * k), gold = Math.round(r[1] * k), found = this.fightGold, lv0 = D.lv;
+    D.clears[key] = (D.clears[key] || 0) + 1;
+    D.exp += exp; D.lv = lvForExp(D.exp);
+    D.gold += gold + found; this.fightGold = 0;
+    D.knobs.restock = true;   // KNOBS restocks the consumables after every boss fight
+    Save.write();
+    this.reward = { exp, gold, found, first, lv: D.lv > lv0 ? D.lv : 0 };
+    G.coins.pendingWrist += gold;   // the reward lands on your wrist with the results (flies in there)
+    if (this.reward.lv) { G.soul.maxHp = Stats.maxHp(); G.soul.hp = G.soul.maxHp; }
+    G.ui.refreshHUD();
   }
   get dmg() { return this.def.bulletDmg[this.phase]; }
   phaseGlitch() { return this.def.phaseGlitch[this.phase] + (this.tired ? -0.1 : 0); }
@@ -6985,7 +7308,9 @@ class Battle {
     G.timeScale = 1; G.slowmoT = 0; this.flickerT = 0; this.gustT = 0;
   }
   toTitle() {
+    if (this.fightGold) this.bankHalf();   // quitting a fight: half the gold found comes with you
     this.cleanup();
+    G.coins.clear();
     this.pausedMenus = null;
     this.loadTok = null; G.ui.showLoading(false);
     G.clock.stop(0.4);
@@ -7211,9 +7536,9 @@ class Battle {
     const crit = Math.abs((tHit || G.audio.now) - G.audio.latency - G.clock.timeOfBeat(f.center)) <= CONFIG.FIGHT_CRIT_WINDOW;
     const spd = 1 + (CONFIG.FIGHT_SPEED_BONUS - 1) * clamp((speed - 1.0) / 2.5, 0, 1);
     let dmg = CONFIG.FIGHT_BASE * acc * spd * (crit ? CONFIG.FIGHT_CRIT : 1) * (this.tired ? 2 : 1);
-    dmg = Math.max(1, Math.round(dmg + rand(-3, 3)));
+    dmg = Stats.atk(Math.max(1, Math.round(dmg + rand(-3, 3))));
     this.bossHp = Math.max(0, this.bossHp - dmg);
-    if (crit) G.audio.sfx.crit(); else G.audio.sfx.slash();
+    if (crit) { G.audio.sfx.crit(); this.critGold(); } else G.audio.sfx.slash();
     this.after(0.12, () => G.audio.sfx.impact());
     G.fx.slash(_v7, Head.pos); G.boss.hurt(); G.ui.bossShake = 0.6; G.ui.refreshHUD();
     G.fx.damageNumber(numPos, String(dmg), '#ff2244', crit ? 3.0 : 2.3);
@@ -7398,6 +7723,8 @@ class Battle {
     G.soul.shield.visible = false; G.soul.unlock(); G.soul.detachWire();
     G.clock.stop(0.02);
     G.audio.sfx.sadNote();
+    const kept = this.bankHalf();
+    if (kept) this.afterIn('GAME_OVER', 3.0, () => G.ui.showPrompt(`YOU KEPT ${kept} G (HALF OF WHAT YOU FOUND)`, 2.6, '#ffd23c'));
     G.arena.visible = false; G.bg.dim = 0.25; if (G.boss) G.boss.root.visible = false;
     G.fx.glitchBase = 0; G.ui.setBattleHUD(false);
     G.soul.shatter(this.def.shatterStyle);
@@ -7411,6 +7738,7 @@ class Battle {
     this.restoreSnapshot();
     const tp = this.snapshot ? this.snapshot.tp : 0;
     G.soul.reset(true); G.soul.tp = tp; G.soul.active = true;
+    this.windUsed = false; this.grazeGold = 0;
     G.arena.visible = true; G.arena.opacity = 1; G.arena.resetBox(0.01); G.bg.dim = 1;
     if (G.boss) { G.boss.root.visible = true; G.boss.setPhase(this.phase); G.boss.tired = this.tired; }
     G.fx.glitchBase = this.phaseGlitch();
@@ -7425,6 +7753,7 @@ class Battle {
     this.setState('VICTORY_FIGHT');
     this.clearTimers();
     G.ui.hideAllMenus(); G.ui.hideFlavor();
+    this.grantClear('fight');
     Save.setBeaten(this.def.id, 'fight');
     this.def.endings.fight(this);
   }
@@ -7432,6 +7761,7 @@ class Battle {
     this.setState('VICTORY_SPARE');
     this.clearTimers();
     G.ui.hideAllMenus(); G.ui.hideFlavor();
+    this.grantClear('spare');
     Save.setBeaten(this.def.id, 'spare');
     this.def.endings.spare(this);
   }
@@ -7471,7 +7801,7 @@ class Battle {
       this.afterIn('RESULTS', 2.6, () => {
         this.exitDoor.hide(); G.fx.fadeTo(0, 0.9);
         G.audio.sfx.chimes();
-        this.results('THE END\n\nYou left the party.\nEXP 0   GOLD 0   FRIENDS 1', false);
+        this.results('THE END\n\nYou left the party.\nEXP {EXP}   GOLD {GOLD}   FRIENDS 1', false);
       });
     }
   }
@@ -7480,7 +7810,21 @@ class Battle {
     G.loco.enabled = false;
     this.fightUI.hide(); G.ui.setBattleHUD(false); G.soul.active = false;
     if (fanfare) G.audio.sfx.fanfare();
-    G.ui.showBig(text, { type: true, scale: 4, dist: 1.8, y: 0.18 });
+    const R = this.reward;
+    let scale = 4;
+    if (R) {
+      text = text.replace('{EXP}', R.exp).replace('{GOLD}', R.gold);
+      const extra = [];
+      if (R.found) extra.push(`+${R.found} G FOUND IN THE FIGHT`);
+      if (!R.first) extra.push('REPLAY: 50% REWARDS');
+      if (R.lv) extra.push(`YOUR LV INCREASED TO ${R.lv}!`);
+      if (extra.length) { text += '\n\n' + extra.join('\n'); scale = 3; }
+      // the reward flies from the results into your wrist (the gold found is on it already)
+      if (R.gold > 0) { const g = R.gold; this.afterIn('RESULTS', 1.2, () => G.coins.toWrist(G.ui.big.mesh.position, g, undefined, true)); }
+      if (R.lv) this.afterIn('RESULTS', 1.9, () => { G.audio.sfx.levelUp(); G.ui.showPrompt(`LV ${R.lv}!  +4 MAX HP  +5% DAMAGE`, 2.6, '#ffd23c'); });
+      this.reward = null;
+    }
+    G.ui.showBig(text, { type: true, scale, dist: 1.8, y: 0.18 });
     this.afterIn('RESULTS', 2.4, () => { G.ui.endMenu.showArc({ yOff: -0.45 }); if (this.def.afterResults) this.def.afterResults(this); });
   }
   // campaign: boss 1's ending gets hijacked -> "lol wait dont leave yet" -> boss 2
@@ -7876,7 +8220,7 @@ BOSSES.proprietor = {
       for (let i = 0; i <= n; i++) B.after(1.0 + i * 0.09, () => G.bg.setWindowsLit(n - i));
       B.after(1.2, () => { G.bg.dim = 0.55; });
       B.after(2.8, () => { G.bg.dim = 0.25; G.arena.opacity = 0.35; });
-      B.afterIn('VICTORY_FIGHT', 3.4, () => B.talk([{ text: LINES.fightEnd, speed: 15 }], () => B.results('YOU WON!\n\nYou earned 300 EXP and 120 GOLD.', true)));
+      B.afterIn('VICTORY_FIGHT', 3.4, () => B.talk([{ text: LINES.fightEnd, speed: 15 }], () => B.results('YOU WON!\n\nYou earned {EXP} EXP and {GOLD} GOLD.', true)));
     },
     spare(B) {
       G.audio.setLowpass(900, 2.5); G.clock.setRate(0.85, 2.0);
@@ -10102,9 +10446,9 @@ BOSSES.kiddie = {
     }
     const hacked = f.perfect === f.keys.length;
     let dmg = 32 * f.sum * (hacked ? 1.5 : 1) * (B.tired ? 2 : 1);
-    dmg = Math.max(1, Math.round(dmg + rand(-3, 3)));
+    dmg = Stats.atk(Math.max(1, Math.round(dmg + rand(-3, 3))));
     B.bossHp = Math.max(0, B.bossHp - dmg);
-    if (hacked) { G.audio.sfx.crit(); G.ui.showPrompt('HACKED!  x1.5', 1.5, '#3cff6e'); } else G.audio.sfx.impact();
+    if (hacked) { G.audio.sfx.crit(); G.ui.showPrompt('HACKED!  x1.5', 1.5, '#3cff6e'); B.critGold(); } else G.audio.sfx.impact();
     G.boss.hurt(); G.ui.bossShake = 0.6; G.ui.refreshHUD();
     G.fx.damageNumber(numPos, String(dmg), hacked ? '#3cff6e' : '#ff2244', hacked ? 3.0 : 2.3);
     G.input.pulseAll(0.8, 120);
@@ -10228,7 +10572,7 @@ BOSSES.kiddie = {
       B.after(1.6, () => { G.bg.dim = 0.4; G.arena.opacity = 0.35; });
       B.afterIn('VICTORY_FIGHT', 2.4, () => G.ui.say('gg i guess', { mood: 'sad', speed: 6 }));
       B.afterIn('VICTORY_FIGHT', 5.4, () => { G.ui.chat.setStatus('offline'); G.audio.sfx.tone({ type: 'square', f: 660, f2: 220, dur: 0.25, vol: 0.06 }); });
-      B.afterIn('VICTORY_FIGHT', 7.2, () => { G.ui.hideBubble(); B.results('YOU WON\n\nEXP 420   GOLD 69', true); });
+      B.afterIn('VICTORY_FIGHT', 7.2, () => { G.ui.hideBubble(); B.results('YOU WON\n\nEXP {EXP}   GOLD {GOLD}', true); });
     },
     // "gg... wp actually" -> hello world -> friend request [ACCEPT] -> cozy chat window
     spare(B) {
@@ -10285,7 +10629,7 @@ BOSSES.kiddie = {
       if (this.cozyDone > 2.6) {
         this.cozyDone = -99;
         this.cozyWin.close(true);
-        B.results('THE END\n\nYou made a friend.\nEXP 0   GOLD 0   FRIENDS +1', false);
+        B.results('THE END\n\nYou made a friend.\nEXP {EXP}   GOLD {GOLD}   FRIENDS +1', false);
       }
     }
   },
@@ -14503,7 +14847,7 @@ BOSSES.ringmaster = {
     P.state = 'hit'; m.visible = false; f.hits++;
     const spd = 0.6 + 0.4 * clamp((P.spd - 1) / 3, 0, 1);
     let dmg = 72 * P.timing * (G.xr ? spd : 0.85) * (B.tired ? 2 : 1);
-    dmg = Math.max(1, Math.round(dmg + rand(-2, 2)));
+    dmg = Stats.atk(Math.max(1, Math.round(dmg + rand(-2, 2))));
     f.sum += dmg; B.bossHp = Math.max(0, B.bossHp - dmg);
     G.boss.hurt(); G.audio.sfx.impact(); G.ui.bossShake = 0.4; G.ui.refreshHUD();
     const np = G.boss.headWorldPos(new THREE.Vector3()); np.y += 0.5 + P.k * 0.25; np.x += (P.k - 1) * 0.5;
@@ -14520,7 +14864,7 @@ BOSSES.ringmaster = {
     if (bravo) {
       const bonus = Math.round(f.sum * 0.5);
       B.bossHp = Math.max(0, B.bossHp - bonus);
-      G.ui.showPrompt('BRAVO!  x1.5', 1.8, '#ffc83c');
+      G.ui.showPrompt('BRAVO!  x1.5', 1.8, '#ffc83c'); B.critGold();
       G.audio.sfx.crit(); G.audio.sfx.cheer(2.2); G.audio.sfx.confettiSparkle();
       G.boss.chestPos(_v1); G.fx.confetti(_v1, 40, 2.2); CircusFX.paper(_v1, 40, 2.4); CircusFX.ring(_v1, null, 0xffe08a, 0.2, 1.6, 0.5, 0.3);
       G.fx.damageNumber(np, '+' + bonus, '#ffc83c', 2.6);
@@ -14910,7 +15254,7 @@ BOSSES.ringmaster = {
       B.after(2.6, () => { D.ending.sinkOn = true; });
       B.after(5.2, () => { D.ending.balloon = 0; Head.update(); JuggleKit.redBalloon.visible = true; D.ending.bx = Head.pos.x + 0.55; D.ending.bz = Head.pos.z - 1.4; });
       B.afterIn('VICTORY_FIGHT', 8.0, () => { const l = RLINES.fightEnd; G.ui.say(l.text, l); });
-      B.afterIn('VICTORY_FIGHT', 13.0, () => { G.ui.hideBubble(); B.results('YOU WON\n\nEXP 600   GOLD 300', true); });
+      B.afterIn('VICTORY_FIGHT', 13.0, () => { G.ui.hideBubble(); B.results('YOU WON\n\nEXP {EXP}   GOLD {GOLD}', true); });
     },
     // SPARE: "one bow? together?" - both bow, real applause swells, the tent sews itself back, the
     // storm clears to stars, the circus lands on the clouds, the mask comes off; the curtain falls
@@ -14960,7 +15304,7 @@ BOSSES.ringmaster = {
     Head.rel(C.position, 0, 6.5, 2.6); C.lookAt(Head.pos.x, C.position.y, Head.pos.z); C.visible = true;
     this.ending.curtain = { t: 0, y0: C.position.y, y1: Head.pos.y + 0.2 };
     G.audio.sfx.curtainFall();
-    B.afterIn('RESULTS', 2.6, () => { G.ui.setBattleHUD(false); B.results('THE END\n\nThe show is over. Everyone stayed.\nEXP 0   GOLD 0   APPLAUSE x1000', false); });
+    B.afterIn('RESULTS', 2.6, () => { G.ui.setBattleHUD(false); B.results('THE END\n\nThe show is over. Everyone stayed.\nEXP {EXP}   GOLD {GOLD}   APPLAUSE x1000', false); });
   },
   updateEnding(B, dt) {
     const E = this.ending; E.t += dt;
@@ -15035,6 +15379,7 @@ G.shooter = new Shooter();
 G.soul = new Soul();
 G.battle = new Battle();
 G.ui = new UI();
+G.coins = new Coins();
 window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX } };
 
 // ============================================================================
@@ -15174,9 +15519,9 @@ function applyFrameRate() {
 }
 Settings.listeners.push((k, v) => {
   if (k === 'musicVol' || k === 'sfxVol') G.audio.applyVolumes();
-  if (k === 'difficulty') {
+  if (k === 'difficulty' || k === 'purist') {
     G.soul.setRadius();
-    G.soul.maxHp = CONFIG.PLAYER_HP[v] || 40;
+    G.soul.maxHp = Stats.maxHp();
     G.soul.hp = G.soul.active ? Math.min(G.soul.hp, G.soul.maxHp) : G.soul.maxHp;
     G.ui.refreshHUD();
   }
@@ -15291,6 +15636,7 @@ function frame(t) {
     G.tele.update(dt);
     G.fx.update(dt, rdt);
     G.ui.update(dt, rdt, frozen);
+    G.coins.update(rdt);
     G.fx.glow.end();
     G.audio.updateListener(camera);
     debugUpdate(rdt);
