@@ -7503,8 +7503,9 @@ class Battle {
   updateFight() {
     const f = this.fight; if (!f) return;
     const beat = G.clock.beat;
-    const u = (beat - f.start) / 4 - 1;
-    this.fightUI.update(clamp(u, -1.05, 1.05), beat >= f.start - 0.01);
+    // the line sweeps with the music until you strike, then stops right where you hit
+    const u = f.done && f.stopU !== undefined ? f.stopU : (beat - f.start) / 4 - 1;
+    this.fightUI.update(clamp(u, -1.05, 1.05), f.done || beat >= f.start - 0.01);
     if (f.done) return;
     let slash = false, speed = 0, tHit = G.audio.now;
     if (G.xr) {
@@ -7525,6 +7526,8 @@ class Battle {
   }
   resolveFight(u, speed, tHit) {
     const f = this.fight; f.done = true;
+    f.stopU = u === null ? 1.05 : clamp(u, -1.05, 1.05);
+    this.fightUI.update(f.stopU, true);
     G.boss.chestPos(_v7); const numPos = G.boss.headWorldPos(new THREE.Vector3()); numPos.y += 0.6;
     if (u === null || Math.abs(u) > 1.02) {
       G.fx.damageNumber(numPos, 'MISS', '#aaaaaa', 2.2);
