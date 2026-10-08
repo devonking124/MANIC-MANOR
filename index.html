@@ -714,7 +714,7 @@ const TAPES = {
   grip:    { name: 'GRIP TAPE', effect: '+10% PULL SPEED', prices: [70, 150], color: '#3cff6e' },
   pockets: { name: 'B-SIDE POCKETS', effect: '+2 BAG SLOTS', prices: [90], color: '#ff9d1a' },
   wind:    { name: 'SECOND WIND', effect: 'SURVIVE A LETHAL HIT AT 25% HP, ONCE A FIGHT', prices: [450], color: '#fff4dc' },
-  metro:   { name: 'METRONOME', effect: 'BULLETS TICK ON THE BEAT, TELEGRAPHS +25%', prices: [25], color: '#2affd5' },
+  metro:   { name: 'METRONOME', effect: 'BULLETS PULSE ON THE BEAT, +25% TIME AFTER EVERY TELEGRAPH', prices: [25], color: '#2affd5' },
 };
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
 const CONSUMABLES = {
@@ -5140,7 +5140,7 @@ class BulletPools {
     const sx = soul.pos.x, sy = soul.pos.y, sz = soul.pos.z;
     const hitR = soul.hitR, grazeR = soul.grazeR;
     const soulLive = soul.active && soul.alive;
-    const frozen = this.frozen, glBlue = glitchIsBlue();
+    const frozen = this.frozen, glBlue = glitchIsBlue(), metro = Stats.metronome();
     this.quarantine = Math.max(0, this.quarantine - dt);
     this.shootables.length = 0;
     let total = 0;
@@ -5199,7 +5199,7 @@ class BulletPools {
         // instance transform
         const grow = b.age < b.fadeIn ? b.age / b.fadeIn : 1;
         const shrink = b.dying ? Math.max(0, 1 - b.dying / 0.3) : 1;
-        const s = b.scale * grow * shrink;
+        const s = b.scale * grow * shrink * (metro ? 1 + 0.28 * G.fx.beatPulse : 1);
         if (b.useQuat) _q1.copy(b.q);
         else if (b.faceSoul) { _m1.lookAt(soul.pos, b.pos, UP); _q1.setFromRotationMatrix(_m1); }
         else if (b.faceVel && b.vel.lengthSq() > 1e-6) {
@@ -7866,6 +7866,7 @@ class Battle {
     const def = this.def, P = def.attacks[name];
     let intensity = P.intensity !== undefined ? P.intensity : def.phaseRules[this.phase].intensity + Math.min(3, this.cycle[this.phase]) * 0.05;
     let speedMul = Settings.data.difficulty === 'easy' ? 0.8 : 1;
+    if (Stats.metronome()) speedMul *= 0.8;   // METRONOME tape: 25% more time between a telegraph and its bullets
     const mods = def.attackMods ? def.attackMods(this, name) : null;   // consumes stun / slow / item effects
     if (mods && mods.speedMul) speedMul *= mods.speedMul;
     G.bullets.speedMul = speedMul;
@@ -7928,7 +7929,7 @@ class Battle {
   onBeat(b, when) {
     G.fx.onBeat(b); if (G.boss) G.boss.onBeat(b); G.arena.onBeat(b);
     if (Shop.active) Shop.onBeat(b, when);
-    // METRONOME tape: bullets tick on the beat
+    // METRONOME tape: a soft tick on the beat while bullets are flying (they pulse with it too)
     if (this.state === 'BOSS_ATTACK' && Stats.metronome() && G.bullets.total > 0) G.audio.sfx.tick(when);
     const M = G.clock.bpb;
     if (G.debug.beatGrid) { G.audio.sfx.metro(when, ((b % M) + M) % M === 0); this.beatFlash(b); }
@@ -16079,6 +16080,15 @@ const ShopKit = {
     B(cx, C.top - 0.02, cz + 0.02, cw + 0.06, 0.04, -cd + 0.08, 0x8a5a34);
     B(cx, 0.55, C.z1 + 0.005, cw - 0.16, 0.6, 0.01, 0x140c0a);
     B(cx, 0.06, C.z1 + 0.03, cw, 0.12, 0.06, 0x2a1810);
+    // the counter top doubles as a big analog mixing console: channel strips of knobs + a fader each
+    for (let c = 0; c < 14; c++) {
+      const x = C.x0 + 0.12 + c * 0.168; if (Math.abs(x - SHOP.PAD.x) < 0.2 || Math.abs(x - SHOP.DECK.x) < 0.22 || x > SHOP.DRAWER.x - 0.16) continue;
+      B(x, C.top + 0.006, -1.07, 0.13, 0.012, 0.11, 0x1e1e26);
+      for (let r = 0; r < 2; r++) CY(x - 0.03 + r * 0.06, C.top + 0.02, -1.08, 0.011, 0.013, 0.02, 8, r ? 0xff9d1a : 0xd8d0c0);
+      B(x, C.top + 0.016, -1.035, 0.012, 0.012, 0.03, 0x2affd5);
+    }
+    // KNOBS' stool, peeking out behind the counter
+    CY(0, 0.62, -1.42, 0.2, 0.2, 0.05, 14, 0x8a3a2a); CY(0, 0.31, -1.42, 0.03, 0.03, 0.6, 6, 0x2a2a30);
     // KNOBS' wall shelves (records) behind him and on the left wall, the tape rack on the right wall
     for (const sx of [-1, 1]) for (let r = 0; r < 3; r++) B(sx * 1.3, 1.2 + r * 0.42, -1.86, 1.1, 0.03, 0.26, 0x5a3420);
     for (let r = 0; r < 3; r++) B(-1.86, 0.9 + r * 0.42, -0.85, 0.26, 0.03, 1.5, 0x5a3420);
@@ -16119,12 +16129,13 @@ const ShopKit = {
     // VU meters either side of the sign
     this.texVU = tex(128, 80, drawVU);
     this.needles = [];
-    for (const sx of [-1, 1]) {
-      add(new THREE.PlaneGeometry(0.34, 0.21), new THREE.MeshBasicMaterial({ map: this.texVU }), sx * 0.95, 2.36, -1.965);
-      const n = new THREE.Group(); n.position.set(sx * 0.95, 2.36 - 0.095, -1.955); root.add(n);
-      const nm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.16, 0.003).translate(0, 0.08, 0), new THREE.MeshBasicMaterial({ color: 0x1a1010 })); n.add(nm);
-      this.needles.push({ g: n, v: 0 });
-    }
+    const vuMat = new THREE.MeshBasicMaterial({ map: this.texVU }), needleGeo = new THREE.BoxGeometry(0.005, 0.16, 0.003).translate(0, 0.08, 0), needleMat = new THREE.MeshBasicMaterial({ color: 0x1a1010 });
+    [[-1.5, 2.36, 'b'], [-0.95, 2.36, 'b'], [0.95, 2.36, 't'], [1.5, 2.36, 't'], [-1.22, 2.6, 'm'], [1.22, 2.6, 'm']].forEach(([x, y, band], i) => {
+      add(new THREE.PlaneGeometry(0.34, 0.21), vuMat, x, y, -1.965);
+      const n = new THREE.Group(); n.position.set(x, y - 0.095, -1.955); root.add(n);
+      n.add(new THREE.Mesh(needleGeo, needleMat));
+      this.needles.push({ g: n, v: 0, band, k: 0.85 + 0.3 * ((i * 7) % 5) / 4 });
+    });
     // the LED equalizer on the counter front: 12 columns x 8 segments (bass on the left, treble on the right)
     this.ledCols = 12; this.ledRows = 8;
     this.leds = new THREE.InstancedMesh(new THREE.BoxGeometry(0.13, 0.05, 0.012), new THREE.MeshBasicMaterial({ color: 0xffffff }), this.ledCols * this.ledRows);
@@ -16166,9 +16177,26 @@ const ShopKit = {
     this.drawer = add(new THREE.BoxGeometry(0.22, 0.05, 0.2), this.matLit, SHOP.DRAWER.x, C.top + 0.02, SHOP.DRAWER.z - 0.02);
     this.drawerOut = 0;
     this.deckLight = add(new THREE.PlaneGeometry(0.12, 0.04), new THREE.MeshBasicMaterial({ color: 0x2affd5, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), SHOP.DECK.x - 0.06, C.top + 0.05, SHOP.DECK.z + 0.118);
-    // the jukebox name sign (SOUND TEST) above KNOBS' turntable
+    // the jukebox in the back-left corner (SOUND TEST): neon tubes, a record spinning behind glass, the name in neon
+    const J = this.juke = new THREE.Group(); J.position.set(-1.48, 0, -1.6); J.rotation.y = 0.55; root.add(J);
+    J.add(new THREE.Mesh(mergeGeos([
+      { geo: new THREE.BoxGeometry(0.56, 1.0, 0.36), matrix: M4(0, 0.5, 0), color: 0x5a2a1a },
+      { geo: new THREE.CylinderGeometry(0.28, 0.28, 0.36, 18, 1, false, -Math.PI / 2, Math.PI).rotateX(Math.PI / 2), matrix: M4(0, 1.0, 0, 0, 0, 0), color: 0x6a3420 },
+      { geo: new THREE.BoxGeometry(0.44, 0.3, 0.02), matrix: M4(0, 0.36, 0.181), color: 0x2a1a14 },
+      { geo: new THREE.BoxGeometry(0.6, 0.06, 0.4), matrix: M4(0, 0.03, 0), color: 0x2a1410 },
+    ]), this.matLit));
+    const tube = new THREE.MeshBasicMaterial({ color: 0x2affd5 }), tube2 = new THREE.MeshBasicMaterial({ color: 0xff3cc8 });
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.012, 6, 24, Math.PI), tube); arch.position.set(0, 1.0, 0.19); J.add(arch);
+    const arch2 = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.01, 6, 24, Math.PI), tube2); arch2.position.set(0, 1.0, 0.19); J.add(arch2);
+    for (const sx of [-1, 1]) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.6, 6), sx > 0 ? tube : tube2); t.position.set(sx * 0.25, 0.68, 0.19); J.add(t); }
+    this.jukeGlass = new THREE.Mesh(new THREE.CircleGeometry(0.17, 24), new THREE.MeshBasicMaterial({ color: 0x0a0c10 })); this.jukeGlass.position.set(0, 0.95, 0.182); J.add(this.jukeGlass);
+    this.jukeDisc = new THREE.Group(); this.jukeDisc.position.set(0, 0.95, 0.186); J.add(this.jukeDisc);
+    this.jukeDisc.add(new THREE.Mesh(new THREE.CircleGeometry(0.14, 24), new THREE.MeshBasicMaterial({ color: 0x141018 })));
+    this.jukeLabel = new THREE.Mesh(new THREE.CircleGeometry(0.045, 16), new THREE.MeshBasicMaterial({ color: 0x2affd5 })); this.jukeLabel.position.z = 0.001; this.jukeDisc.add(this.jukeLabel);
+    const grv = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.13, 24, 1, 0, 0.7), new THREE.MeshBasicMaterial({ color: 0x5a5470 })); grv.position.z = 0.001; this.jukeDisc.add(grv);
     this.texJuke = tex(512, 64); this.jukeMat = new THREE.MeshBasicMaterial({ map: this.texJuke, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
-    this.jukeSign = add(new THREE.PlaneGeometry(1.0, 0.125), this.jukeMat, -0.4, 2.12, -1.9); this.jukeSign.visible = false;
+    this.jukeSign = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.065), this.jukeMat); this.jukeSign.position.set(0, 0.6, 0.192); J.add(this.jukeSign);
+    drawJukeName(this.texJuke.userData.ctx, 512, 64, 'SOUND TEST', '#2affd5'); this.texJuke.needsUpdate = true;
     // the mirror: dark glass; your SOUL's reflection floats in it (Shop.updateMirror)
     this.texGlass = tex(64, 96, (g, w, h) => {
       const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#1c2a30'); gr.addColorStop(0.45, '#0a1114'); gr.addColorStop(0.55, '#24363c'); gr.addColorStop(0.62, '#0a1114'); gr.addColorStop(1, '#141c20');
@@ -16192,7 +16220,8 @@ const ShopKit = {
     // KNOBS
     this.knobs = new KnobsModel(); root.add(this.knobs.root);
     // talk panel: an LCD strip above the counter
-    this.talk = new TextPanel({ w: 1.15, h: 0.3, cw: 552, ch: 144, bg: 'rgba(3,22,22,0.94)', border: '#2affd5', borderPx: 4, color: '#9affea', scale: 3, pad: 14, renderOrder: 7 });
+    this.talk = new TextPanel({ w: 1.15, h: 0.33, cw: 552, ch: 158, bg: 'rgba(0,0,0,0.95)', border: '#ffffff', borderPx: 5, color: '#ffffff', scale: 3, pad: 16, renderOrder: 7,
+      after: (g, W) => { g.fillStyle = '#000'; g.fillRect(16, 0, 74, 5); PixelFont.draw(g, 'KNOBS', 20, -1, 2, '#2affd5'); } });
     this.talk.mesh.position.set(0.66, 1.9, -1.08); root.add(this.talk.mesh); this.talk.mesh.visible = false;
     this.talkTW = new Typewriter(this.talk);
     // the price / info tag that floats over whatever you're holding
@@ -16214,9 +16243,25 @@ const ShopKit = {
       const it = Object.assign({ id, kind, mesh: m, home: m.position.clone(), homeQ: m.quaternion.clone(), state: 'home', hand: null, t: 0, r: 0.08 }, extra);
       this.items.push(it); return it;
     };
+    // hand-lettered labels: marker on cream, a little crooked, one atlas cell per tape
+    this.texLabels = canvasTex(384, 144, (g) => {
+      Object.keys(TAPES).forEach((id, i) => {
+        const x = (i % 3) * 128, y = Math.floor(i / 3) * 48, name = TAPES[id].name;
+        g.fillStyle = '#f2e6c8'; g.fillRect(x, y, 128, 48);
+        g.fillStyle = TAPES[id].color; g.fillRect(x, y + 42, 128, 6);
+        g.save(); g.translate(x + 64, y + 21); g.rotate(rand(-0.05, 0.05));
+        const lines = PixelFont.width(name, 2) <= 120 ? [name] : name.split(' ');
+        lines.forEach((w, k) => PixelFont.draw(g, w, -Math.round(PixelFont.width(w, 2) / 2), -7 + (k - (lines.length - 1) / 2) * 17, 2, '#1a1030'));
+        g.restore();
+      });
+    });
+    this.labelMat = new THREE.MeshBasicMaterial({ map: this.texLabels });
     Object.keys(TAPES).forEach((id, i) => {
       const r = Math.floor(i / 3), c = i % 3;
-      mk(id, 'tape', cassetteGeo(new THREE.Color(TAPES[id].color).getHex()), 1.86, 1.62 - r * 0.22, -0.6 + c * 0.32, -Math.PI / 2, { r: 0.07 });
+      const it = mk(id, 'tape', cassetteGeo(new THREE.Color(TAPES[id].color).getHex()), 1.86, 1.62 - r * 0.22, -0.6 + c * 0.32, -Math.PI / 2, { r: 0.07 });
+      const lg = new THREE.PlaneGeometry(0.084, 0.03), uv = lg.attributes.uv;
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, (c + uv.getX(k)) / 3, 1 - (r + 1 - uv.getY(k)) / 3);
+      const lab = new THREE.Mesh(lg, this.labelMat); lab.position.set(0, 0.012, 0.0072); it.mesh.add(lab);
     });
     Object.keys(CONSUMABLES).forEach((id, i) => {
       const geo = consumableGeo(id), x = 1.34 + (i % 2) * 0.3, z = 0.92 + Math.floor(i / 2) * 0.24;
@@ -16232,7 +16277,7 @@ const ShopKit = {
     if (!this.ready) return;
     const A = G.audio, bass = A.bass, treble = A.treble, t = G.time;
     // VU needles (bass left, highs right)
-    this.needles.forEach((n, i) => { const v = i === 0 ? bass : treble * 1.6; n.v = damp(n.v, clamp(v, 0, 1), v > n.v ? 18 : 5, rdt); n.g.rotation.z = 0.62 - n.v * 1.24; });
+    for (const n of this.needles) { const v = (n.band === 'b' ? bass : n.band === 't' ? treble * 1.6 : (bass + treble) * 0.7) * n.k; n.v = damp(n.v, clamp(v, 0, 1), v > n.v ? 18 : 5, rdt); n.g.rotation.z = 0.62 - n.v * 1.24; }
     // LED equalizer from the analyser bands
     const f = A.freq;
     if (f && A.ctx) {
@@ -16270,6 +16315,8 @@ const ShopKit = {
     this.drawerOut = Math.max(0, this.drawerOut - rdt * 0.8);
     this.drawer.position.z = SHOP.DRAWER.z - 0.02 + 0.14 * Math.min(1, this.drawerOut * 2);
     if (Shop.deckT > 0) { for (const r of this.deckReels) r.rotation.z += rdt * 8; this.deckLight.material.opacity = Math.min(1, Shop.deckT) * 0.8; } else this.deckLight.material.opacity = 0;
+    if (Shop.juke) this.jukeDisc.rotation.z -= rdt * 3.49;
+    this.juke.getWorldPosition(_v1); G.fx.glow.add(_v1.x, 1.0, _v1.z, 0.45, 0.16, 1, 0.84, Shop.juke ? 0.45 : 0.2, 0);
     this.knobs.update(dt, rdt, bass, treble);
     this.talkTW.update(rdt);
   },
@@ -16280,8 +16327,8 @@ registerKit(ShopKit, function () { this.items = []; this.knobs = null; this.tagI
 const KNOBS_LINES = {
   first: ['oh. hey. come on in, the door sticks.', "welcome to knobs'. records, tapes, snacks. everything's for sale except the headphones.", "grab whatever. set it on the pad, i'll ring you up."],
   greet: ['hey hey. take your time.', 'back again. nice.', "oh it's you. the good kind of you.", 'mm. late one tonight, huh.', 'come in, come in. mind the crates.', 'the night shift returns.'],
-  pacifist: ["you didn't hurt anybody out there, huh.", "...respect. ten percent off. for good. don't tell anyone."],
-  lv3: ["you've been... busy out there.", "it's cool. i don't judge. the speakers do, a little."],
+  pacifist: ['you got a light touch. i respect a clean mix.', "ten percent off. for good. don't tell anyone."],
+  lv3: ['your vibe got... heavy. not judging. just hearing it.'],
   boss: {
     'proprietor:fight': 'heard the manor went quiet. like, quiet quiet. that was you?',
     'proprietor:spare': 'the old house guy left his front door open tonight. said a guest finally said goodbye.',
@@ -16306,8 +16353,8 @@ const KNOBS_LINES = {
   bagFull: ["your bag's full. use something. or sell it to me."],
   locked: ["that one's not for sale yet. ...the desert, maybe. someday."],
   haggleIntro: ['aight. tap the counter with me. eight beats.', 'four to count in, then eight. on the beat.'],
-  haggle8: ['...okay. that was clean. fifteen off, all night.'],
-  haggle6: ['close enough. five off.'],
+  haggle8: ['...okay. that was clean. fifteen off your next one.'],
+  haggle6: ['close enough. five off your next one.'],
   haggleFail: ["nah. you'll get it next time."],
   haggleUsed: ['we already did the thing. one haggle a night.'],
   sellIntro: ["i'll take it. half price. it's the rules. my rules."],
@@ -16316,13 +16363,13 @@ const KNOBS_LINES = {
   soundTest: ['spin whatever. i got time.', "jukebox's yours."],
   soundTestNone: ["you haven't heard much yet. go out there. listen."],
   leave: ['later. push the door, it sticks.', 'stay safe out there.', 'come back anytime. i never close.', 'peace.'],
-  idle: ['that rack is alphabetical. kinda.', "the lava lamp's older than me.", 'try the lemonade. trust.', "don't mind the crates. they're load-bearing.", 'this one goes out to the night shift.'],
+  idle: ["every track ends, friend. that's what makes the loop hit.", 'that rack is alphabetical. kinda.', "the lava lamp's older than me.", 'try the lemonade. trust.', "don't mind the crates. they're load-bearing.", 'this one goes out to the night shift.'],
   headphones: ['these? ...hey, have you tried the lemonade?', 'what headphones.', 'long story. short shop.', "they're for listening. mostly.", "ask me again later. ...no wait, don't.", 'oh look, a customer. oh. it\'s you. hi.'],
   mirror: ['looking good.', 'that one suits you.', 'very you.'],
 };
 const KNOBS_TOPICS = [
   { id: 'shop', label: 'THE SHOP', lines: [["i built this place out of old speaker boxes. it floats. don't ask me how.", 'i just do the books.'], ["it's always late here. so i'm always open.", 'convenient.']] },
-  { id: 'music', label: 'THE MUSIC', lines: [['everything in here has a beat. even the quiet.', 'especially the quiet.'], ["this beat? i made it to practice mastering.", "still practicing. it's on loop. so am i."]] },
+  { id: 'music', label: 'THE MUSIC', lines: [['everything in here has a beat. even the quiet.', 'especially the quiet.'], ["this beat? i made it to practice mastering.", "still practicing. it's on loop. so am i."], ["everybody out there's scared of the last bar.", "every track ends, friend. that's what makes the loop hit."]] },
   { id: 'manor', label: 'THE MANOR', needs: 'proprietor', lines: [['the old house guy throws one party. it never ends.', 'he used to come in for candles. so many candles.'], ['he paid in ious. i kept them.', "they all say 'stay'."]] },
   { id: 'server', label: 'THE SERVER', needs: 'kiddie', lines: [["that kid hacked my register once. it said 'lol' for a week.", "honestly? best week of sales i've had."], ['he talks tough. types fast.', 'lonely, i think. most loud people are.']] },
   { id: 'bigtop', label: 'THE BIG TOP', needs: 'ringmaster', lines: [['grandioso orders confetti by the ton.', "i don't sell confetti. he keeps asking."], ['he did a show in here once. one guest. me.', 'standing ovation. i was already standing.']] },
@@ -16506,6 +16553,7 @@ const Shop = {
       this.deliver(it);
     });
     it.state = 'paid'; this.padItem = null;
+    this.visit.haggle = 0;   // a haggled discount covers one purchase
     this.mode = 'paying';
     this.say(line, null, true);
   },
@@ -16612,7 +16660,7 @@ const Shop = {
     const K = ShopKit;
     if (key === 'shop') { this.backToShopMusic(); return; }
     this.juke = { key };
-    K.jukeSign.visible = true; drawJukeName(K.texJuke.userData.ctx, 512, 64, 'LOADING...', '#ffffff'); K.texJuke.needsUpdate = true;
+    drawJukeName(K.texJuke.userData.ctx, 512, 64, 'LOADING...', '#ffffff'); K.texJuke.needsUpdate = true;
     G.audio.fadeMusic(0, 0.6);
     MusicLibrary.getTrack(key).then((t) => {
       if (!this.active || !this.juke || this.juke.key !== key) return;
@@ -16623,12 +16671,13 @@ const Shop = {
       G.audio.fadeMusic(1, 0.4);
       const col = this.songColor(key);
       drawJukeName(K.texJuke.userData.ctx, 512, 64, MUSIC_INFO[key].title.toUpperCase(), col); K.texJuke.needsUpdate = true;
-      K.knobs.recordMat.color.set(col);
+      K.jukeLabel.material.color.set(col);
     });
   },
   backToShopMusic() {
     const K = ShopKit;
-    this.juke = null; K.jukeSign.visible = false; K.knobs.recordMat.color.set('#ff9d1a');
+    this.juke = null; K.jukeLabel.material.color.set('#2affd5');
+    drawJukeName(K.texJuke.userData.ctx, 512, 64, 'SOUND TEST', '#2affd5'); K.texJuke.needsUpdate = true;
     G.audio.fadeMusic(0, 0.35);
     G.battle.afterIn('SHOP', 0.4, () => {
       if (!this.active) return;
