@@ -193,11 +193,17 @@ loops 6.184-87.693 s (bars 2-38) with a 0.15 s crossfade at the seam.
 
 ## SUNDOWN, the Last Outlaw
 
+- **The frontier.** You stand in the corral on top of your own sandstone mesa, and he
+  stands on his across a narrow canyon (solid ground under your feet; the canyon floor is
+  7.5 m below). Around you: banded mesas, buttes and hoodoos fading into the haze,
+  saguaros and prickly pears, the ghost town of Ghost Creek with its stopped clock tower,
+  a railroad, a windmill, tumbleweeds and dust devils.
 - **The day/night arc.** HIGH NOON (a blinding white-gold sun face, bleached sky, short
   hard shadows, a hawk circling), GOLDEN HOUR (a deep orange sun, an amber-to-rose sky,
-  long shadows, his sunset poncho glowing) and MIDNIGHT (his face a pale crescent moon,
-  stars, fireflies, the hat gone). The battle box is a fence of weathered beams and rope
-  with brass rivets: dust shakes off it on every beat and the rope creaks taut on every bar.
+  long shadows, the shells on his gunbelts glowing) and MIDNIGHT (his face a cratered
+  moon, the milky way, shooting stars, fireflies, the hat gone). The battle box is a fence
+  of weathered beams and rope with iron brackets and two lanterns: dust shakes off it on
+  every beat and the rope creaks taut on every bar.
 - **Attacks** (all on the beat or the half-beat gallop, telegraphed at least a beat ahead,
   silver bullets glint a beat before they fire): TUMBLEWEED STAMPEDE, FAN THE HAMMER,
   CACTUS FIELD (BLUE / ORANGE needle volleys by the bar), WANTED (posters with your soul

@@ -15986,7 +15986,7 @@ const FrontierTex = {
       return [clamp((c - 0.28) * 2.1, 0, 1) * 255, sh * 255, clamp((ci - 0.35) * 2.2, 0, 1) * 255];
     }), { repeat: true, linear: true });
   },
-  // the night: the milky way band and a dust of faint stars (equirectangular)
+  // the night: the milky way band (equirectangular; the stars themselves are sharp points, see DesertSky)
   make_milky() {
     const W = 1024, H = 512;
     return softTex(W, H, (g) => {
@@ -16001,8 +16001,6 @@ const FrontierTex = {
         const r = 0.55 + 0.3 * n, gg = 0.6 + 0.2 * n, bb = 0.85;
         return [k * r * 255, k * gg * 255, k * bb * 255];
       }, 0);
-      // faint stars
-      for (let i = 0; i < 2600; i++) { const a = Math.random() * 0.55 + 0.1; g.fillStyle = `rgba(255,255,255,${a.toFixed(2)})`; g.fillRect(Math.random() * W, Math.random() * H, 1, 1); }
     }, { repeat: true, mipmaps: false });
   },
   // the moon's face: maria and craters (0.5 grey = average)
@@ -16109,22 +16107,31 @@ class DesertSky {
         }`,
     }));
     sky.renderOrder = -10; sky.frustumCulled = false; this.group.add(sky);
-    // stars: points that twinkle (bigger, brighter ones are rarer)
-    const N = 900, sp = new Float32Array(N * 3), sa = new Float32Array(N * 2);
+    // stars: sharp points that twinkle - mostly faint ones, a few bright ones with tiny spikes;
+    // blue-white, white, a few gold and red (star colours)
+    const N = 2000, sp = new Float32Array(N * 3), sa = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
       const a = rand(0, TAU), el = Math.asin(rand(0.04, 1)), r = 185;
       sp[i * 3] = Math.cos(a) * Math.cos(el) * r; sp[i * 3 + 1] = Math.sin(el) * r; sp[i * 3 + 2] = Math.sin(a) * Math.cos(el) * r;
-      sa[i * 2] = Math.pow(Math.random(), 3) * 2.2 + 0.9; sa[i * 2 + 1] = rand(0, TAU);
+      sa[i * 3] = Math.pow(Math.random(), 5) * 3.8 + 0.75; sa[i * 3 + 1] = rand(0, TAU); sa[i * 3 + 2] = Math.random();
     }
-    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('aStar', new THREE.BufferAttribute(sa, 2));
+    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('aStar', new THREE.BufferAttribute(sa, 3));
     this.starU = { uTime: { value: 0 }, uK: { value: 0 }, uPx: { value: 1 } };
     this.stars = new THREE.Points(sg, new THREE.ShaderMaterial({
       uniforms: this.starU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      vertexShader: `attribute vec2 aStar; uniform float uTime; uniform float uPx; varying float vA;
-        void main(){ vA = (0.55 + 0.45 * sin(uTime * (1.3 + aStar.y) + aStar.y * 9.0)) * min(1.0, aStar.x * 0.6);
-          gl_PointSize = aStar.x * uPx; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform float uK; varying float vA;
-        void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float a = clamp(1.0 - dot(p, p), 0.0, 1.0); gl_FragColor = vec4(vec3(0.92, 0.94, 1.0) * a * vA * uK, 1.0); }`,
+      vertexShader: `attribute vec3 aStar; uniform float uTime; uniform float uPx; varying float vA; varying float vBig; varying vec3 vC;
+        void main(){
+          float tw = 0.6 + 0.4 * sin(uTime * (1.3 + aStar.y) + aStar.y * 9.0) * sin(uTime * 0.7 + aStar.y * 3.0);
+          vA = tw * clamp(aStar.x * 0.42, 0.3, 1.0); vBig = smoothstep(2.6, 4.2, aStar.x);
+          float t = aStar.z;
+          vC = t < 0.45 ? vec3(0.78, 0.86, 1.0) : t < 0.82 ? vec3(1.0, 0.98, 0.95) : t < 0.96 ? vec3(1.0, 0.86, 0.62) : vec3(1.0, 0.66, 0.5);
+          gl_PointSize = (aStar.x + vBig * 4.0) * uPx; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform float uK; varying float vA; varying float vBig; varying vec3 vC;
+        void main(){
+          vec2 p = gl_PointCoord * 2.0 - 1.0; float r2 = dot(p, p);
+          float core = exp(-r2 * mix(5.0, 22.0, vBig));
+          float spk = (max(0.0, 1.0 - abs(p.x) * 9.0) + max(0.0, 1.0 - abs(p.y) * 9.0)) * (1.0 - sqrt(min(r2, 1.0))) * vBig * 0.55;
+          gl_FragColor = vec4(vC * (core + spk) * vA * uK, 1.0); }`,
     }));
     this.stars.renderOrder = -9; this.stars.frustumCulled = false; this.group.add(this.stars);
     // a shooting star now and then (midnight)
@@ -16572,6 +16579,13 @@ const DesertKit = {
     this.rocks = inst(boulderGeo(5), this.matNear, rocks);
     // ---- props on your mesa: a signpost toward town, a cattle skull, a broken wagon wheel, a dead tree
     this.buildProps(root);
+    // a lit window: warm light behind four panes and a half-drawn curtain
+    this.winTex = softTex(64, 64, (g, w, h) => {
+      const gr = g.createRadialGradient(w * 0.55, h * 0.75, 2, w / 2, h / 2, w * 0.75); gr.addColorStop(0, '#fff2c8'); gr.addColorStop(0.6, '#ffb860'); gr.addColorStop(1, '#a8542a');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      g.fillStyle = 'rgba(90,30,20,0.55)'; g.beginPath(); g.moveTo(0, 0); g.lineTo(w * 0.34, 0); g.quadraticCurveTo(w * 0.22, h * 0.5, w * 0.3, h); g.lineTo(0, h); g.fill();
+      g.fillStyle = '#2a1a10'; g.fillRect(w / 2 - 2, 0, 4, h); g.fillRect(0, h / 2 - 2, w, 4); g.lineWidth = 5; g.strokeStyle = '#2a1a10'; g.strokeRect(0, 0, w, h);
+    }, { mipmaps: true });
     // ---- the ghost town on the desert floor (its street runs toward your mesa)
     this.buildTown(root);
     // ---- the road out of town, the railroad crossing the desert, telegraph poles along it
@@ -16743,7 +16757,7 @@ const DesertKit = {
     for (const side of [-1, 1]) for (const v of [-9, 5]) { W.push({ geo: new THREE.BoxGeometry(0.1, 0.1, 2.6), matrix: yawM(side * 3.8, v, fy(side * 3.8, v) + 0.95, 0), color: 0x5a3a24 }); for (const k of [-1.2, 1.2]) W.push({ geo: new THREE.BoxGeometry(0.12, 1.0, 0.12), matrix: yawM(side * 3.8, v + k, fy(side * 3.8, v) + 0.5, 0), color: 0x5a3a24 }); }
     this.town = new THREE.Mesh(mergeGeos(W), this.matWood); root.add(this.town);
     // the windows: dark by day, a warm ghostly glow at night (somebody's home)
-    this.winMat = new THREE.MeshBasicMaterial({ color: 0x1a120c });
+    this.winMat = new THREE.MeshBasicMaterial({ map: this.winTex, color: 0x1a120c });
     this.windows = new THREE.Mesh(mergeGeos(WIN), this.winMat); root.add(this.windows);
     this.signTex = softTex(512, 512, drawTownSigns, { mipmaps: true });
     this.signs = new THREE.Mesh(mergeGeos(SIGN), CircusShade.material({ map: this.signTex, gloss: 0.05, rim: 0.2, emit: 0.18, haze: true, side: THREE.DoubleSide })); root.add(this.signs);
@@ -16851,45 +16865,85 @@ const DesertKit = {
     for (let i = 0; i < 9; i++) Q.push({ geo: new THREE.DodecahedronGeometry(0.11, 0), matrix: M4(H.x + 0.65 + Math.cos(i / 9 * TAU) * 0.42, H.y + 0.04, H.z + 0.1 + Math.sin(i / 9 * TAU) * 0.42), color: 0x7a6a62 });
     this.hisProps = new THREE.Mesh(mergeGeos(Q), this.matWood); root.add(this.hisProps);
   },
-  // the duel street at midnight: false fronts both sides, boardwalks, lanterns, the bell tower at the end
+  // the duel street at midnight: false fronts both sides (paned windows lit from inside, signs,
+  // porches with posts and awnings), a rutted dirt road, hitching rails, a trough, barrels, lanterns
+  // that light the street, the bell tower at the far end behind him, a tumbleweed blowing through
   buildStreet(S) {
-    const Wd = [], Win = [], Sg = [];
-    S.add(new THREE.Mesh(new THREE.CircleGeometry(60, 48).rotateX(-Math.PI / 2).translate(0, -0.02, -8), CircusShade.material({ color: 0x9a7452, tri: FrontierTex.get('rock'), triTop: FrontierTex.get('ground'), triST: [0.3, 0.6, 0.9, 0], gloss: 0.02, rim: 0.1, emit: 0.06, haze: true })));
+    const Wd = [], Win = [], Sg = [], Rt = [];
+    S.add(new THREE.Mesh(new THREE.CircleGeometry(60, 48).rotateX(-Math.PI / 2).translate(0, -0.02, -8), CircusShade.material({ color: 0xa27a56, tri: FrontierTex.get('rock'), triTop: FrontierTex.get('ground'), triST: [0.3, 0.7, 0.95, 0], gloss: 0.02, rim: 0.1, emit: 0.07, haze: true })));
+    // the road: one soft grid over the ground - two wheel ruts pressed into it, a hoof-churned crown
+    // between them, packed darker dirt along the boardwalks - fading back into the plain ground at its rim
+    {
+      const W = 13, L = 40, g = new THREE.PlaneGeometry(W, L, 52, 80).rotateX(-Math.PI / 2).translate(0, 0, -9);
+      const P = g.attributes.position, col = new Float32Array(P.count * 3);
+      const base = new THREE.Color(0xa27a56), rut = new THREE.Color(0x6e4a32), pack = new THREE.Color(0x8a6a52), churn = new THREE.Color(0x94704e);
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i), z = P.getZ(i), ax = Math.abs(x);
+        const edge = smooth01(Math.min((W / 2 - ax) / 1.4, (z + 29) / 4, (11 - z) / 4));
+        const wob = (ONoise.n2(z * 0.35, x > 0 ? 3 : 9) - 0.5) * 0.16;
+        const r = Math.exp(-(((ax - 0.85 - wob) / 0.14) ** 2)) * (0.7 + 0.3 * ONoise.n2(z * 0.8, 5.5));
+        const crown = Math.exp(-((x / 0.5) ** 2)), hoof = crown * smooth01((ONoise.n2(x * 3.1, z * 3.1) - 0.45) * 4);
+        const n = ONoise.fbm2(x * 0.3 + 7, z * 0.3, 3) - 0.5, n2 = ONoise.fbm2(x * 1.6, z * 1.6 + 11, 2) - 0.5;
+        const by = smooth01((ax - 4.3) / 1.1);
+        P.setY(i, -0.012 + (-0.034 * r + 0.01 * crown - 0.008 * hoof + n2 * 0.012) * edge);
+        _c1.copy(base).lerp(rut, r * 0.7).lerp(churn, hoof * 0.6).lerp(pack, by * 0.45).multiplyScalar(1 + n * 0.24 + n2 * 0.1).lerp(base, 1 - edge);
+        col[i * 3] = _c1.r; col[i * 3 + 1] = _c1.g; col[i * 3 + 2] = _c1.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals();
+      S.add(new THREE.Mesh(g, CircusShade.material({ tri: FrontierTex.get('rock'), triTop: FrontierTex.get('ground'), triST: [0.3, 0.7, 0.95, 0], gloss: 0.02, rim: 0.1, emit: 0.07, haze: true })));
+    }
+    // pebbles kicked to the sides of the road
+    for (let i = 0; i < 46; i++) { const s = chance(0.5) ? 1 : -1, x = s * rand(1.4, 4.6), r = rand(0.025, 0.07); Rt.push({ geo: new THREE.DodecahedronGeometry(r, 0), matrix: M4(x, r * 0.3 - 0.012, rand(-24, 6), rand(0, 3), rand(0, 3), 0), color: chance(0.5) ? 0x8a786a : 0x6e5e50 }); }
+    S.add(new THREE.Mesh(mergeGeos(Rt), CircusShade.material({ gloss: 0.06, rim: 0.2, emit: 0.06, haze: true })));
     const fronts = [[-1, 1, 0x5a3c2a, 3], [-1, -4.4, 0x4a3a32, 0], [-1, -9.8, 0x5e4430, 6], [-1, -15.2, 0x463a36, 2], [1, 0.6, 0x4e3a2e, 1], [1, -4.8, 0x5a4232, 4], [1, -10.2, 0x4a3e38, 5], [1, -15.6, 0x56402e, 7]];
     for (const [s, z, col, si] of fronts) {
       const h = rand(3.6, 4.6), fh = h + rand(1.0, 1.8), w = 5.0, x = s * 7.6;
       Wd.push({ geo: new THREE.BoxGeometry(4, h, w), matrix: M4(x + s * 2, h / 2, z), color: col });
+      Wd.push({ geo: gableGeo(w + 0.3, 1.3, 4.1).rotateY(Math.PI / 2), matrix: M4(x + s * 2, h, z), color: 0x3a2618 });
       Wd.push({ geo: new THREE.BoxGeometry(0.2, fh, w + 0.2), matrix: M4(x, fh / 2, z), color: col });
       Wd.push({ geo: new THREE.BoxGeometry(0.3, 0.2, w + 0.4), matrix: M4(x, fh + 0.06, z), color: 0x2e2018 });
+      Wd.push({ geo: new THREE.BoxGeometry(0.28, 0.5, w * 0.42), matrix: M4(x, fh + 0.4, z), color: col });
       Wd.push({ geo: new THREE.BoxGeometry(2.0, 0.14, w + 0.2), matrix: M4(x - s * 1.0, 0.32, z), color: 0x5a4430 });
-      for (const k of [-0.46, 0.46]) Wd.push({ geo: new THREE.BoxGeometry(0.13, 2.8, 0.13), matrix: M4(x - s * 1.9, 1.75, z + k * w), color: 0x3a2a1e });
+      for (const k of [-0.46, 0, 0.46]) Wd.push({ geo: new THREE.BoxGeometry(0.13, 2.8, 0.13), matrix: M4(x - s * 1.9, 1.75, z + k * w), color: 0x3a2a1e });
       Wd.push({ geo: new THREE.BoxGeometry(2.3, 0.09, w + 0.3), matrix: M4(x - s * 1.0, 3.12, z, 0, 0, s * 0.15), color: 0x4a3626 });
-      for (const k of [-0.25, 0.25]) Win.push({ geo: new THREE.BoxGeometry(0.06, 0.9, 0.8), matrix: M4(x - s * 0.12, fh * 0.64, z + k * w) });
-      Win.push({ geo: new THREE.BoxGeometry(0.06, 0.9, 1.2), matrix: M4(x - s * 0.12, 1.5, z - 0.27 * w) });
+      // window frames (pale) behind the glowing panes, a door with a lit transom
+      for (const k of [-0.25, 0.25]) { Wd.push({ geo: new THREE.BoxGeometry(0.08, 1.1, 0.95), matrix: M4(x - s * 0.1, fh * 0.64, z + k * w), color: 0xd8c8a8 }); Win.push({ geo: new THREE.BoxGeometry(0.06, 0.9, 0.78), matrix: M4(x - s * 0.13, fh * 0.64, z + k * w) }); }
+      Wd.push({ geo: new THREE.BoxGeometry(0.08, 1.1, 1.4), matrix: M4(x - s * 0.1, 1.5, z - 0.27 * w), color: 0xd8c8a8 });
+      Win.push({ geo: new THREE.BoxGeometry(0.06, 0.9, 1.2), matrix: M4(x - s * 0.13, 1.5, z - 0.27 * w) });
       Wd.push({ geo: new THREE.BoxGeometry(0.08, 2.1, 1.0), matrix: M4(x - s * 0.13, 1.4, z + 0.2 * w), color: 0x1e140c });
+      Win.push({ geo: new THREE.BoxGeometry(0.06, 0.3, 0.9), matrix: M4(x - s * 0.14, 2.6, z + 0.2 * w) });
       Sg.push({ geo: atlasRect(new THREE.PlaneGeometry(w * 0.8, 0.8), si, TOWN_SIGNS.length), matrix: M4(x - s * 0.16, fh * 0.86, z, 0, -s * Math.PI / 2, 0) });
     }
-    // hitching rails, a trough, barrels
-    for (const s of [-1, 1]) { Wd.push({ geo: new THREE.BoxGeometry(0.1, 0.1, 3), matrix: M4(s * 5.3, 0.95, -2.5), color: 0x4a3420 }); for (const k of [-1.3, 1.3]) Wd.push({ geo: new THREE.BoxGeometry(0.12, 1, 0.12), matrix: M4(s * 5.3, 0.5, -2.5 + k), color: 0x4a3420 }); }
+    // hitching rails, a trough, barrels, crates
+    for (const s of [-1, 1]) for (const z of [-2.5, -11]) { Wd.push({ geo: new THREE.BoxGeometry(0.1, 0.1, 3), matrix: M4(s * 5.3, 0.95, z), color: 0x4a3420 }); for (const k of [-1.3, 1.3]) Wd.push({ geo: new THREE.BoxGeometry(0.12, 1, 0.12), matrix: M4(s * 5.3, 0.5, z + k), color: 0x4a3420 }); }
     Wd.push({ geo: new THREE.BoxGeometry(0.8, 0.5, 2.2), matrix: M4(-5.4, 0.25, -7.6), color: 0x5a4230 });
-    for (const [x, z] of [[5.6, -7.2], [5.2, -7.9], [-5.6, -12.4]]) Wd.push({ geo: new THREE.CylinderGeometry(0.32, 0.36, 0.9, 10), matrix: M4(x, 0.45, z), color: 0x5a3a24 });
-    // the bell tower down the street, behind him
+    for (const [x, z] of [[5.6, -7.2], [5.2, -7.9], [-5.6, -12.4], [5.5, -13.5]]) Wd.push({ geo: new THREE.CylinderGeometry(0.32, 0.36, 0.9, 10), matrix: M4(x, 0.45, z), color: 0x5a3a24 });
+    for (const [x, z, sz] of [[-5.5, -5.6, 0.7], [-5.6, -6.2, 0.5], [5.6, -16.4, 0.6]]) Wd.push({ geo: new THREE.BoxGeometry(sz, sz, sz), matrix: M4(x, sz / 2, z, 0, rand(0, 1), 0), color: 0x6a4a2e });
+    // the bell tower down the street, behind him: a belfry with a bell
     Wd.push({ geo: new THREE.BoxGeometry(3.2, 10, 3.2), matrix: M4(0, 5, -24), color: 0x8a7a68 });
-    Wd.push({ geo: new THREE.ConeGeometry(2.6, 3.2, 4), matrix: M4(0, 11.6, -24, 0, Math.PI / 4, 0), color: 0x3a2a24 });
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) Wd.push({ geo: new THREE.BoxGeometry(0.32, 2.3, 0.32), matrix: M4(a * 1.4, 11.15, -24 + b * 1.4), color: 0x8a7a68 });
+    Wd.push({ geo: new THREE.BoxGeometry(3.5, 0.3, 3.5), matrix: M4(0, 10.1, -24), color: 0x4a3a2a });
+    Wd.push({ geo: new THREE.ConeGeometry(2.6, 3.2, 4), matrix: M4(0, 13.9, -24, 0, Math.PI / 4, 0), color: 0x3a2a24 });
     this.streetTower = new THREE.Vector3(0, 7.2, -22.38);
+    this.streetBell = new THREE.Vector3(0, 11.2, -24);
     S.add(new THREE.Mesh(mergeGeos(Wd), CircusShade.material({ tri: FrontierTex.get('wood'), triTop: FrontierTex.get('wood'), triST: [0.6, 0.6, 0.85, 0], gloss: 0.04, rim: 0.35, emit: 0.06, haze: true })));
-    this.streetWinMat = new THREE.MeshBasicMaterial({ color: 0xffb860 });
+    this.streetWinMat = new THREE.MeshBasicMaterial({ map: this.winTex, color: 0xffb860 });
     S.add(new THREE.Mesh(mergeGeos(Win), this.streetWinMat));
     S.add(new THREE.Mesh(mergeGeos(Sg), CircusShade.material({ map: this.signTex, gloss: 0.05, rim: 0.2, emit: 0.14, side: THREE.DoubleSide })));
     const sc = new THREE.Mesh(new THREE.CircleGeometry(1.0, 28), CircusShade.material({ map: this.clockTex, gloss: 0.2, rim: 0.2, emit: 0.35 }));
     sc.position.copy(this.streetTower); S.add(sc);
-    // two lanterns on the porch posts nearest you (they light the street)
+    this.streetBellMesh = new THREE.Mesh(this.bell.geometry, this.bell.material); this.streetBellMesh.position.copy(this.streetBell); this.streetBellMesh.scale.setScalar(0.9); S.add(this.streetBellMesh);
+    // lanterns hung on the porch posts down both sides (they light the street)
     this.streetLamps = [];
-    for (const s of [-1, 1]) {
-      const p = new THREE.Vector3(s * 5.75, 2.55, -1.6);
-      const L = new THREE.Mesh(mergeGeos([{ geo: new THREE.CylinderGeometry(0.1, 0.12, 0.28, 8), color: 0xffd890 }, { geo: new THREE.ConeGeometry(0.14, 0.12, 8), matrix: M4(0, 0.2, 0), color: 0x2a2a2a }]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    const lampGeo = mergeGeos([{ geo: new THREE.CylinderGeometry(0.1, 0.12, 0.28, 8), color: 0xffd890 }, { geo: new THREE.ConeGeometry(0.15, 0.12, 8), matrix: M4(0, 0.2, 0), color: 0x2a2a2a }, { geo: new THREE.CylinderGeometry(0.12, 0.12, 0.03, 8), matrix: M4(0, -0.15, 0), color: 0x2a2a2a }]);
+    for (const [s, z] of [[-1, -3.6], [1, -3.9], [-1, -12.4], [1, -12.8]]) {
+      const p = new THREE.Vector3(s * 5.62, 2.5, z);
+      const L = new THREE.Mesh(lampGeo, new THREE.MeshBasicMaterial({ vertexColors: true }));
       L.position.copy(p); S.add(L); this.streetLamps.push(p);
     }
+    // a tumbleweed that blows across the street now and then
+    this.streetWeed = new THREE.Mesh(this.weedGeo || tumbleweedGeo(0.6), this.matPlant); this.streetWeed.visible = false; S.add(this.streetWeed);
+    this.streetWeedT = 3;
   },
   // the clock tower starts ticking again (the final attack, the endings)
   startClock() { this.clockRun = true; },
@@ -16900,7 +16954,8 @@ const DesertKit = {
     this.street.visible = on;
     for (const k of ['mesaNear', 'props', 'skull', 'postBoard', 'hisProps', 'rocks', 'pears', 'barrels', 'grass', 'vulture']) if (this[k]) this[k].visible = !on && this.worldOn !== false;
     DesertLight.steady = DesertLight.steady.filter((s) => !s.street);
-    if (on) for (const p of this.streetLamps) { const w = this.street.localToWorld(p.clone()); DesertLight.steady.push({ street: true, pos: w, c: [1.0, 0.62, 0.3], radius: 7, k: () => (this.street.visible ? 0.9 + 0.1 * Math.sin(G.time * 9 + w.x) : 0) }); }
+    // the two nearest lanterns light the street (the far ones just glow)
+    if (on) { this.street.updateMatrixWorld(true); for (const p of this.streetLamps.slice(0, 2)) { const w = this.street.localToWorld(p.clone()); DesertLight.steady.push({ street: true, pos: w, c: [1.0, 0.62, 0.3], radius: 7.5, k: () => (this.street.visible ? 0.9 + 0.1 * Math.sin(G.time * 9 + w.x) : 0) }); } }
   },
   // TRAIN HEIST swaps the whole frontier out for its canyon (and back)
   setWorldVisible(on) {
@@ -16925,7 +16980,21 @@ const DesertKit = {
     // the town's windows: dark by day, warm at night (a ghostly flicker)
     const wk = smooth01((night - 0.4) / 0.5);
     this.winMat.color.setHex(0x1a120c).lerp(_c1.setRGB(1.0, 0.62, 0.28), wk * (0.85 + 0.15 * Math.sin(t * 7.1) * Math.sin(t * 3.3)));
-    if (this.streetWinMat) this.streetWinMat.color.setRGB(1.0, 0.6, 0.26).multiplyScalar(0.8 + 0.2 * Math.sin(t * 5.3));
+    if (this.street.visible) {
+      this.streetWinMat.color.setRGB(0.85, 0.75, 0.6).multiplyScalar(0.85 + 0.15 * Math.sin(t * 5.3) * Math.sin(t * 2.1));
+      // the lanterns glow; the bell swings on a toll; a tumbleweed blows through; dust skitters along the road
+      for (const p of this.streetLamps) { const w = this.street.localToWorld(_v1.copy(p)), f = 0.85 + 0.15 * Math.sin(t * 9 + p.z); G.fx.glow.add(w.x, w.y, w.z, 0.7 * f, 1, 0.66, 0.3, 0.6 * f, 0); G.fx.glow.add(w.x, w.y, w.z, 0.18, 1, 0.92, 0.7, 0.9, 0); }
+      this.streetBellMesh.rotation.z = Math.sin(t * 5) * 0.35 * this.bellSwing;
+      const Wd = this.streetWeed;
+      if (!Wd.visible) { this.streetWeedT -= rdt; if (this.streetWeedT <= 0) { Wd.visible = true; this.swX = -9; this.swZ = rand(-14, -4); this.swV = rand(2.2, 3.4); this.swP = 0; } }
+      else {
+        this.swX += this.swV * rdt; this.swP += rdt;
+        Wd.position.set(this.swX, 0.6 + Math.abs(Math.sin(this.swP * 2.6)) * 0.55, this.swZ); Wd.rotation.z -= this.swV * rdt / 0.6; Wd.rotation.x += rdt * 0.8;
+        if (Math.abs(Math.sin(this.swP * 2.6)) < 0.06 && Math.random() < 0.4) OFX.dust(this.street.localToWorld(_v1.set(this.swX, 0.05, this.swZ)), 1, 0.35, 1.0, null, { speed: 0.3, vx: 1 });
+        if (this.swX > 9) { Wd.visible = false; this.streetWeedT = rand(5, 9); }
+      }
+      if (Math.random() < rdt * 1.5) OFX.dust(this.street.localToWorld(_v1.set(rand(-4, 4), 0.08, rand(-16, -2))), 1, 0.5, 2.2, [0.6, 0.55, 0.62], { speed: 0.1, vx: 1.6, rise: 0.02, alpha: 0.18, drag: 0.4 });
+    }
     // clock hands: 12:00 until it runs again (then a tick a second)
     if (this.clockRun) this.clockT += rdt;
     const sec = this.clockRun ? Math.floor(this.clockT) : 0;
@@ -17538,21 +17607,23 @@ function drawWeave(g, w, h) {
   });
 }
 // a revolver (barrel along +z, the grip down): 0.78 m long at his scale
-function sixShooterGeo(s) {
+// pal: his nickel-plate, gold cylinder and pearl grips by default; yours is blued steel and walnut
+function sixShooterGeo(s, pal = {}) {
+  const st = pal.steel || 0xdfe4ee, st2 = pal.steel2 || 0xc8ccd8, dk = pal.dark || 0x9aa0ac;
   const flute = new THREE.CylinderGeometry(0.075, 0.075, 0.16, 18).rotateX(Math.PI / 2), FP = flute.attributes.position;
   for (let i = 0; i < FP.count; i++) { const x = FP.getX(i), y = FP.getY(i), a = Math.atan2(y, x), k = 1 - 0.13 * Math.pow(Math.max(0, Math.cos(a * 6)), 4); FP.setX(i, x * k); FP.setY(i, y * k); }
   flute.computeVertexNormals();
   const grip = new THREE.CylinderGeometry(0.045, 0.055, 0.24, 10).translate(0, -0.12, 0);
   const parts = [
-    { geo: new THREE.CylinderGeometry(0.03, 0.033, 0.5, 12).rotateX(Math.PI / 2), matrix: M4(0, 0.05, 0.36), color: 0xdfe4ee },             // barrel
-    { geo: new THREE.CylinderGeometry(0.018, 0.018, 0.4, 8).rotateX(Math.PI / 2), matrix: M4(0, 0.0, 0.33), color: 0xc8ccd8 },             // ejector rod
-    { geo: new THREE.BoxGeometry(0.012, 0.03, 0.03), matrix: M4(0, 0.09, 0.58), color: 0xdfe4ee },                                       // front sight
-    { geo: flute, matrix: M4(0, 0.02, 0.06), color: 0xd8b04a },                                                                         // the cylinder (gold)
-    { geo: new THREE.BoxGeometry(0.07, 0.13, 0.2), matrix: M4(0, 0.01, 0.0), color: 0xc8ccd8 },                                          // frame
-    { geo: new THREE.BoxGeometry(0.03, 0.07, 0.07), matrix: M4(0, 0.1, -0.11, -0.5, 0, 0), color: 0x9aa0ac },                            // hammer
-    { geo: new THREE.TorusGeometry(0.045, 0.01, 5, 12, Math.PI * 1.2), matrix: M4(0, -0.07, 0.04, 0, Math.PI / 2, 0), color: 0xc8ccd8 },  // trigger guard
-    { geo: new THREE.BoxGeometry(0.012, 0.05, 0.015), matrix: M4(0, -0.07, 0.03, 0.4, 0, 0), color: 0x9aa0ac },                          // trigger
-    { geo: grip, matrix: M4(0, -0.02, -0.1, 0.42, 0, 0, 1, 1, 0.75), color: 0xf2ead8 },                                                 // pearl grip
+    { geo: new THREE.CylinderGeometry(0.03, 0.033, 0.5, 12).rotateX(Math.PI / 2), matrix: M4(0, 0.05, 0.36), color: st },             // barrel
+    { geo: new THREE.CylinderGeometry(0.018, 0.018, 0.4, 8).rotateX(Math.PI / 2), matrix: M4(0, 0.0, 0.33), color: st2 },             // ejector rod
+    { geo: new THREE.BoxGeometry(0.012, 0.03, 0.03), matrix: M4(0, 0.09, 0.58), color: st },                                       // front sight
+    { geo: flute, matrix: M4(0, 0.02, 0.06), color: pal.cyl || 0xd8b04a },                                                                         // the cylinder (gold)
+    { geo: new THREE.BoxGeometry(0.07, 0.13, 0.2), matrix: M4(0, 0.01, 0.0), color: st2 },                                          // frame
+    { geo: new THREE.BoxGeometry(0.03, 0.07, 0.07), matrix: M4(0, 0.1, -0.11, -0.5, 0, 0), color: dk },                            // hammer
+    { geo: new THREE.TorusGeometry(0.045, 0.01, 5, 12, Math.PI * 1.2), matrix: M4(0, -0.07, 0.04, 0, Math.PI / 2, 0), color: st2 },  // trigger guard
+    { geo: new THREE.BoxGeometry(0.012, 0.05, 0.015), matrix: M4(0, -0.07, 0.03, 0.4, 0, 0), color: dk },                          // trigger
+    { geo: grip, matrix: M4(0, -0.02, -0.1, 0.42, 0, 0, 1, 1, 0.75), color: pal.grip || 0xf2ead8 },                                                 // pearl grip
   ];
   const g = mergeGeos(parts); g.scale(s, s, s);
   return g;
@@ -17909,7 +17980,7 @@ class SundownModel {
     const T = this.lookTo, F = this.lookFrom, f = this.faceU, c = this.coronaU;
     const mix = (out, from, hex) => { if (from) out.copy(from).lerp(_c1.setHex(hex), k); else out.setHex(hex); };
     mix(f.uCore.value, F && F.core, T.core); mix(f.uRim.value, F && F.rim, T.rim); mix(c.uCol.value, F && F.corona, T.corona); mix(this.shellMat.color, F && F.shell, T.shell);
-    mix(this.headBackMat.uniforms.uColor.value, F && F.back, T.moon ? 0x9aa6d8 : T.rim);
+    mix(this.headBackMat.uniforms.uColor.value, F && F.back, T.moon ? 0x7c84a6 : T.rim);
     this.coronaBase = F ? lerp(F.coronaK, T.coronaK, k) : T.coronaK; c.uFlame.value = F ? lerp(F.flame, T.flame, k) : T.flame;
     f.uBlush.value = F ? lerp(F.blush, T.blush, k) : T.blush;
   }
@@ -18023,6 +18094,8 @@ class SundownModel {
     const mu = f.uMoon;
     if (mu.value !== this.moonTo) mu.value = this.moonTo > mu.value ? Math.min(this.moonTo, mu.value + dt / this.lookDur) : Math.max(this.moonTo, mu.value - dt / this.lookDur);
     this.coronaU.uMoon.value = mu.value;
+    // the back of the head: a dim limb of the moon by night (no bright rim peeking over the face)
+    this.headBackMat.uniforms.uRim.value = 1.0 - 0.65 * mu.value; this.headBackMat.uniforms.uEmit.value = 0.85 - 0.4 * mu.value;
     // ---- the face: blink, expressions (blended), talking, eyes on you
     this.blinkT -= dt; if (this.blinkT <= 0) this.blinkT = rand(2.2, 5);
     this.blink = this.blinkT < 0.13 && !this.stare ? 0.08 : 1;
@@ -18793,19 +18866,26 @@ const DrawKit = {
     this.holster.visible = false; scene.add(this.holster);
     // the revolver: barrel along -z (the controller's pointing direction)
     this.gun = new THREE.Group(); this.gun.visible = false; scene.add(this.gun);
-    this.gunBody = new THREE.Mesh(mergeGeos([
-      { geo: new THREE.BoxGeometry(0.026, 0.028, 0.2), matrix: M4(0, 0.012, -0.11), color: 0xdfe4ee },
-      { geo: new THREE.CylinderGeometry(0.026, 0.026, 0.06, 8).rotateX(Math.PI / 2), matrix: M4(0, 0.002, -0.025), color: 0xc8ccd8 },
-      { geo: new THREE.BoxGeometry(0.03, 0.09, 0.045), matrix: M4(0, -0.05, 0.03, 0.35, 0, 0), color: 0x6a3a1a },
-      { geo: new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), matrix: M4(0, -0.018, 0.0, 0, Math.PI / 2, 0), color: 0xc8ccd8 },
-    ]), lit({}));
+    this.gunBody = new THREE.Mesh(sixShooterGeo(0.3, { steel: 0x5e6778, steel2: 0x4e5666, dark: 0x30343c, cyl: 0x737c8e, grip: 0x7a4626 }).rotateY(Math.PI).translate(0, -0.003, -0.037), lit({ gloss: 0.9, shine: 70, rim: 0.5, emit: 0.12 }));
     this.gun.add(this.gunBody);
     this.state = 'holstered'; this.hand = null; this.recoil = 0; this.retT = 0; this.retFrom = new THREE.Vector3(); this.retQ = new THREE.Quaternion();
     this.spin = 0; this.spinVel = 0;
     // QUICK DRAW targets: tin cans, bottles, sun-coins
-    const can = mergeGeos([{ geo: new THREE.CylinderGeometry(0.09, 0.09, 0.22, 12), color: 0xc8ccd8 }, { geo: new THREE.CylinderGeometry(0.092, 0.092, 0.12, 12), color: 0xc8281e }]);
-    const bottle = mergeGeos([{ geo: new THREE.CylinderGeometry(0.075, 0.08, 0.24, 10), color: 0x3a8a4a }, { geo: new THREE.CylinderGeometry(0.03, 0.06, 0.1, 8), matrix: M4(0, 0.17, 0), color: 0x3a8a4a }, { geo: new THREE.CylinderGeometry(0.03, 0.03, 0.06, 8), matrix: M4(0, 0.25, 0), color: 0x2a6a3a }]);
-    const coin = mergeGeos([{ geo: new THREE.CylinderGeometry(0.13, 0.13, 0.03, 16).rotateX(Math.PI / 2), color: 0xffd23c }, { geo: new THREE.CylinderGeometry(0.07, 0.07, 0.034, 12).rotateX(Math.PI / 2), color: 0xff9a2a }]);
+    const can = mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.09, 0.09, 0.22, 16), color: 0xd8dce4 }, { geo: new THREE.CylinderGeometry(0.0915, 0.0915, 0.13, 16), color: 0xc8281e },
+      { geo: new THREE.CylinderGeometry(0.092, 0.092, 0.02, 16), matrix: M4(0, 0.03, 0), color: 0xf0e0a0 },
+      { geo: new THREE.TorusGeometry(0.088, 0.008, 4, 16), matrix: M4(0, 0.11, 0, Math.PI / 2, 0, 0), color: 0xb8bcc8 }, { geo: new THREE.TorusGeometry(0.088, 0.008, 4, 16), matrix: M4(0, -0.11, 0, Math.PI / 2, 0, 0), color: 0xb8bcc8 },
+    ]);
+    const bottle = mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.075, 0.08, 0.24, 14), color: 0x2e8a4a }, { geo: new THREE.CylinderGeometry(0.03, 0.072, 0.1, 12), matrix: M4(0, 0.17, 0), color: 0x2e8a4a },
+      { geo: new THREE.CylinderGeometry(0.028, 0.03, 0.07, 10), matrix: M4(0, 0.25, 0), color: 0x267a3e }, { geo: new THREE.CylinderGeometry(0.034, 0.034, 0.02, 10), matrix: M4(0, 0.285, 0), color: 0x8a6a3a },
+      { geo: new THREE.BoxGeometry(0.1, 0.09, 0.01), matrix: M4(0, -0.02, 0.078), color: 0xf0e2c0 }, { geo: new THREE.BoxGeometry(0.012, 0.18, 0.012), matrix: M4(-0.035, 0.0, 0.07), color: 0xcfffe0 },
+    ]);
+    const coin = mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.13, 0.13, 0.03, 20).rotateX(Math.PI / 2), color: 0xffd23c }, { geo: new THREE.TorusGeometry(0.12, 0.012, 4, 20), matrix: M4(0, 0, 0.016), color: 0xe8a820 },
+      { geo: new THREE.CylinderGeometry(0.06, 0.06, 0.036, 14).rotateX(Math.PI / 2), color: 0xff9a2a },
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ geo: new THREE.BoxGeometry(0.014, 0.04, 0.036), matrix: M4(Math.cos(i / 8 * TAU) * 0.085, Math.sin(i / 8 * TAU) * 0.085, 0, 0, 0, i / 8 * TAU - Math.PI / 2), color: 0xff9a2a })),
+    ]);
     const tMat = CircusShade.material({ gloss: 0.9, shine: 50, rim: 0.7, emit: 0.45 });
     this.targets = [can, bottle, coin, can, bottle, coin].map((geo) => { const m = new THREE.Mesh(geo, tMat); m.visible = false; scene.add(m); return { m, on: false }; });
     this.ringMat = new THREE.MeshBasicMaterial({ color: 0xffd23c, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
@@ -20097,10 +20177,10 @@ class FinalDuel extends Pattern {
     Head.update();
     const feet = G.xr ? rig.position.y : Head.pos.y - CONFIG.DESKTOP_EYE;
     const S = DesertKit.street; S.position.set(Head.pos.x, feet, Head.pos.z); S.rotation.set(0, Head.yaw, 0); S.updateMatrixWorld(true); DesertKit.showStreet(true);
-    this.him = new THREE.Vector3(0, 0, -10).applyAxisAngle(UP, Head.yaw).add(S.position);
+    this.him = new THREE.Vector3(0, 0, -9).applyAxisAngle(UP, Head.yaw).add(S.position);
     this.yaw = Head.yaw;
     const H = G.boss;
-    if (H) { H.duelAt(this.him, this.yaw, 0.42); H.setPose('holster'); H.holsterGun(0); H.holsterGun(1); H.tired = false; H.rattled = 0; }
+    if (H) { H.duelAt(this.him, this.yaw, 0.5); H.setPose('holster'); H.holsterGun(0); H.holsterGun(1); H.tired = false; H.rattled = 0; }
     G.arena.visible = false; G.arena.opacity = 0;
     G.soul.active = true; G.loco.enabled = false; G.loco.stop();
     DrawKit.show(true); DrawKit.holsterIt(false);
@@ -20848,7 +20928,10 @@ BOSSES.outlaw = {
     f.hits++; if (best.grade === 'deadeye') f.dead++;
     G.audio.sfx.targetHit(best.kind);
     G.fx.sparkle(best.pos, best.grade === 'deadeye' ? 14 : 6);
-    if (best.kind === 1) G.fx.shards(best.pos, 10, 0.4, 0.8, 0.5, 1.6);
+    OFX.flare(best.pos, best.grade === 'deadeye' ? 0.9 : 0.5, 0.16, 1, 0.92, 0.6, { spikes: 6 });
+    if (best.kind === 0) OFX.spark(best.pos, 10, 1, 0.85, 0.5, 2.4, { dir: _v2, spread: 0.8, life: 0.35 });
+    if (best.kind === 1) { G.fx.shards(best.pos, 10, 0.4, 0.8, 0.5, 1.6); OFX.spark(best.pos, 14, 0.5, 1, 0.6, 2.2, { life: 0.5, grav: 5, len: 0.05 }); }
+    if (best.kind === 2) OFX.flare(best.pos, 0.6, 0.6, 1, 0.85, 0.3, { glint: true, spikes: 4, follow: (p) => p.copy(DrawKit.targets[best.k].m.position) });
     G.fx.damageNumber(_v4.copy(best.pos).setY(best.pos.y + 0.4), best.grade === 'deadeye' ? 'DEADEYE' : best.grade.toUpperCase(), best.grade === 'deadeye' ? '#ffd23c' : '#ffffff', 0.7);
   },
   resolveQuickDraw(B) {
