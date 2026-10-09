@@ -5130,8 +5130,9 @@ class BulletPools {
       slug: new BulletPool('slug', { r: 0.05, scale: 1.1, glow: 0.2, glowColor: 0xcfd8ff, glowA: 0.45, faceVel: true }, OutlawGeo.slug(), 160, CircusShade.material({ gloss: 1.5, shine: 90, rim: 0.9, emit: 0.45 })),
       tumble: new BulletPool('tumble', { r: 0.15, scale: 0.16, glow: 0, glowA: 0 }, OutlawGeo.weed(), 40, CircusShade.material({ gloss: 0.1, shine: 12, rim: 0.4, emit: 0.3 })),
       needle: new BulletPool('needle', { r: 0.05, scale: 1.7, glow: 0.16, glowColor: 0xf4f0d8, glowA: 0.4, faceVel: true }, OutlawGeo.needle(), 200, CircusShade.material({ gloss: 0.6, shine: 30, rim: 0.5, emit: 0.45 })),
+      coin: new BulletPool('coin', { r: 0.065, scale: 0.07, glow: 0.2, glowColor: 0xffd23c, glowA: 0.4, spin: 10 }, OutlawGeo.coin(), 80, CircusShade.material({ gloss: 1.8, shine: 100, rim: 0.9, emit: 0.42 })),
     };
-    for (const k of ['ball', 'pin', 'knife', 'petal', 'paper', 'drop', 'spool', 'sstar', 'slug', 'tumble', 'needle']) this.pools[k].mesh.visible = false;
+    for (const k of ['ball', 'pin', 'knife', 'petal', 'paper', 'drop', 'spool', 'sstar', 'slug', 'tumble', 'needle', 'coin']) this.pools[k].mesh.visible = false;
     this.list = Object.values(this.pools);
     this.total = 0;
     this.speedMul = 1;
@@ -18280,67 +18281,135 @@ const SUNDOWN_CORONA_FS = `uniform float uTime; uniform vec3 uCol; uniform float
 // @@/MODEL
 
 
+// @@KITS
 // ---------------------------------------------------------------------------
-//  SUNDOWN's bullet shapes (lit by the desert sun through CircusShade): spinning silver
-//  sheriff stars, revolver slugs, tumbleweeds, cactus needles
+//  SUNDOWN's bullet shapes (lit by the desert sun through CircusShade): spinning sheriff
+//  stars, revolver slugs, tumbleweeds, cactus spines, bounty coins; the posse's ghost riders
 // ---------------------------------------------------------------------------
 const OutlawGeo = {
+  // a sheriff's star: six points with ball tips, bevelled, a raised gold boss in the middle
   star() {
     const s = new THREE.Shape();
-    for (let i = 0; i < 10; i++) { const a = i / 10 * TAU + Math.PI / 2, r = i % 2 ? 0.45 : 1; const x = Math.cos(a) * r, y = Math.sin(a) * r; if (i) s.lineTo(x, y); else s.moveTo(x, y); }
+    for (let i = 0; i < 12; i++) { const a = i / 12 * TAU + Math.PI / 2, r = i % 2 ? 0.5 : 0.9; const x = Math.cos(a) * r, y = Math.sin(a) * r; if (i) s.lineTo(x, y); else s.moveTo(x, y); }
     s.closePath();
-    const g = new THREE.ExtrudeGeometry(s, { depth: 0.18, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.06, bevelSegments: 1 });
-    g.translate(0, 0, -0.09);
-    return mergeGeos([{ geo: g, color: 0xe8ecf4 }, { geo: new THREE.CylinderGeometry(0.28, 0.28, 0.36, 10).rotateX(Math.PI / 2), color: 0xffd27a }]);
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.06, bevelSegments: 2 });
+    g.translate(0, 0, -0.06);
+    const parts = [{ geo: g, color: 0xe8ecf4 }, { geo: new THREE.CylinderGeometry(0.32, 0.32, 0.3, 16).rotateX(Math.PI / 2), color: 0xffd27a }, { geo: new THREE.TorusGeometry(0.32, 0.05, 6, 20), color: 0xc8a040 }];
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + Math.PI / 2; parts.push({ geo: new THREE.SphereGeometry(0.14, 8, 6), matrix: M4(Math.cos(a) * 0.96, Math.sin(a) * 0.96, 0), color: 0xf4f6fa }); }
+    return mergeGeos(parts);
   },
+  // a revolver bullet: an ogive lead nose on a copper base, nose first along +y
   slug() {
-    return mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.03, 0.03, 0.08, 8), matrix: M4(0, -0.02, 0), color: 0xc8ccd8 },
-      { geo: new THREE.SphereGeometry(0.03, 8, 6, 0, TAU, 0, Math.PI / 2), matrix: M4(0, 0.02, 0, 0, 0, 0, 1, 1.6, 1), color: 0xeef2ff },
-    ]);
+    const nose = new THREE.LatheGeometry([[0, 0.075], [0.013, 0.07], [0.025, 0.054], [0.031, 0.03], [0.032, 0]].map(([r, y]) => new THREE.Vector2(r, y)), 10);
+    return mergeGeos([{ geo: nose, color: 0xe8ecf4 }, { geo: new THREE.CylinderGeometry(0.032, 0.03, 0.06, 10), matrix: M4(0, -0.03, 0), color: 0xe0a868 }]);
   },
-  needle() { return mergeGeos([{ geo: new THREE.ConeGeometry(0.012, 0.16, 5), color: 0xf4f0d8 }, { geo: new THREE.SphereGeometry(0.014, 5, 4), matrix: M4(0, -0.08, 0), color: 0x6a8a3a }]); },
+  // a cactus spine: a white needle with a green base
+  needle() { return mergeGeos([{ geo: new THREE.ConeGeometry(0.014, 0.2, 5), color: 0xfff6dc }, { geo: new THREE.SphereGeometry(0.017, 6, 4), matrix: M4(0, -0.1, 0), color: 0x6a8a3a }]); },
   weed() { return tumbleweedGeo(1); },
-  cactus() {
+  // a 1 m saguaro for CACTUS FIELD (it grows up out of the sand)
+  cactus() { const g = saguaroGeo(2); g.scale(0.22, 0.22, 0.22); return g; },
+  // a gold coin with a star stamped on both faces (the WANTED posters pay out in these)
+  coin() {
+    const st = new THREE.Shape();
+    for (let i = 0; i < 10; i++) { const a = i / 10 * TAU + Math.PI / 2, r = i % 2 ? 0.26 : 0.6; if (i) st.lineTo(Math.cos(a) * r, Math.sin(a) * r); else st.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+    st.closePath();
     return mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.09, 0.1, 1, 8), matrix: M4(0, 0.5, 0), color: 0x5a8a3a },
-      { geo: new THREE.SphereGeometry(0.09, 8, 5, 0, TAU, 0, Math.PI / 2), matrix: M4(0, 1, 0), color: 0x5a8a3a },
-      { geo: new THREE.CylinderGeometry(0.06, 0.065, 0.24, 7), matrix: M4(0.13, 0.55, 0, 0, 0, Math.PI / 2), color: 0x4a7a32 },
-      { geo: new THREE.CylinderGeometry(0.06, 0.06, 0.3, 7), matrix: M4(0.25, 0.72, 0), color: 0x4a7a32 },
-      { geo: new THREE.CylinderGeometry(0.055, 0.06, 0.2, 7), matrix: M4(-0.12, 0.42, 0, 0, 0, -Math.PI / 2), color: 0x4a7a32 },
-      { geo: new THREE.CylinderGeometry(0.055, 0.055, 0.24, 7), matrix: M4(-0.22, 0.56, 0), color: 0x4a7a32 },
+      { geo: new THREE.CylinderGeometry(1, 1, 0.16, 22), color: 0xffcc3c },
+      { geo: new THREE.TorusGeometry(0.9, 0.07, 5, 22), matrix: M4(0, 0.08, 0, Math.PI / 2, 0, 0), color: 0xe8a820 },
+      { geo: new THREE.TorusGeometry(0.9, 0.07, 5, 22), matrix: M4(0, -0.08, 0, Math.PI / 2, 0, 0), color: 0xe8a820 },
+      { geo: new THREE.ShapeGeometry(st), matrix: M4(0, 0.085, 0, -Math.PI / 2, 0, 0), color: 0xfff0a0 },
+      { geo: new THREE.ShapeGeometry(st), matrix: M4(0, -0.085, 0, Math.PI / 2, 0, 0), color: 0xfff0a0 },
     ]);
   },
+  // a ghost rider on a ghost horse (facing +z), with gallop data: aLeg (0 rigid, 1..4 legs, 5 tail/mane) and aPiv (pivot y, z)
   rider() {
-    // a ghost on a ghost horse (drawn additive, so overlapping parts glow)
-    return mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.22, 0.25, 0.85, 8).rotateZ(Math.PI / 2), matrix: M4(0, 0.95, 0) },          // horse body
-      { geo: new THREE.CylinderGeometry(0.1, 0.16, 0.6, 7), matrix: M4(0.48, 1.28, 0, 0, 0, -0.7) },                  // neck
-      { geo: new THREE.BoxGeometry(0.34, 0.16, 0.16), matrix: M4(0.74, 1.5, 0, 0, 0, -0.3) },                         // head
-      { geo: new THREE.CylinderGeometry(0.05, 0.04, 0.62, 5), matrix: M4(0.32, 0.4, 0.12) }, { geo: new THREE.CylinderGeometry(0.05, 0.04, 0.62, 5), matrix: M4(-0.3, 0.4, -0.12) },
-      { geo: new THREE.CylinderGeometry(0.05, 0.04, 0.62, 5), matrix: M4(0.32, 0.4, -0.12) }, { geo: new THREE.CylinderGeometry(0.05, 0.04, 0.62, 5), matrix: M4(-0.3, 0.4, 0.12) },
-      { geo: new THREE.ConeGeometry(0.08, 0.5, 5), matrix: M4(-0.52, 1.0, 0, 0, 0, 1.9) },                            // tail
-      { geo: new THREE.CylinderGeometry(0.13, 0.16, 0.55, 7), matrix: M4(-0.05, 1.5, 0) },                            // rider
-      { geo: new THREE.SphereGeometry(0.12, 8, 6), matrix: M4(-0.05, 1.88, 0) },
-      { geo: new THREE.CylinderGeometry(0.32, 0.32, 0.03, 12), matrix: M4(-0.05, 1.98, 0) }, { geo: new THREE.CylinderGeometry(0.1, 0.12, 0.16, 8), matrix: M4(-0.05, 2.05, 0) },
-    ]);
+    const parts = [];
+    const P = (geo, m, color = 0x7a8aa0, leg = 0, piv = [0, 0]) => parts.push({ geo, matrix: m, color, leg, piv });
+    // the horse
+    P(new THREE.SphereGeometry(0.5, 14, 10), M4(0, 1.3, 0, 0, 0, 0, 0.9, 0.95, 2.0));
+    P(new THREE.SphereGeometry(0.46, 12, 8), M4(0, 1.36, 0.62, 0, 0, 0, 0.92, 1.05, 0.9));
+    P(new THREE.SphereGeometry(0.48, 12, 8), M4(0, 1.36, -0.62, 0, 0, 0, 0.95, 1.0, 1.0));
+    P(new THREE.CylinderGeometry(0.17, 0.27, 0.8, 10), M4(0, 1.88, 0.98, 0.75, 0, 0));
+    P(new THREE.CylinderGeometry(0.11, 0.17, 0.62, 10), M4(0, 2.1, 1.38, 1.75, 0, 0));
+    for (const s of [-1, 1]) P(new THREE.ConeGeometry(0.05, 0.16, 5), M4(s * 0.08, 2.38, 1.18, -0.2, 0, s * 0.2));
+    P(new THREE.BoxGeometry(0.06, 0.14, 0.62), M4(0, 2.12, 0.92, 0.75, 0, 0), 0x9aa8c0, 5, [2.0, 0.9]);
+    P(new THREE.ConeGeometry(0.12, 0.85, 6), M4(0, 1.12, -1.2, -2.5, 0, 0), 0x9aa8c0, 5, [1.4, -1.0]);
+    for (const s of [-1, 1]) P(new THREE.SphereGeometry(0.035, 6, 4), M4(s * 0.09, 2.17, 1.53), 0xffffff);   // its eyes glow
+    for (let i = 0; i < 4; i++) {
+      const x = (i % 2 ? 1 : -1) * 0.22, z = i < 2 ? 0.6 : -0.62;
+      P(new THREE.CylinderGeometry(0.11, 0.075, 0.6, 7), M4(x, 0.82, z), 0x7a8aa0, i + 1, [1.1, z]);
+      P(new THREE.CylinderGeometry(0.065, 0.055, 0.5, 6), M4(x, 0.35, z), 0x7a8aa0, i + 1, [1.1, z]);
+      P(new THREE.CylinderGeometry(0.075, 0.09, 0.12, 6), M4(x, 0.07, z), 0xa8b8d0, i + 1, [1.1, z]);
+    }
+    // the rider: a duster, a hat, a revolver held out to his right (-x)
+    P(new THREE.CylinderGeometry(0.2, 0.3, 0.8, 10), M4(0, 2.0, -0.05));
+    P(new THREE.SphereGeometry(0.17, 10, 8), M4(0, 2.58, -0.02));
+    P(new THREE.CylinderGeometry(0.36, 0.36, 0.03, 14), M4(0, 2.72, -0.02), 0x9aa8c0);
+    P(new THREE.CylinderGeometry(0.14, 0.17, 0.2, 10), M4(0, 2.83, -0.02), 0x9aa8c0);
+    for (const s of [-1, 1]) P(new THREE.SphereGeometry(0.03, 6, 4), M4(s * 0.06, 2.6, 0.14), 0xffffff);
+    for (const s of [-1, 1]) P(new THREE.CylinderGeometry(0.08, 0.07, 0.75, 6), M4(s * 0.36, 1.48, 0.1, 0.35, 0, s * 0.25));
+    P(new THREE.CylinderGeometry(0.065, 0.06, 0.7, 6), M4(-0.42, 2.18, 0.05, 0, 0, 1.35));
+    P(new THREE.BoxGeometry(0.06, 0.07, 0.34), M4(-0.78, 2.26, 0.05, 0, Math.PI / 2, 0), 0xd8e0f0);
+    P(new THREE.CylinderGeometry(0.06, 0.06, 0.65, 6), M4(0.24, 2.08, 0.3, -1.1, 0, -0.3));
+    const g = mergeGeos(parts), n = g.attributes.position.count, leg = new Float32Array(n), piv = new Float32Array(n * 2);
+    let o = 0;
+    for (const p of parts) { const c = p.geo.attributes.position.count; leg.fill(p.leg, o, o + c); for (let k = o; k < o + c; k++) { piv[k * 2] = p.piv[0]; piv[k * 2 + 1] = p.piv[1]; } o += c; }
+    g.setAttribute('aLeg', new THREE.BufferAttribute(leg, 1)); g.setAttribute('aPiv', new THREE.BufferAttribute(piv, 2));
+    return g;
   },
 };
+// the spectral look: cold fresnel light, mist rising off the legs, a flicker; legs gallop in the vertex shader
+const GHOST_VS = `attribute float aLeg; attribute vec2 aPiv; attribute float iPhase; uniform float uTime; uniform float uRate;
+  varying vec3 vN; varying vec3 vW; varying vec3 vCol; varying float vY;
+  void main(){
+    vec3 p = position, n = normal;
+    if (aLeg > 0.5) {
+      float ph = aLeg < 4.5 ? (aLeg < 2.5 ? (aLeg - 1.0) * 0.5 : (aLeg - 3.0) * 0.5 + 0.25) : 0.6;
+      float amp = aLeg < 4.5 ? 0.62 : 0.18;
+      float a = sin(uTime * uRate + iPhase + ph * 6.2831853) * amp;
+      float c = cos(a), s = sin(a);
+      vec2 yz = vec2(p.y - aPiv.x, p.z - aPiv.y); p.y = aPiv.x + yz.x * c - yz.y * s; p.z = aPiv.y + yz.x * s + yz.y * c;
+      n = vec3(n.x, n.y * c - n.z * s, n.y * s + n.z * c);
+    }
+    vY = p.y;
+    vec4 wp = modelMatrix * instanceMatrix * vec4(p, 1.0);
+    vW = wp.xyz; vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * n); vCol = color;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }`;
+const GHOST_FS = `uniform float uTime; uniform vec3 uCol; uniform float uOpacity; varying vec3 vN; varying vec3 vW; varying vec3 vCol; varying float vY;
+  float hsh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+  void main(){
+    vec3 V = normalize(cameraPosition - vW); float fr = 1.0 - abs(dot(normalize(vN), V));
+    float mist = smoothstep(0.0, 0.7, vY) * (0.75 + 0.25 * sin(vW.x * 7.0 + vW.z * 5.0 - uTime * 4.0 + vY * 9.0));
+    float glow = step(0.95, vCol.r);
+    vec3 c = uCol * (0.07 + pow(fr, 1.8) * 0.75) * mist + vec3(0.75, 0.9, 1.0) * glow * 1.2;
+    c *= 0.85 + 0.15 * sin(uTime * 13.0 + vW.y * 3.0);
+    gl_FragColor = vec4(c * uOpacity, 1.0);
+    #include <colorspace_fragment>
+  }`;
 
 // ---------------------------------------------------------------------------
 //  OutlawKit: props SUNDOWN's attacks use (built at fight start, freed on leaving)
 // ---------------------------------------------------------------------------
 function drawWantedPoster(g, W, H, o = {}) {
   g.clearRect(0, 0, W, H);
-  g.fillStyle = '#e8d2a0'; g.fillRect(4, 4, W - 8, H - 8);
+  // aged paper with a ragged edge and coffee-stain foxing
+  g.fillStyle = '#ead6a6'; g.beginPath(); g.moveTo(5, 6);
+  for (let x = 5; x < W - 5; x += 9) g.lineTo(x, 4 + Math.random() * 4);
+  for (let y = 6; y < H - 5; y += 9) g.lineTo(W - 4 - Math.random() * 4, y);
+  for (let x = W - 6; x > 5; x -= 9) g.lineTo(x, H - 4 - Math.random() * 4);
+  for (let y = H - 6; y > 6; y -= 9) g.lineTo(4 + Math.random() * 4, y);
+  g.closePath(); g.fill();
+  const gr = g.createRadialGradient(W / 2, H / 2, W * 0.2, W / 2, H / 2, W * 0.75); gr.addColorStop(0, 'rgba(120,80,30,0)'); gr.addColorStop(1, 'rgba(120,70,20,0.35)'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
   for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(120,80,40,${(Math.random() * 0.12).toFixed(2)})`; g.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 8, 2 + Math.random() * 8); }
-  g.strokeStyle = '#5a3a1a'; g.lineWidth = 4; g.strokeRect(12, 12, W - 24, H - 24);
+  g.strokeStyle = '#5a3a1a'; g.lineWidth = 3; g.strokeRect(12, 12, W - 24, H - 24); g.lineWidth = 1; g.strokeRect(16, 16, W - 32, H - 32);
   const s = Math.max(2, Math.floor(W / 64));
   const word = 'WANTED', ww = SerifFont.width(word, s);
   SerifFont.draw(g, word, Math.round((W - ww) / 2), Math.round(H * 0.07), s, '#3a1a08', null, 0);
   // your soul's "face" (the red heart, in your pin's colour)
   const hs = Math.max(3, Math.floor(W / 26)), hx = Math.round(W / 2 - 3.5 * hs), hy = Math.round(H * 0.25);
   g.fillStyle = '#d8c090'; g.fillRect(hx - hs, hy - hs, 9 * hs, 8 * hs);
+  g.strokeStyle = '#7a5a30'; g.lineWidth = 2; g.strokeRect(hx - hs, hy - hs, 9 * hs, 8 * hs);
   PixelFont.drawIcon(g, 'heart', hx, hy, hs, o.color || '#c8102e');
   const sub = o.sub || 'DEAD OR ALIVE', s2 = Math.max(1, s - 1);
   SerifFont.draw(g, sub, Math.round((W - SerifFont.width(sub, s2)) / 2), Math.round(H * 0.6), s2, '#3a1a08', null, 0);
@@ -18351,7 +18420,7 @@ function drawWantedPoster(g, W, H, o = {}) {
   if (o.torn) {
     // the reward strip is torn off
     g.clearRect(0, Math.round(H * 0.72), W, H);
-    g.fillStyle = '#e8d2a0';
+    g.fillStyle = '#ead6a6';
     g.beginPath(); g.moveTo(4, H * 0.72);
     for (let x = 4; x <= W - 4; x += 10) g.lineTo(x, H * 0.72 + (x / 10 % 2 ? 9 : -2));
     g.lineTo(W - 4, H * 0.72 - 6); g.closePath(); g.fill();
@@ -18362,47 +18431,59 @@ const OutlawKit = {
   init() {
     if (this.ready) return;
     const lit = (o) => CircusShade.material(Object.assign({ gloss: 0.3, shine: 30, rim: 0.5, emit: 0.25 }, o));
-    // cacti that burst up from the box floor (CACTUS FIELD)
-    this.cacti = new THREE.InstancedMesh(OutlawGeo.cactus(), lit({ gloss: 0.2, emit: 0.3 }), 16);
+    // saguaros that burst up out of the sand (CACTUS FIELD)
+    this.cacti = new THREE.InstancedMesh(OutlawGeo.cactus(), lit({ gloss: 0.25, emit: 0.3, rim: 0.6 }), 16);
     this.cacti.count = 0; this.cacti.frustumCulled = false; this.cacti.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(this.cacti);
-    // wanted posters nailed to the box walls (WANTED): each its own canvas (the reward counts up)
+    // WANTED posters (each its own canvas: the reward counts up); a curled sheet that flutters, a nail
     this.posters = [];
+    const nailMat = lit({ color: 0x3a3a40, gloss: 1.0, rim: 0.5, emit: 0.15 });
     for (let i = 0; i < 4; i++) {
-      const tex = canvasTex(160, 220), mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.58), mat); m.visible = false; scene.add(m);
-      this.posters.push({ m, tex, on: false });
+      const tex = canvasTex(160, 220), mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide });
+      const geo = new THREE.PlaneGeometry(0.46, 0.63, 6, 8), m = new THREE.Mesh(geo, mat); m.visible = false; scene.add(m);
+      const nail = new THREE.Mesh(mergeGeos([{ geo: new THREE.CylinderGeometry(0.018, 0.018, 0.012, 8).rotateX(Math.PI / 2) }, { geo: new THREE.CylinderGeometry(0.005, 0.005, 0.05, 4).rotateX(Math.PI / 2), matrix: M4(0, 0, -0.025) }]), nailMat);
+      nail.position.set(0, 0.27, 0.012); m.add(nail);
+      this.posters.push({ m, tex, on: false, base: Float32Array.from(geo.attributes.position.array), t: rand(0, 10), hot: 0 });
     }
-    // lassos (LASSO LOOPS): a glowing loop + the rope back to his hand
+    // torn halves flying off (two per poster)
+    this.halves = [];
+    for (let i = 0; i < 6; i++) {
+      const geo = new THREE.PlaneGeometry(0.23, 0.63), m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.4, side: THREE.DoubleSide }));
+      m.visible = false; scene.add(m); this.halves.push({ m, geo, t: -1, v: new THREE.Vector3(), w: new THREE.Vector3() });
+    }
+    // lassos (LASSO LOOPS): a twisted rope loop (two-tone segments) and a sagging rope back to his hand
     this.lassos = [];
-    const segGeo = new THREE.CylinderGeometry(1, 1, 1, 5).rotateX(Math.PI / 2);   // one rope segment, along z
+    const segGeo = new THREE.CylinderGeometry(1, 1, 1, 6).rotateX(Math.PI / 2);
+    const ropeMat = lit({ color: 0xffffff, gloss: 0.15, rim: 0.7, emit: 0.4 });
     for (let i = 0; i < 2; i++) {
-      // the loop is 48 rope segments (the ones in its gap are left out)
-      const ring = new THREE.InstancedMesh(segGeo, new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.95 }), 48);
-      ring.count = 0; ring.frustumCulled = false; ring.instanceMatrix.setUsage(THREE.DynamicDrawUsage); ring.visible = false; scene.add(ring);
-      const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1, 4).translate(0, 0.5, 0).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xc8a060 }));
-      rope.visible = false; scene.add(rope);
+      const ring = new THREE.InstancedMesh(segGeo, ropeMat, 56);
+      const rope = new THREE.InstancedMesh(segGeo, ropeMat, 20);
+      for (const m of [ring, rope]) { m.count = 0; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.visible = false; scene.add(m); for (let k = 0; k < m.instanceMatrix.count; k++) m.setColorAt(k, _c1.setHex(k % 2 ? 0xd8b070 : 0xb88a4a)); m.instanceColor.needsUpdate = true; }
       this.lassos.push({ ring, rope });
     }
-    // dynamite sticks (DYNAMITE): a red stick, a fuse with beat marks, a spark that burns down it
+    this.ropeMat = ropeMat;
+    // dynamite (DYNAMITE): a bundle of three sticks bound with wire, a curling fuse, a spark burning down it
     const stickGeo = mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.035, 0.035, 0.24, 10), color: 0xc8281e },
-      { geo: new THREE.CylinderGeometry(0.036, 0.036, 0.05, 10), matrix: M4(0, 0.06, 0), color: 0xe8d2a0 },
-      { geo: new THREE.CylinderGeometry(0.036, 0.036, 0.05, 10), matrix: M4(0, -0.06, 0), color: 0xe8d2a0 },
+      ...[[0, 0.035], [0.034, -0.022], [-0.034, -0.022]].map(([x, y]) => ({ geo: new THREE.CylinderGeometry(0.034, 0.034, 0.28, 10), matrix: M4(x, y, 0), color: 0xc8281e })),
+      ...[0.08, -0.08].map((y) => ({ geo: new THREE.TorusGeometry(0.062, 0.006, 4, 14), matrix: M4(0, y, 0, Math.PI / 2, 0, 0), color: 0x8a8a92 })),
+      ...[[0, 0.035], [0.034, -0.022], [-0.034, -0.022]].map(([x, y]) => ({ geo: new THREE.CylinderGeometry(0.035, 0.035, 0.012, 10), matrix: M4(x, y, 0.0).multiply(M4(0, 0.14, 0)), color: 0xe8d2a0 })),
     ]);
-    this.stickMat = lit({ gloss: 0.4, emit: 0.35 });
+    this.stickMat = lit({ gloss: 0.45, emit: 0.35 });
     this.sticks = [];
     for (let i = 0; i < 10; i++) {
       const g = new THREE.Group(); g.visible = false; scene.add(g);
       const body = new THREE.Mesh(stickGeo, this.stickMat); body.rotation.z = Math.PI / 2; g.add(body);
-      const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 1, 4).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ color: 0x2a2018 }));
-      fuse.position.set(0.12, 0, 0); fuse.rotation.z = -0.9; g.add(fuse);
-      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0x3cff6e, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }));
-      glow.scale.set(2.2, 1, 1); g.add(glow);
+      const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 1, 4).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ color: 0x2a2018 }));
+      fuse.position.set(0.15, 0.02, 0); fuse.rotation.z = -0.9; g.add(fuse);
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), new THREE.MeshBasicMaterial({ color: 0x3cff6e, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }));
+      glow.scale.set(2.0, 1.2, 1.2); g.add(glow);
       this.sticks.push({ g, fuse, glow, on: false });
     }
-    // ghost riders (GHOST POSSE / TRAIN HEIST), drawn additive
-    this.riderMat = new THREE.MeshBasicMaterial({ color: 0x6a98ff, transparent: true, opacity: 0.24, blending: THREE.AdditiveBlending, depthWrite: false });
-    this.riders = new THREE.InstancedMesh(OutlawGeo.rider(), this.riderMat, 10);
+    // ghost riders (GHOST POSSE / TRAIN HEIST): spectral, galloping (instanced)
+    this.ghostU = { uTime: { value: 0 }, uRate: { value: 13 }, uCol: { value: new THREE.Color(0x4a9aff) }, uOpacity: { value: 1 } };
+    this.riderMat = new THREE.ShaderMaterial({ uniforms: this.ghostU, vertexShader: GHOST_VS, fragmentShader: GHOST_FS, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const rg = OutlawGeo.rider(), ph = new Float32Array(16); for (let i = 0; i < 16; i++) ph[i] = rand(0, TAU);
+    rg.setAttribute('iPhase', new THREE.InstancedBufferAttribute(ph, 1));
+    this.riders = new THREE.InstancedMesh(rg, this.riderMat, 16);
     this.riders.count = 0; this.riders.frustumCulled = false; this.riders.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(this.riders);
     // the assists: a chandelier (THE PROPRIETOR) and a spotlight (GRANDIOSO)
     this.chandelier = new THREE.Group(); this.chandelier.visible = false; scene.add(this.chandelier);
@@ -18414,16 +18495,19 @@ const OutlawKit = {
     ]), lit({ gloss: 1.2, emit: 0.4 })));
     this.spotMat = new THREE.MeshBasicMaterial({ color: 0xfff0c8, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     this.spot = new THREE.Mesh(new THREE.ConeGeometry(1.2, 7, 24, 1, true).translate(0, -3.5, 0), this.spotMat); this.spot.visible = false; scene.add(this.spot);
-    // the campfire (SHARE A CAMPFIRE STORY, the SPARE ending)
+    // the campfire (SHARE A CAMPFIRE STORY, the SPARE ending): a ring of stones, crossed logs, flames, embers, its light
     this.fire = new THREE.Group(); this.fire.visible = false; scene.add(this.fire);
     this.fire.add(new THREE.Mesh(mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6), matrix: M4(0, 0.05, 0, 0, 0, Math.PI / 2), color: 0x5a3418 },
-      { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6), matrix: M4(0, 0.05, 0, Math.PI / 2, 0, 0), color: 0x4a2a14 },
-      { geo: new THREE.CylinderGeometry(0.045, 0.045, 0.45, 6), matrix: M4(0, 0.1, 0, 0.6, 0.8, Math.PI / 2), color: 0x5a3418 },
-      ...[0, 1, 2, 3, 4, 5, 6].map((i) => ({ geo: new THREE.DodecahedronGeometry(0.06, 0), matrix: M4(Math.cos(i / 7 * TAU) * 0.32, 0.02, Math.sin(i / 7 * TAU) * 0.32), color: 0x6a6460 })),
+      { geo: new THREE.CylinderGeometry(0.055, 0.06, 0.55, 7), matrix: M4(0, 0.06, 0, 0.15, 0, Math.PI / 2), color: 0x5a3418 },
+      { geo: new THREE.CylinderGeometry(0.055, 0.06, 0.55, 7), matrix: M4(0, 0.06, 0, Math.PI / 2, 0.15, 0), color: 0x4a2a14 },
+      { geo: new THREE.CylinderGeometry(0.05, 0.055, 0.5, 7), matrix: M4(0, 0.12, 0, 0.6, 0.8, Math.PI / 2), color: 0x5a3418 },
+      { geo: new THREE.CylinderGeometry(0.12, 0.16, 0.04, 10), matrix: M4(0, 0.02, 0), color: 0x2a1a12 },
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ geo: new THREE.DodecahedronGeometry(0.07, 0), matrix: M4(Math.cos(i / 8 * TAU) * 0.34, 0.03, Math.sin(i / 8 * TAU) * 0.34, i, i * 2, 0), color: 0x6a6460 })),
     ]), lit({ gloss: 0.1 })));
     this.flameMat = new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
-    this.flames = [0, 1, 2].map((i) => { const f = new THREE.Mesh(new THREE.ConeGeometry(0.1 - i * 0.02, 0.36 - i * 0.06, 7, 1, true), this.flameMat); f.position.y = 0.2; this.fire.add(f); return f; });
+    this.flameMat2 = new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.flames = [0, 1, 2, 3, 4].map((i) => { const f = new THREE.Mesh(new THREE.ConeGeometry(0.11 - i * 0.015, 0.42 - i * 0.05, 7, 1, true), i > 2 ? this.flameMat2 : this.flameMat); f.position.set(Math.cos(i * 2.4) * 0.05, 0.22, Math.sin(i * 2.4) * 0.05); this.fire.add(f); return f; });
+    this.fireLight = { pos: new THREE.Vector3(), c: [1.0, 0.55, 0.22], radius: 5, k: () => (this.ready && this.fire.visible ? 0.85 + 0.15 * Math.sin(G.time * 13) * Math.sin(G.time * 7) : 0) };
     // the SPARE ending's campfire guests sit in here (freed with the kit)
     this.camp = new THREE.Group(); scene.add(this.camp);
     // the stare-down's lone tumbleweed (it drifts across his mesa in slow motion)
@@ -18434,12 +18518,13 @@ const OutlawKit = {
   rollWeed(slow) {
     if (!this.ready) return;
     const H = FRONTIER.HOME;
-    this.weedT = 0; this.weedSlow = slow; this.weed.visible = true; this.weed.position.set(H.x - 3.2, H.y + 0.45, H.z + 1.4);
+    this.weedT = 0; this.weedSlow = slow; this.weed.visible = true; this.weed.position.set(H.x - 3.2, H.y + 0.45, H.z + 1.0);
   },
   hideAll() {
     if (!this.ready) return;
     this.cacti.count = 0;
     for (const p of this.posters) { p.on = false; p.m.visible = false; }
+    for (const h of this.halves) { h.t = -1; h.m.visible = false; }
     for (const l of this.lassos) { l.ring.visible = false; l.rope.visible = false; }
     for (const s of this.sticks) { s.on = false; s.g.visible = false; }
     this.riders.count = 0; this.posse = null;
@@ -18447,9 +18532,36 @@ const OutlawKit = {
     this.fire.visible = false; this.weed.visible = false; this.weedT = -1;
   },
   takeStick() { const s = this.sticks.find((x) => !x.on); if (s) { s.on = true; s.g.visible = true; } return s; },
-  takePoster() { const p = this.posters.find((x) => !x.on); if (p) { p.on = true; p.m.visible = true; } return p; },
+  takePoster() { const p = this.posters.find((x) => !x.on); if (p) { p.on = true; p.m.visible = true; p.hot = 0; } return p; },
+  // a poster rips in two: the halves flap away with the poster's own picture on them
+  tearPoster(P, dir) {
+    const ok = this.halves.filter((h) => h.t < 0).slice(0, 2);
+    ok.forEach((h, k) => {
+      const s = k ? 1 : -1;
+      h.m.material.map = P.tex; h.m.material.needsUpdate = true;
+      const U = h.geo.attributes.uv; for (let i = 0; i < U.count; i++) U.setX(i, (i % 2) * 0.5 + (k ? 0.5 : 0)); U.needsUpdate = true;
+      h.m.position.copy(P.m.position); h.m.quaternion.copy(P.m.quaternion); h.m.translateX(s * 0.115);
+      h.v.copy(dir).multiplyScalar(0.9).add(_v1.set(rand(-0.5, 0.5), rand(0.6, 1.4), rand(-0.5, 0.5))); _v2.set(1, 0, 0).applyQuaternion(P.m.quaternion); h.v.addScaledVector(_v2, s * 1.1);
+      h.w.set(rand(-6, 6), rand(-6, 6), rand(-4, 4)); h.t = 0; h.m.visible = true;
+    });
+  },
+  // a lasso's rope from his hand to the loop: a sagging chain of segments
+  drawRope(L, a, b, sag = 0.5) {
+    const N = 16; let m = 0;
+    for (let i = 0; i < N; i++) {
+      const u0 = i / N, u1 = (i + 1) / N;
+      _v1.lerpVectors(a, b, u0); _v1.y -= Math.sin(u0 * Math.PI) * sag;
+      _v2.lerpVectors(a, b, u1); _v2.y -= Math.sin(u1 * Math.PI) * sag;
+      _v3.addVectors(_v1, _v2).multiplyScalar(0.5); _v4.subVectors(_v2, _v1); const len = _v4.length();
+      _q1.setFromUnitVectors(_v5.set(0, 0, 1), _v4.divideScalar(Math.max(len, 1e-5)));
+      _m1.compose(_v3, _q1, _s1.set(0.018, 0.018, len * 1.04)); L.rope.setMatrixAt(m++, _m1);
+    }
+    L.rope.count = m; L.rope.instanceMatrix.needsUpdate = true;
+  },
   update(dt) {
     if (!this.ready) return;
+    const t = G.time;
+    this.ghostU.uTime.value = t;
     if (this.weedT >= 0) {
       // slow motion through the silence, then on its way at a normal clip
       this.weedT += dt;
@@ -18458,77 +18570,179 @@ const OutlawKit = {
       W.position.y = FRONTIER.HOME.y + 0.45 + Math.abs(Math.sin(this.weedT * (slow ? 1.1 : 3.4))) * (slow ? 0.25 : 0.5);
       if (W.position.x > FRONTIER.HOME.x + 7) { this.weedT = -1; W.visible = false; }
     }
+    // posters flutter on their nail (a curl and a ripple; hotter ones shake)
+    for (const P of this.posters) {
+      if (!P.m.visible) continue;
+      P.t += dt;
+      const A = P.m.geometry.attributes.position, B = P.base;
+      for (let i = 0; i < A.count; i++) {
+        const x = B[i * 3], y = B[i * 3 + 1], low = (0.315 - y) / 0.63;
+        const z = (Math.sin(P.t * 3.1 + x * 9 + y * 4) * 0.012 + x * x * 0.25) * low + low * low * 0.03 + (P.hot ? Math.sin(P.t * 40 + y * 30) * 0.006 * P.hot : 0);
+        A.setXYZ(i, x, y, z);
+      }
+      A.needsUpdate = true;
+    }
+    for (const h of this.halves) {
+      if (h.t < 0) continue;
+      h.t += dt; h.v.y -= 2.2 * dt; h.v.multiplyScalar(Math.exp(-dt * 1.2));
+      h.m.position.addScaledVector(h.v, dt); h.m.rotateX(h.w.x * dt); h.m.rotateY(h.w.y * dt); h.m.rotateZ(h.w.z * dt);
+      h.m.material.opacity = 1; h.m.scale.setScalar(Math.max(0.01, 1 - Math.max(0, h.t - 1.0) / 0.4));
+      if (h.t > 1.4) { h.t = -1; h.m.visible = false; }
+    }
     if (this.fire.visible) {
-      const t = G.time;
-      this.flames.forEach((f, i) => { f.scale.set(1 + 0.15 * Math.sin(t * 9 + i), 1 + 0.25 * Math.sin(t * 7 + i * 2), 1); f.rotation.y = t * (1 + i); });
-      this.fire.getWorldPosition(_v1);
-      G.fx.glow.add(_v1.x, _v1.y + 0.25, _v1.z, 0.7, 1, 0.55, 0.18, 0.55 + 0.15 * Math.sin(t * 11), 0);
-      if (Math.random() < dt * 14) G.fx.parts.emit(_v1.x + rand(-0.08, 0.08), _v1.y + 0.3, _v1.z + rand(-0.08, 0.08), rand(-0.1, 0.1), rand(0.4, 0.8), rand(-0.1, 0.1), rand(0.5, 1), 0.02, 1, 0.6, 0.2, 0.8, -0.3, 1);
+      this.flames.forEach((f, i) => { f.scale.set(1 + 0.18 * Math.sin(t * 9 + i), 1 + 0.3 * Math.sin(t * 7.3 + i * 2) + 0.15 * Math.sin(t * 17 + i), 1); f.rotation.y = t * (1 + i * 0.6); });
+      this.fire.getWorldPosition(_v1); const s = this.fire.scale.x;
+      this.fireLight.pos.set(_v1.x, _v1.y + 0.4 * s, _v1.z);
+      if (!DesertLight.steady.includes(this.fireLight)) DesertLight.steady.push(this.fireLight);
+      G.fx.glow.add(_v1.x, _v1.y + 0.25 * s, _v1.z, 0.8 * s, 1, 0.55, 0.18, 0.55 + 0.15 * Math.sin(t * 11), 0);
+      if (Math.random() < dt * 10) OFX.spark(_v8.set(_v1.x + rand(-0.08, 0.08) * s, _v1.y + 0.3 * s, _v1.z + rand(-0.08, 0.08) * s), 1, 1, 0.6, 0.2, 0.6, { dir: _v7.set(0, 1, 0), spread: 0.4, grav: -0.4, life: 1.4, len: 0.04, w: 0.008, drag: 0.6 });
+      if (Math.random() < dt * 3) OFX.dust(_v8.set(_v1.x, _v1.y + 0.5 * s, _v1.z), 1, 0.25 * s, 2.4, [0.5, 0.48, 0.46], { speed: 0.05, rise: 0.35, alpha: 0.22, drag: 0.5 });
     }
   },
 };
-registerKit(OutlawKit, function () { this.posters = []; this.lassos = []; this.sticks = []; this.flames = []; this.posse = null; this.weedT = -1; });
+registerKit(OutlawKit, function () { this.posters = []; this.halves = []; this.lassos = []; this.sticks = []; this.flames = []; this.posse = null; this.weedT = -1; if (this.fireLight) DesertLight.steady = DesertLight.steady.filter((l) => l !== this.fireLight); });
 
 // ---------------------------------------------------------------------------
-//  TrainKit: TRAIN HEIST's world - the flatcar under the box, the locomotive ahead, and a
-//  canyon (rock walls, sleepers, tunnels, signal posts, a water tower) scrolling past at a
-//  constant speed. The box and you never move: only the world does.
+//  TrainKit: TRAIN HEIST's world - the box rides a flatcar behind a steam locomotive and its
+//  tender, through a red-rock canyon (banded walls, telegraph poles, tunnels with timber
+//  portals, semaphore signals, a water tower) scrolling past at one constant speed. The box
+//  and you never move: only the world does.
 // ---------------------------------------------------------------------------
+function canyonWallGeo(side, len, seed) {
+  // a heightfield wall running along z: steep near the track, stepping back in strata ledges
+  const nz = 14, nx = 9, pos = [], col = [], idx = [], C = new THREE.Color();
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+    const u = i / nx, z = (j / nz - 0.5) * len, x = side * (5.2 + u * 7 + ONoise.n2(j * 0.7 + seed, i * 0.5, 256) * 0.6);
+    const steps = Math.floor(u * 3.2) / 3.2, y = -2 + (Math.pow(u, 0.55) * 0.7 + steps * 0.3) * 13 + (ONoise.n2(z * 0.4 + seed, u * 3, 256) - 0.5) * 1.4 * u;
+    pos.push(x, y, z);
+    strataColor(y + 3, z * 0.1 + seed, C).multiplyScalar(0.8 + 0.3 * ONoise.n2(z * 0.9 + seed, y * 0.6, 256));
+    col.push(C.r, C.g, C.b);
+  }
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
+    if (side > 0) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2)); g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
 const TrainKit = {
   ready: false,
   SPEED: 9,          // m/s, constant (never ramps: no felt acceleration)
   init() {
     if (this.ready) return;
-    const lit = (o) => CircusShade.material(Object.assign({ gloss: 0.15, shine: 20, rim: 0.3, emit: 0.16 }, o));
+    const lit = (o) => CircusShade.material(Object.assign({ gloss: 0.15, shine: 20, rim: 0.35, emit: 0.16 }, o));
     const root = this.root = new THREE.Group(); root.visible = false; scene.add(root);
     this.mat = lit({});
-    // the flatcar + the locomotive (they ride with the box: static)
-    const P = [];
-    const B = (x, y, z, w, h, d, c) => P.push({ geo: new THREE.BoxGeometry(w, h, d), matrix: M4(x, y, z), color: c });
-    B(0, -0.12, 0, 4.2, 0.2, 5.4, 0x5a3420);
-    for (const z of [-1.9, 1.9]) for (const x of [-1.5, 1.5]) P.push({ geo: new THREE.CylinderGeometry(0.42, 0.42, 0.18, 14).rotateZ(Math.PI / 2), matrix: M4(x, -0.55, z), color: 0x2a2a30 });
-    B(0, 0.6, -6.2, 2.6, 2.0, 4.2, 0x2a2a34);                                             // the tender
-    P.push({ geo: new THREE.CylinderGeometry(1.15, 1.15, 5.2, 16).rotateX(Math.PI / 2), matrix: M4(0, 1.1, -11), color: 0x1e1e26 });   // boiler
-    P.push({ geo: new THREE.CylinderGeometry(0.32, 0.42, 1.4, 10), matrix: M4(0, 2.6, -12.6), color: 0x1e1e26 });          // stack
-    B(0, 1.6, -8.4, 2.6, 2.8, 1.6, 0x6a2a20);                                             // the cab
-    P.push({ geo: new THREE.ConeGeometry(1.3, 1.2, 4), matrix: M4(0, -0.1, -14.2, -Math.PI / 2, 0, 0), color: 0xc8a040 });     // cowcatcher
-    this.train = new THREE.Mesh(mergeGeos(P), this.mat); root.add(this.train);
-    this.stack = new THREE.Vector3(0, 3.4, -12.6);
-    // the canyon: two rock walls of segments recycled along z, sleepers under the car
-    this.segs = []; this.SEG = 12; const N = 9;
-    const rock = mergeGeos([{ geo: new THREE.BoxGeometry(5, 9, this.SEG), matrix: M4(0, 3, 0), color: 0xb04a28 }, { geo: new THREE.BoxGeometry(5.2, 1.4, this.SEG), matrix: M4(0.2, 6.4, 0), color: 0xc8623a }, { geo: new THREE.BoxGeometry(5.4, 1.2, this.SEG * 0.6), matrix: M4(0.3, -0.6, 0), color: 0x8a3a20 }]);
+    const metal = lit({ gloss: 1.2, shine: 70, rim: 0.6, emit: 0.18 });
+    const wood = lit({ tri: FrontierTex.get('wood'), triTop: FrontierTex.get('wood'), triST: [0.9, 0.9, 0.8, 0], gloss: 0.06, rim: 0.3 });
+    // ---- the flatcar under the box: a plank deck, side sills, stake pockets
+    const F = [];
+    F.push({ geo: new THREE.BoxGeometry(4.2, 0.16, 5.6), matrix: M4(0, -0.1, 0), color: 0x8a5a34 });
+    for (const s of [-1, 1]) {
+      F.push({ geo: new THREE.BoxGeometry(0.2, 0.3, 5.7), matrix: M4(s * 2.1, -0.28, 0), color: 0x4a2c18 });
+      for (const z of [-2.2, -0.75, 0.75, 2.2]) F.push({ geo: new THREE.BoxGeometry(0.14, 0.42, 0.14), matrix: M4(s * 2.14, -0.02, z), color: 0x2a2a30 });
+    }
+    F.push({ geo: new THREE.BoxGeometry(0.3, 0.3, 6.0), matrix: M4(0, -0.42, 0), color: 0x2a1a10 });
+    this.flatcar = new THREE.Mesh(mergeGeos(F), wood); root.add(this.flatcar);
+    // ---- the locomotive ahead (facing -z) and its tender: iron black, brass bands, a red cab and wheels
+    const L = [], BL = 0x1c1c22, BR = 0xc8a040, RD = 0x8e2a1e;
+    const B = (x, y, z, w, h, d, c) => L.push({ geo: new THREE.BoxGeometry(w, h, d), matrix: M4(x, y, z), color: c });
+    // tender: a tank box, a coal heap, its trucks
+    B(0, 0.3, -5.2, 2.7, 1.0, 3.4, 0x34343c); B(0, 0.84, -5.2, 2.8, 0.1, 3.5, BR); B(0, -0.12, -5.2, 2.8, 0.08, 3.5, BR);
+    for (const x of [-1.0, -0.5, 0, 0.5, 1.0]) B(x, 0.32, -3.49, 0.05, 0.9, 0.04, 0x5a5a64);   // rivet strips on the end you face
+    B(0, 0.62, -3.47, 1.2, 0.28, 0.04, 0x8a2a1e);   // a red plate: the railroad's name
+    for (const s of [-1, 1]) { B(s * 0.5, 0.4, -3.45, 0.06, 0.8, 0.06, BR); for (let k = 0; k < 4; k++) B(s * 0.5, 0.05 + k * 0.22, -3.43, 0.3, 0.03, 0.03, BR); }
+    for (let i = 0; i < 9; i++) L.push({ geo: new THREE.DodecahedronGeometry(rand(0.25, 0.42), 0), matrix: M4(rand(-0.9, 0.9), 0.9 + rand(0, 0.12), -5.2 + rand(-1.2, 1.2)), color: 0x121214 });
+    // the cab: walls with windows, a curved roof
+    B(0, 1.3, -7.75, 2.7, 2.6, 1.8, RD);
+    for (const s of [-1, 1]) B(s * 1.36, 1.8, -7.75, 0.04, 0.7, 0.9, 0x1a1210);
+    B(0, 1.8, -6.84, 1.7, 0.7, 0.04, 0x1a1210);
+    L.push({ geo: new THREE.CylinderGeometry(1.8, 1.8, 2.1, 16, 1, false, -0.85, 1.7).rotateX(-Math.PI / 2), matrix: M4(0, 1.15, -7.75), color: 0x2a2a30 });
+    // the boiler: bands, a steam dome, a sand dome, the bell, the whistle
+    L.push({ geo: new THREE.CylinderGeometry(1.05, 1.05, 6.4, 20).rotateX(Math.PI / 2), matrix: M4(0, 1.15, -11.8), color: BL });
+    for (const z of [-9.4, -10.9, -12.4, -13.9]) L.push({ geo: new THREE.TorusGeometry(1.06, 0.045, 5, 24), matrix: M4(0, 1.15, z), color: BR });
+    L.push({ geo: new THREE.CylinderGeometry(0.42, 0.5, 0.5, 14), matrix: M4(0, 2.35, -10.8), color: BR });
+    L.push({ geo: new THREE.SphereGeometry(0.42, 14, 8, 0, TAU, 0, Math.PI / 2), matrix: M4(0, 2.6, -10.8), color: BR });
+    L.push({ geo: new THREE.CylinderGeometry(0.34, 0.4, 0.4, 12), matrix: M4(0, 2.3, -12.6), color: BL });
+    L.push({ geo: new THREE.SphereGeometry(0.34, 12, 6, 0, TAU, 0, Math.PI / 2), matrix: M4(0, 2.5, -12.6), color: BL });
+    L.push({ geo: new THREE.CylinderGeometry(0.16, 0.24, 0.3, 10), matrix: M4(0.7, 2.1, -9.6), color: BR });
+    // the balloon smokestack
+    L.push({ geo: new THREE.LatheGeometry([[0.3, 0], [0.32, 0.6], [0.5, 1.2], [0.78, 1.7], [0.82, 1.9], [0.7, 1.95]].map(([r, y]) => new THREE.Vector2(r, y)), 16), matrix: M4(0, 2.05, -14.3), color: BL });
+    // smokebox, headlamp, cowcatcher
+    L.push({ geo: new THREE.CylinderGeometry(1.1, 1.1, 0.8, 20).rotateX(Math.PI / 2), matrix: M4(0, 1.15, -15.2), color: 0x2a2a30 });
+    B(0, 2.55, -15.2, 0.7, 0.6, 0.6, 0x3a3a42); B(0, 2.92, -15.2, 0.8, 0.12, 0.7, BR);
+    L.push({ geo: new THREE.ConeGeometry(1.5, 1.3, 4, 1), matrix: M4(0, -0.05, -16.0, -Math.PI / 2 + 0.35, Math.PI / 4, 0, 1, 1, 0.7), color: RD });
+    // running boards and handrails
+    for (const s of [-1, 1]) { B(s * 1.25, 0.3, -12.0, 0.6, 0.08, 7.6, 0x2a2a30); L.push({ geo: new THREE.CylinderGeometry(0.025, 0.025, 6.6, 5).rotateX(Math.PI / 2), matrix: M4(s * 1.1, 1.85, -12.0), color: BR }); }
+    // cylinders (they puff steam)
+    for (const s of [-1, 1]) L.push({ geo: new THREE.CylinderGeometry(0.34, 0.34, 1.1, 12).rotateX(Math.PI / 2), matrix: M4(s * 1.3, 0.45, -14.4), color: 0x3a3a42 });
+    this.train = new THREE.Mesh(mergeGeos(L), metal); root.add(this.train);
+    this.stack = new THREE.Vector3(0, 4.05, -14.3);
+    this.cyl = [new THREE.Vector3(-1.3, 0.45, -15.0), new THREE.Vector3(1.3, 0.45, -15.0)];
+    this.lamp = new THREE.Vector3(0, 2.55, -15.52);
+    // driving wheels (they turn) and the side rods (they go round with them)
+    const wheel = mergeGeos([
+      { geo: new THREE.TorusGeometry(0.72, 0.08, 6, 24).rotateY(Math.PI / 2), color: 0xa8281e },
+      { geo: new THREE.CylinderGeometry(0.16, 0.16, 0.2, 12).rotateZ(Math.PI / 2), color: 0xc8a040 },
+      ...Array.from({ length: 10 }, (_, i) => ({ geo: new THREE.BoxGeometry(0.06, 1.38, 0.07), matrix: M4(0, 0, 0, i / 10 * Math.PI, 0, 0), color: 0xa8281e })),
+      { geo: new THREE.TorusGeometry(0.66, 0.05, 4, 24).rotateY(Math.PI / 2), color: 0x2a2a30 },
+    ]);
+    this.wheels = new THREE.InstancedMesh(wheel, metal, 12); this.wheels.frustumCulled = false; this.wheels.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(this.wheels);
+    this.wheelPos = [];
+    for (const s of [-1, 1]) for (const z of [-11.2, -12.8, -14.4]) this.wheelPos.push([s * 1.18, -0.15, z, 0.95]);
+    for (const s of [-1, 1]) for (const z of [-4.2, -6.2]) this.wheelPos.push([s * 1.1, -0.5, z, 0.5]);
+    for (const s of [-1, 1]) this.wheelPos.push([s * 1.5, -0.45, 1.9, 0.6]);
+    this.rods = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.12, 1), metal, 2); this.rods.frustumCulled = false; this.rods.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(this.rods);
+    this.spin = 0;
+    // the canyon: banded rock walls in segments recycled along z, sleepers and rails, ballast
+    this.segs = []; this.SEG = 14; const N = 8;
+    const rockMat = lit({ tri: FrontierTex.get('rock'), triTop: FrontierTex.get('ground'), triST: [0.25, 0.4, 0.8, 0], gloss: 0.05, rim: 0.2, emit: 0.12 });
+    const walls = [[-1, 3], [-1, 9], [1, 5], [1, 13]].map(([s, sd]) => canyonWallGeo(s, this.SEG + 0.4, sd));
     for (let i = 0; i < N; i++) for (const s of [-1, 1]) {
-      const m = new THREE.Mesh(rock, this.mat); m.position.set(s * (6.5 + (i % 3) * 0.6), -1.6, 0); m.scale.y = 0.8 + 0.3 * ((i * 7 + (s > 0 ? 3 : 0)) % 5) / 4; root.add(m);
+      const m = new THREE.Mesh(walls[(s < 0 ? 0 : 2) + (i % 2)], rockMat); m.position.set(0, -1.2, 0); root.add(m);
       this.segs.push({ m, i });
     }
-    this.sleepers = new THREE.InstancedMesh(new THREE.BoxGeometry(2.8, 0.12, 0.25), lit({ color: 0x4a2a16 }), 40); root.add(this.sleepers);
-    this.rails = new THREE.Mesh(mergeGeos([{ geo: new THREE.BoxGeometry(0.1, 0.1, 120), matrix: M4(-0.75, -1.0, -20), color: 0x8a8a98 }, { geo: new THREE.BoxGeometry(0.1, 0.1, 120), matrix: M4(0.75, -1.0, -20), color: 0x8a8a98 }, { geo: new THREE.BoxGeometry(30, 0.2, 120), matrix: M4(0, -1.25, -20), color: 0x9a5a30 }]), this.mat); root.add(this.rails);
+    this.sleepers = new THREE.InstancedMesh(new THREE.BoxGeometry(2.8, 0.12, 0.26), lit({ color: 0x4a2a16 }), 44); root.add(this.sleepers);
+    this.rails = new THREE.Mesh(mergeGeos([{ geo: new THREE.BoxGeometry(0.1, 0.12, 140), matrix: M4(-0.75, -1.0, -20), color: 0x9a9aa8 }, { geo: new THREE.BoxGeometry(0.1, 0.12, 140), matrix: M4(0.75, -1.0, -20), color: 0x9a9aa8 }, { geo: new THREE.BoxGeometry(12, 0.3, 140), matrix: M4(0, -1.32, -20), color: 0x8a5a3a }]), rockMat); root.add(this.rails);
+    // telegraph poles going by
+    this.poles = new THREE.InstancedMesh(mergeGeos([{ geo: new THREE.CylinderGeometry(0.1, 0.13, 7.5, 6), matrix: M4(0, 2.5, 0), color: 0x4a3420 }, { geo: new THREE.BoxGeometry(1.4, 0.12, 0.12), matrix: M4(0, 5.9, 0), color: 0x4a3420 }]), wood, 6); root.add(this.poles);
     this.scroll = 0;
-    // hazards: tunnel mouths, signal posts, a water tower (they ride the scroll in from far ahead)
+    // a tunnel the whole train runs through (n = 3): a rock portal with a timber frame
     this.tunnel = new THREE.Mesh(mergeGeos([
-      { geo: new THREE.BoxGeometry(2.2, 9, 3), matrix: M4(-3.6, 2.5, 0), color: 0x7a3420 }, { geo: new THREE.BoxGeometry(2.2, 9, 3), matrix: M4(3.6, 2.5, 0), color: 0x7a3420 },
-      { geo: new THREE.BoxGeometry(9.4, 4, 3), matrix: M4(0, 5.6, 0), color: 0x8a3e22 },
-    ]), this.mat); this.tunnel.visible = false; root.add(this.tunnel);
-    // tunnel portals: a timber lintel (its underside at y = 0) under a rock face; scaled to the box's width
+      { geo: new THREE.BoxGeometry(3.6, 10, 4), matrix: M4(-4.6, 3, 0), color: 0x9a4426 }, { geo: new THREE.BoxGeometry(3.6, 10, 4), matrix: M4(4.6, 3, 0), color: 0x9a4426 },
+      { geo: new THREE.BoxGeometry(12.8, 4.2, 4), matrix: M4(0, 7.1, 0), color: 0xa84a28 },
+      { geo: new THREE.BoxGeometry(0.4, 5.2, 0.4), matrix: M4(-2.9, 1.4, 2.05), color: 0x5a3a22 }, { geo: new THREE.BoxGeometry(0.4, 5.2, 0.4), matrix: M4(2.9, 1.4, 2.05), color: 0x5a3a22 },
+      { geo: new THREE.BoxGeometry(6.4, 0.5, 0.45), matrix: M4(0, 4.9, 2.05), color: 0x5a3a22 },
+    ]), rockMat); this.tunnel.visible = false; root.add(this.tunnel);
+    // tunnel beams to duck under: a timber lintel (its underside at y = 0) under a rock face; scaled to the box's width
     this.beamGeo = mergeGeos([
-      { geo: new THREE.BoxGeometry(1, 0.26, 0.36), matrix: M4(0, 0.13, 0), color: 0x6a4224 },
-      { geo: new THREE.BoxGeometry(1, 4.2, 0.9), matrix: M4(0, 2.36, -0.27), color: 0x8a3e22 },
+      { geo: new THREE.BoxGeometry(1, 0.28, 0.4), matrix: M4(0, 0.14, 0), color: 0x6a4224 },
+      { geo: new THREE.BoxGeometry(1, 4.2, 0.9), matrix: M4(0, 2.38, -0.27), color: 0xa84a28 },
+      { geo: new THREE.BoxGeometry(0.06, 0.1, 0.42), matrix: M4(0.3, 0.14, 0.0), color: 0x2a2a30 }, { geo: new THREE.BoxGeometry(0.06, 0.1, 0.42), matrix: M4(-0.3, 0.14, 0.0), color: 0x2a2a30 },
     ]);
-    this.beams = []; for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(this.beamGeo, this.mat); m.visible = false; root.add(m); this.beams.push(m); }
+    this.beams = []; for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(this.beamGeo, rockMat); m.visible = false; root.add(m); this.beams.push(m); }
+    // semaphore signal posts: a lattice mast, a red arm with a white stripe, a lamp
     this.posts = []; for (let i = 0; i < 2; i++) {
       const g = new THREE.Group(); g.visible = false; root.add(g);
-      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 4.5, 6).translate(0, 1.0, 0), lit({ color: 0x3a3a44 })));
-      const arm = new THREE.Group(); arm.position.y = 0; g.add(arm);
-      arm.add(new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.14, 0.1).translate(-1.7, 0, 0), lit({ color: 0xe8e0d0, emit: 0.5 })));
-      arm.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 0.11).translate(-3.2, 0, 0), lit({ color: 0xc8281e, emit: 0.5 })));
+      g.add(new THREE.Mesh(mergeGeos([{ geo: new THREE.CylinderGeometry(0.07, 0.1, 4.6, 6), matrix: M4(0, 1.0, 0), color: 0x3a3a44 }, { geo: new THREE.SphereGeometry(0.12, 8, 6), matrix: M4(0, 3.35, 0), color: 0x3a3a44 }]), metal));
+      const arm = new THREE.Group(); g.add(arm);
+      arm.add(new THREE.Mesh(mergeGeos([
+        { geo: new THREE.BoxGeometry(3.4, 0.16, 0.08).translate(-1.7, 0, 0), color: 0xc8281e },
+        { geo: new THREE.BoxGeometry(0.22, 0.17, 0.09).translate(-3.1, 0, 0), color: 0xf0e8d8 },
+        { geo: new THREE.BoxGeometry(0.22, 0.17, 0.09).translate(-2.4, 0, 0), color: 0xf0e8d8 },
+        { geo: new THREE.CylinderGeometry(0.09, 0.09, 0.1, 10).rotateX(Math.PI / 2).translate(0.15, 0, 0.05), color: 0xff4a3a },
+      ]), lit({ emit: 0.5, rim: 0.4 })));
       this.posts.push({ g, arm });
     }
+    // the water tower (it dumps a wall of water)
     this.tower = new THREE.Mesh(mergeGeos([
-      { geo: new THREE.CylinderGeometry(1.1, 1.1, 1.8, 12), matrix: M4(0, 4.4, 0), color: 0x6a4428 },
-      { geo: new THREE.ConeGeometry(1.25, 0.7, 12), matrix: M4(0, 5.65, 0), color: 0x4a2a18 },
-      ...[[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]].map(([x, z]) => ({ geo: new THREE.CylinderGeometry(0.08, 0.08, 4.5, 5), matrix: M4(x, 1.3, z), color: 0x4a2a18 })),
-      { geo: new THREE.BoxGeometry(2.2, 0.14, 0.18), matrix: M4(-1.6, 3.6, 0, 0, 0, -0.25), color: 0x3a3a44 },
-    ]), this.mat); this.tower.visible = false; root.add(this.tower);
+      { geo: new THREE.CylinderGeometry(1.2, 1.2, 1.9, 14), matrix: M4(0, 4.4, 0), color: 0x6a4428 },
+      { geo: new THREE.ConeGeometry(1.35, 0.8, 14), matrix: M4(0, 5.75, 0), color: 0x4a2a18 },
+      ...[[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]].map(([x, z]) => ({ geo: new THREE.CylinderGeometry(0.09, 0.1, 4.6, 5), matrix: M4(x, 1.3, z), color: 0x4a2a18 })),
+      { geo: new THREE.CylinderGeometry(0.16, 0.16, 2.4, 8), matrix: M4(-1.7, 3.6, 0, 0, 0, Math.PI / 2 - 0.25), color: 0x3a3a44 },
+      ...[0, 1, 2].map((i) => ({ geo: new THREE.TorusGeometry(1.21, 0.04, 4, 20), matrix: M4(0, 3.7 + i * 0.6, 0, Math.PI / 2, 0, 0), color: 0x2a2a30 })),
+    ]), wood); this.tower.visible = false; root.add(this.tower);
     this.ready = true;
   },
   show(on) {
@@ -18538,16 +18752,29 @@ const TrainKit = {
   },
   update(dt) {
     if (!this.ready || !this.root.visible) return;
-    this.scroll += TrainKit.SPEED * dt;
-    const L = this.SEG * 9;
-    for (const s of this.segs) s.m.position.z = ((s.i * this.SEG + this.scroll) % L) - L * 0.7;
-    for (let k = 0; k < 40; k++) { const z = ((k * 1.1 + this.scroll) % 44) - 30; _m1.makeTranslation(0, -0.95, z); this.sleepers.setMatrixAt(k, _m1); }
+    const sp = TrainKit.SPEED;
+    this.scroll += sp * dt;
+    const L = this.SEG * 8;
+    for (const s of this.segs) s.m.position.z = ((s.i * this.SEG + this.scroll) % L) - L * 0.72;
+    for (let k = 0; k < 44; k++) { const z = ((k * 1.1 + this.scroll) % 48.4) - 34; _m1.makeTranslation(0, -0.94, z); this.sleepers.setMatrixAt(k, _m1); }
     this.sleepers.instanceMatrix.needsUpdate = true;
-    // smoke from the stack
-    if (Math.random() < dt * 18) { const s = this.stack; G.fx.parts.emit(s.x + rand(-0.1, 0.1), s.y, s.z, rand(-0.2, 0.2), rand(1.2, 1.8), TrainKit.SPEED * 0.6, rand(1.2, 2), rand(0.12, 0.22), 0.55, 0.52, 0.5, 0.6, -0.2, 1); }
+    for (let k = 0; k < 6; k++) { const z = ((k * 18 + this.scroll) % 108) - 80; _m1.makeTranslation(k % 2 ? 4.4 : -4.4, -1.2, z); this.poles.setMatrixAt(k, _m1); }
+    this.poles.instanceMatrix.needsUpdate = true;
+    // the wheels turn with the speed; the side rods ride round on the driving wheels' crank pins
+    this.spin += sp * dt / 0.75;
+    this.wheelPos.forEach(([x, y, z, s], i) => { _m1.compose(_v1.set(x, y, z), _q1.setFromAxisAngle(_v2.set(1, 0, 0), -this.spin * (0.75 / (0.75 * s))), _s1.setScalar(s)); this.wheels.setMatrixAt(i, _m1); });
+    this.wheels.instanceMatrix.needsUpdate = true;
+    for (const [i, s] of [[0, -1], [1, 1]]) { const a = -this.spin, cy = Math.cos(a) * 0.36, cz = Math.sin(a) * 0.36; _m1.compose(_v1.set(s * 1.32, -0.15 + cy, -12.8 + cz), _q1.identity(), _s1.set(1, 1, 3.3)); this.rods.setMatrixAt(i, _m1); }
+    this.rods.instanceMatrix.needsUpdate = true;
+    // smoke from the stack (it trails back over you), steam from the cylinders, sparks off the wheels
+    if (Math.random() < dt * 22) { const s = this.stack; OFX.dust(_v1.set(s.x + rand(-0.15, 0.15), s.y, s.z), 1, 1.4, 3.0, [0.36, 0.34, 0.34], { speed: 0.4, vy: 2.6, vz: sp * 0.85, rise: 0.25, alpha: 0.62, drag: 0.5 }); }
+    if (Math.random() < dt * 6) { const c = this.cyl[randi(0, 1)]; OFX.dust(_v1.copy(c), 1, 0.45, 0.9, [0.95, 0.95, 0.95], { speed: 0.6, vx: c.x * 0.8, vz: sp * 0.5, rise: 0.4, alpha: 0.4 }); }
+    if (Math.random() < dt * 5) OFX.spark(_v1.set(chance(0.5) ? -1.18 : 1.18, -0.85, rand(-14, -11)), 2, 1, 0.75, 0.35, 2.4, { dir: _v2.set(0, 0.3, 1), spread: 0.5, life: 0.35, grav: 6 });
+    G.fx.glow.add(this.lamp.x, this.lamp.y, this.lamp.z, 1.1, 1, 0.9, 0.6, 0.7, 0);
   },
 };
-registerKit(TrainKit, function () { this.segs = []; this.beams = []; this.posts = []; });
+registerKit(TrainKit, function () { this.segs = []; this.beams = []; this.posts = []; this.wheelPos = []; });
+// @@/KITS
 
 // ---------------------------------------------------------------------------
 //  DrawKit: your revolver, its holster on your dominant hip (it follows your head's yaw:
@@ -18720,10 +18947,12 @@ const DrawKit = {
 registerKit(DrawKit, function () { this.targets = []; this.rings = []; if (this.hand) this.hand.busy = false; this.hand = null; this.state = 'holstered'; this.gauge = null; this.camHit = null; this.camT = -1; });
 
 
+// @@PATTERNS
 // ---------------------------------------------------------------------------
 //  SUNDOWN's attacks. Every one is on the beat (the half-beat gallop for rapid spawns),
-//  telegraphed at least a beat ahead, and leaves a way out. Silver revolver bullets
-//  glint a beat before they fire.
+//  telegraphed at least a beat ahead, and leaves a way out. His revolver glints a beat before
+//  it fires; every shot is a real muzzle flash (light, sparks, smoke, a brass shell flipped out)
+//  and every slug drags a glowing tracer.
 // ---------------------------------------------------------------------------
 const OUT = {
   Z: new THREE.Vector3(0, 0, 1),
@@ -18740,29 +18969,61 @@ const OUT = {
     return out;
   },
   muzzle(i, out) { if (G.boss && G.boss.gunPos) return G.boss.gunPos(i, out); return out.set(i ? -0.8 : 0.8, 3.2, -7.2); },
-  // a silver slug / star with the frontier's look
   shot(type, p, v, dmg) {
     const b = G.bullets.spawn(type, p.x, p.y, p.z); if (!b) return null;
     b.vel.copy(v); b.dmg = dmg; b.life = 7;
     return b;
   },
-  // a sunlight glint (a short-lived star of light) at p for `sec` seconds
+  // a sunlight glint on a gun barrel (a star of light) at p for `sec` seconds
   glints: [],
-  glint(p, sec, r = 1, g = 0.95, b = 0.75, quiet = false) { if (this.glints.length < 48) this.glints.push({ p: p.clone(), t: 0, sec, r, g, b, size: 0.28 }); if (!quiet) G.audio.sfx.glint(); },
-  // a muzzle flash: a short burst of light at p (and a little real light on everything near)
-  flash(p, k = 1) {
-    const red = Flash.reduced ? 0.55 : 1;
-    if (this.glints.length < 48) this.glints.push({ p: p.clone(), t: 0, sec: 0.09, r: 1, g: 0.86, b: 0.55, size: 0.5 * k * red, flash: true });
-    DesertLight.flash(p, 1 * k * red, 0.8 * k * red, 0.45 * k * red, 3.5, 0.12);
+  glint(p, sec, r = 1, g = 0.95, b = 0.75, quiet = false) {
+    if (this.glints.length < 48) this.glints.push({ p: p.clone(), t: 0, sec, r, g, b, size: 0.24 });
+    OFX.flare(p, 0.6, sec, r, g, b, { glint: true, spikes: 4, spin: 1.5 });
+    if (!quiet) G.audio.sfx.glint();
+  },
+  // a muzzle flash at p (along dir: toward you by default)
+  flash(p, k = 1, dir) {
+    if (!dir) dir = _v7.subVectors(G.soul.pos, p).normalize();
+    OFX.muzzle(p, dir, k);
+  },
+  // he fires gun i: the flash, the kick up his arm, a brass shell flipped out of the frame
+  bossShot(i, k = 1, aim) {
+    const H = G.boss; if (!H) return;
+    const p = this.muzzle(i, _v6), dir = H.gunDir ? H.gunDir(i, _v5) : _v5.subVectors(G.soul.pos, p).normalize();
+    this.flash(p, k, aim || dir);
+    if (H.fired) H.fired(i);
+    if (H.guns && H.guns[i] && H.guns[i].g.parent) {
+      H.guns[i].g.localToWorld(_v4.set(0.05, 0.08, 0.05));
+      _v3.set(rand(-1, 1), rand(1.5, 2.5), rand(-1, 0.5)).multiplyScalar(H.root.scale.x);
+      OFX.bit(0, _v4, _v3, 2.4, 3.5 * H.root.scale.x);
+    }
   },
   updateGlints(dt) {
     for (let i = 0; i < this.glints.length; i++) {
       const q = this.glints[i]; q.t += dt;
       if (q.t >= q.sec) { this.glints.splice(i, 1); i--; continue; }
-      const k = q.flash ? 1 - q.t / q.sec : Math.sin(q.t / q.sec * Math.PI), tw = q.flash ? 1 : 0.75 + 0.25 * Math.sin(q.t * 40);
-      G.fx.glow.add(q.p.x, q.p.y, q.p.z, q.size * k * (Flash.reduced ? 0.7 : 1), q.r, q.g, q.b, 0.9 * k * tw, 0);
-      G.fx.glow.add(q.p.x, q.p.y, q.p.z, q.flash ? q.size * 0.35 : 0.08, 1, 1, 1, k, 0);
+      const k = Math.sin(q.t / q.sec * Math.PI), tw = 0.75 + 0.25 * Math.sin(q.t * 40);
+      G.fx.glow.add(q.p.x, q.p.y, q.p.z, q.size * k * (Flash.reduced ? 0.7 : 1), q.r, q.g, q.b, 0.7 * k * tw, 0);
     }
+  },
+  // every slug drags a tracer, every cactus spine a pale streak; the stars twinkle
+  trails() {
+    const P = G.bullets.pools;
+    for (const b of P.slug.active) {
+      if (b.dying) continue;
+      const sp = b.vel.length(); if (sp < 0.05) continue;
+      const L = Math.min(0.55, 0.06 + sp * 0.09) * (b.scale > 1.15 ? 1.4 : 1);
+      _v1.copy(b.vel).multiplyScalar(-L / sp).add(b.pos);
+      OFX.streakNow(_v1, b.pos, 0.016, b.glowCol.r, b.glowCol.g, b.glowCol.b, 0.95);
+    }
+    for (const b of P.needle.active) {
+      if (b.dying) continue;
+      const sp = b.vel.length(); if (sp < 0.05) continue;
+      _v1.copy(b.vel).multiplyScalar(-0.22 / sp).add(b.pos);
+      OFX.streakNow(_v1, b.pos, 0.008, 1, 0.97, 0.82, 0.7);
+    }
+    for (const b of P.sstar.active) if (!b.dying && Math.random() < 0.02) OFX.flare(b.pos, 0.18, 0.18, 1, 0.95, 0.75, { glint: true, spikes: 4 });
+    for (const b of P.coin.active) if (!b.dying && Math.random() < 0.03) OFX.flare(b.pos, 0.16, 0.15, 1, 0.9, 0.5, { glint: true, spikes: 4 });
   },
   // falling bullets (dynamite embers) kick up dust where they hit the box floor, and are gone
   floorDust() {
@@ -18781,13 +19042,14 @@ const OUT = {
 
 // 1. TUMBLEWEED STAMPEDE - herds roll and bounce through the box on the gallop; a dust puff
 //    on the floor marks each landing (and how high the next bounce goes) a beat ahead.
-//    A2: a second herd crosses the first at right angles.
+//    A gust of dust blows in ahead of every herd. A2: a second herd crosses the first at right angles.
 class TumbleweedStampede extends Pattern {
   onStart() {
     this.hard = !this.o.tutorial && (OUT.inA2() || this.intensity >= 1.3);
     this.cross = this.stretch(this.o.tutorial ? 6 : 4);     // beats to cross the box
     this.herd(1, 0, 0);
     if (this.o.tutorial) G.ui.showPrompt('TUMBLEWEEDS!  DODGE THE STAMPEDE', 3, '#ffd27a');
+    if (G.boss && !this.fragment) G.boss.setPose('taunt');
   }
   // a herd: weeds on lanes across the box (one lane near you left open), rolling along x (axis 0) or z (1)
   herd(n, axis, sgn) {
@@ -18805,6 +19067,12 @@ class TumbleweedStampede extends Pattern {
       b.p0 = this.pb + (i % 2) * 0.5; b.p1 = lane; b.p2 = axis; b.p3 = dir; b.p4 = rand(0, 100);
       b.r = 0.15; b.scale = 0.16;
       this.place(b, 0); b.collide = true;
+    }
+    // the gust: a wall of dust blowing in from the side the herd comes from
+    const edge = dir > 0 ? (axis ? A.min.z : A.min.x) - 0.5 : (axis ? A.max.z : A.max.x) + 0.5;
+    for (let k = 0; k < 5; k++) {
+      const u = lerp(lo, hi, k / 4), x = axis ? u : edge, z = axis ? edge : u;
+      OFX.dust(_v1.set(x, A.min.y + 0.15, z), 1, 0.45, 1.3, null, { speed: 0.2, vx: axis ? 0 : dir * 1.6, vz: axis ? dir * 1.6 : 0, rise: 0.1, alpha: 0.35 });
     }
     G.audio.sfx.wind(0.5);
   }
@@ -18845,18 +19113,23 @@ class TumbleweedStampede extends Pattern {
     if (u > 1.02) { b.age = b.life + 1; return; }
     const y = this.place(b, Math.max(0, u));
     b.rx += dt * 9 * b.p3; b.rz -= dt * 7 * b.p3;
-    if (y < G.arena.min.y + b.r + 0.03 && !b.landed) { b.landed = true; OUT.dust(b.pos.x, b.pos.z, 4); G.audio.sfx.tumbleBounce(); }
-    else if (y > G.arena.min.y + b.r + 0.1) b.landed = false;
+    if (y < G.arena.min.y + b.r + 0.03 && !b.landed) {
+      b.landed = true; G.audio.sfx.tumbleBounce();
+      OFX.dust(_v1.set(b.pos.x, G.arena.min.y + 0.03, b.pos.z), 3, 0.24, 1.0, null, { speed: 0.55, vx: b.p2 ? 0 : b.p3 * 0.6, vz: b.p2 ? b.p3 * 0.6 : 0 });
+    } else if (y > G.arena.min.y + b.r + 0.1) b.landed = false;
   }
+  onEnd() { if (G.boss && !this.fragment && G.boss.pose === 'taunt') G.boss.setPose('idle'); }
   isIdle() { return !G.bullets.pools.tumble.active.some((b) => b.owner === this); }
 }
 
-// 2. FAN THE HAMMER - six shots a bar fanned across the box: spinning silver sheriff stars.
-//    A thin line of sunlight locks the aim a beat ahead. A2: he alternates hands, so the fans cross.
+// 2. FAN THE HAMMER - six shots a bar fanned across the box: spinning sheriff stars. A line of
+//    sunlight locks the aim and his barrel glints a beat ahead; his off hand fans the hammer.
+//    A2: he alternates hands, so the fans cross.
 class FanTheHammer extends Pattern {
   onStart() { this.hard = OUT.inA2() || this.intensity >= 1.3; this.aim = null; this.lock(0); if (G.boss) G.boss.setPose('fan'); }
   lock(n) {
     const bar = Math.floor(n / this.bpb), hand = this.hard && bar % 2 ? 1 : 0;
+    if (G.boss) { G.boss.drawGun(hand); if (hand === 1) G.boss.drawGun(0); }
     OUT.muzzle(hand, _v1);
     const s = G.soul.pos;
     _v2.copy(s).add(_v3.set(rand(-0.15, 0.15), rand(-0.1, 0.1), 0));
@@ -18866,7 +19139,6 @@ class FanTheHammer extends Pattern {
     this.aim = { start, dir: dir.clone(), hand, sweep, bar };
     G.tele.line(start, _v5.copy(start).addScaledVector(dir, 3.6), 0.008, 0xfff3c4, this.bd * 1.05, { pulse: 1, alpha: 0.7 });
     OUT.glint(OUT.muzzle(hand, _v6), this.bd);
-    if (G.boss) G.boss.drawGun(hand);
   }
   onBeat(n, when) {
     if (!this.spawning || n > this.beats - 4) return;
@@ -18880,18 +19152,18 @@ class FanTheHammer extends Pattern {
     const a = this.aim, spread = 0.95 * (k / 5 - 0.5) * a.sweep;
     _v1.copy(a.dir).applyAxisAngle(UP, spread); _v1.y += rand(-0.06, 0.06); _v1.normalize();
     const sp = 2.9 + 0.4 * this.intensity;   // (G.bullets.speedMul scales free bullets)
-    const b = OUT.shot('sstar', a.start, _v1.multiplyScalar(sp), this.dmg); if (!b) return;
+    const b = OUT.shot('sstar', a.start, _v2.copy(_v1).multiplyScalar(sp), this.dmg); if (!b) return;
     b.sz = 14;
-    G.audio.sfx.hammerFan(when); if (k === 0 || k === 3) G.audio.sfx.revolverShot(when, 0.5);
-    OUT.flash(OUT.muzzle(a.hand, _v2), 0.6);
+    G.audio.sfx.hammerFan(when); G.audio.sfx.revolverShot(when, k === 0 || k === 3 ? 0.55 : 0.3, a.start);
+    OUT.bossShot(a.hand, 0.65, _v1);
   }
   onEnd() { if (G.boss) G.boss.attackPose(true); }
   isIdle() { return !G.bullets.pools.sstar.active.length; }
 }
 
-// 3. CACTUS FIELD - saguaros burst up from the box floor in a grid (half on beat 1, half on 3),
-//    then fire needle volleys in four directions on beat 4. Volleys alternate BLUE (hold
-//    still) and ORANGE (keep moving) bar by bar. The cacti themselves are prickly (white).
+// 3. CACTUS FIELD - saguaros burst up out of the sand in a grid (half on beat 1, half on 3), then
+//    fire needle volleys in four directions on beat 4 (they swell a half beat before). Volleys
+//    alternate BLUE (hold still) and ORANGE (keep moving) bar by bar. The cacti themselves prick.
 class CactusField extends Pattern {
   onStart() { OutlawKit.init(); this.fields = []; this.makeField(0, 0); }
   // a 3x3 grid (jittered) for one bar; a ring on the floor marks each one until it bursts up
@@ -18901,15 +19173,20 @@ class CactusField extends Pattern {
       const x = lerp(A.min.x + 0.55, A.max.x - 0.55, i / 2) + rand(-0.16, 0.16), z = lerp(A.min.z + 0.55, A.max.z - 0.55, j / 2) + rand(-0.16, 0.16);
       if (Math.hypot(x - s.x, z - s.z) < 0.36) continue;   // never right on top of you
       const rise = bar * M + ((i + j) % 2 ? 2 : bar === 0 ? 1 : 0);
-      list.push({ x, z, h: rand(0.8, 1.35), rise, up: -1, key: {} });
+      list.push({ x, z, h: rand(0.8, 1.35), rise, up: -1, key: {}, rot: rand(0, TAU) });
       G.tele.ring(_v1.set(x, A.min.y + 0.02, z), UP, 0.17, blue ? CONFIG.COL.blue : CONFIG.COL.orange, (rise - now) * this.bd + 0.06, { pulse: 1 });
     }
     this.fields.push({ bar, blue, list, volley: bar * M + M - 1, sinkAt: -1 });
   }
   onBeat(n, when) {
-    const M = this.bpb;
+    const M = this.bpb, A = G.arena;
     for (const F of this.fields) {
-      for (const c of F.list) if (c.rise === n) { c.up = this.pb; OUT.dust(c.x, c.z, 8, 0.8); G.audio.sfx.cactusBurst(when); }
+      for (const c of F.list) if (c.rise === n) {
+        c.up = this.pb; G.audio.sfx.cactusBurst(when);
+        // the sand erupts: a ring of dust and a few stones
+        for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; OFX.dust(_v1.set(c.x + Math.cos(a) * 0.12, A.min.y + 0.04, c.z + Math.sin(a) * 0.12), 1, 0.2, 0.9, null, { speed: 0.2, vx: Math.cos(a) * 0.9, vz: Math.sin(a) * 0.9, vy: 0.4, alpha: 0.5 }); }
+        OFX.rocks(_v1.set(c.x, A.min.y + 0.05, c.z), 4, 1.2, 0xc8884a, 0.5);
+      }
       if (F.volley === n) this.volley(F, when);
     }
     if (n % M === M - 1 && this.spawning && n + 1 < this.beats - 2) this.makeField(Math.floor(n / M) + 1, n);
@@ -18926,6 +19203,7 @@ class CactusField extends Pattern {
           b.vel.set(dx * sp, 0, dz * sp); b.setRule(rule); b.dmg = this.dmg; b.life = 3;
         }
       }
+      OFX.spark(_v1.set(c.x, A.min.y + c.h * 0.7, c.z), 4, 1, 0.98, 0.85, 1.4, { life: 0.3, grav: 0.5, len: 0.05, w: 0.006 });
     }
     F.sinkAt = this.pb + 0.4;
     G.audio.sfx.needleVolley(when);
@@ -18939,13 +19217,17 @@ class CactusField extends Pattern {
       const F = this.fields[f];
       const sink = F.sinkAt >= 0 ? clamp((pb - F.sinkAt) / 0.45, 0, 1) : 0;
       if (sink >= 1) { this.fields.splice(f, 1); f--; continue; }
+      const swell = F.sinkAt < 0 ? clamp(1 - Math.abs(pb - (F.volley - 0.25)) / 0.25, 0, 1) : 0;   // it swells a half beat before the volley
       for (const c of F.list) {
         if (c.up < 0) continue;
-        const k = easeOut(clamp((pb - c.up) / 0.25, 0, 1)) * (1 - easeIn(sink));
+        const u = clamp((pb - c.up) / 0.3, 0, 1), grow = u < 1 ? 1 + Math.sin(u * Math.PI) * 0.18 : 1;   // up with an overshoot
+        const k = easeOut(u) * grow * (1 - easeIn(sink));
         if (k <= 0.01 || m >= 16) continue;
-        _m1.compose(_v1.set(c.x, A.min.y, c.z), _q1.setFromAxisAngle(UP, c.x * 7 + c.z * 3), _s1.set(1, c.h * k, 1));
+        const w = 1 + swell * 0.12;
+        _m1.compose(_v1.set(c.x, A.min.y - 0.02, c.z), _q1.setFromAxisAngle(UP, c.rot), _s1.set(w * (c.h / 1.0), c.h * k / 1.0, w * (c.h / 1.0)));
         K.cacti.setMatrixAt(m++, _m1);
         if (k > 0.25) Haz.segment(_v2.set(c.x, A.min.y, c.z), _v3.set(c.x, A.min.y + c.h * k, c.z), 0.1, RULE.WHITE, this.dmg, c.key);   // prickly
+        if (sink > 0 && Math.random() < 0.3) OFX.dust(_v2.set(c.x, A.min.y + 0.05, c.z), 1, 0.18, 0.8, null, { speed: 0.3 });
       }
     }
     K.cacti.count = m; K.cacti.instanceMatrix.needsUpdate = true;
@@ -18954,11 +19236,12 @@ class CactusField extends Pattern {
   isIdle() { return !G.bullets.pools.needle.active.length && !this.fields.length; }
 }
 
-// 4. WANTED - posters with your soul's face get nailed to the box walls (a hammer on the
-//    beat). Each poster's reward counts up a beat at a time; when it reaches its bounty it
-//    tears open and fires a spray at you - the bigger the bounty, the bigger the spray.
+// 4. WANTED - posters with your soul's face get nailed to the box walls (a hammer on the beat).
+//    Each poster's reward counts up a beat at a time; a beat before it reaches its bounty it
+//    glows and shakes, then it rips in two and pays out at you in gold coins - the bigger the
+//    bounty, the bigger the spray.
 class WantedPosters extends Pattern {
-  onStart() { OutlawKit.init(); this.list = []; this.nail(0); }
+  onStart() { OutlawKit.init(); this.list = []; this.nail(0); if (G.boss) G.boss.setPose('taunt'); }
   nail(n) {
     const A = G.arena, P = OutlawKit.takePoster(); if (!P) return;
     const s = G.soul.pos, wall = pick(['left', 'right', 'far']);
@@ -18966,11 +19249,13 @@ class WantedPosters extends Pattern {
     const pos = new THREE.Vector3(), nrm = new THREE.Vector3();
     if (wall === 'far') { pos.set(clamp(s.x + rand(-1, 1), A.min.x + 0.35, A.max.x - 0.35), y, A.min.z + 0.02); nrm.set(0, 0, 1); }
     else { const sx = wall === 'left' ? -1 : 1; pos.set(sx < 0 ? A.min.x + 0.02 : A.max.x - 0.02, y, clamp(s.z + rand(-1, 1), A.min.z + 0.35, A.max.z - 0.35)); nrm.set(-sx, 0, 0); }
-    P.m.position.copy(pos); P.m.lookAt(_v1.copy(pos).add(nrm));
+    P.m.position.copy(pos); P.m.lookAt(_v1.copy(pos).add(nrm)); P.m.rotateZ(rand(-0.08, 0.08));
     const bounty = randi(3, this.intensity >= 1.3 ? 8 : 6) * 100;
-    const W = { P, pos, nrm, reward: 0, bounty, b0: n, torn: false };
+    const W = { P, pos, nrm, reward: 0, bounty, b0: n, torn: false, slam: 0 };
     this.list.push(W); this.draw(W);
-    G.audio.sfx.hammerNail(); OUT.dust(pos.x, pos.z, 2, 0.3);
+    G.audio.sfx.hammerNail();
+    OFX.dust(_v1.copy(pos).addScaledVector(nrm, 0.05), 3, 0.12, 0.7, [0.92, 0.84, 0.66], { speed: 0.4, vx: nrm.x * 0.8, vz: nrm.z * 0.8 });
+    OFX.spark(_v1.copy(pos).add(_v2.set(0, 0.27, 0)).addScaledVector(nrm, 0.02), 4, 1, 0.9, 0.6, 1.6, { dir: nrm, spread: 0.7, life: 0.25 });
   }
   draw(W) {
     const g = W.P.tex.userData.ctx, near = W.bounty - W.reward <= 100;
@@ -18983,34 +19268,36 @@ class WantedPosters extends Pattern {
       if (W.torn) continue;
       W.reward += 100; this.draw(W);
       G.audio.sfx.cashTick(when, W.reward / W.bounty);
-      if (W.reward === W.bounty - 100) G.tele.ring(_v1.copy(W.pos).addScaledVector(W.nrm, 0.03), W.nrm, 0.32, 0xff5a3c, this.bd * 1.05, { pulse: 1 });
+      if (W.reward === W.bounty - 100) { W.P.hot = 1; G.tele.ring(_v1.copy(W.pos).addScaledVector(W.nrm, 0.03), W.nrm, 0.36, 0xff5a3c, this.bd * 1.05, { pulse: 1 }); }
       if (W.reward >= W.bounty) this.tear(W);
     }
   }
   tear(W) {
-    W.torn = true; W.P.on = false; W.P.m.visible = false;
-    G.audio.sfx.paperTear();
+    W.torn = true; W.P.on = false; W.P.m.visible = false; W.P.hot = 0;
+    G.audio.sfx.paperTear(); G.audio.sfx.coinBurst(W.pos);
+    OutlawKit.tearPoster(W.P, W.nrm);
     const n = Math.round(4 + W.bounty / 60), s = G.soul.pos, sp = 2.4;
     _v2.subVectors(s, W.pos).normalize();
     for (let i = 0; i < n; i++) {
       _v3.copy(_v2).applyAxisAngle(UP, rand(-0.5, 0.5)); _v3.y += rand(-0.3, 0.3); _v3.normalize();
-      const b = G.bullets.spawn('pellet', W.pos.x + W.nrm.x * 0.05, W.pos.y, W.pos.z + W.nrm.z * 0.05); if (!b) break;
+      const b = G.bullets.spawn('coin', W.pos.x + W.nrm.x * 0.05, W.pos.y, W.pos.z + W.nrm.z * 0.05); if (!b) break;
       b.vel.copy(_v3).multiplyScalar(sp * rand(0.85, 1.15)); b.dmg = this.dmg; b.life = 4;
-      b.color.setHex(0xe8d2a0); b.glowCol.setHex(0xffd27a);
+      b.rx = rand(0, TAU); b.sx = rand(6, 12); b.sz = rand(-3, 3);
     }
-    for (let i = 0; i < 10; i++) G.fx.parts.emit(W.pos.x, W.pos.y, W.pos.z, W.nrm.x * rand(0.5, 1.5) + rand(-0.5, 0.5), rand(-0.3, 0.8), W.nrm.z * rand(0.5, 1.5) + rand(-0.5, 0.5), rand(0.6, 1.2), rand(0.03, 0.06), 0.9, 0.82, 0.62, 1, 1.5, 1);
+    OFX.dust(_v1.copy(W.pos).addScaledVector(W.nrm, 0.06), 6, 0.08, 1.4, [0.95, 0.9, 0.78], { speed: 0.8, vx: W.nrm.x, vz: W.nrm.z, rise: -0.3, alpha: 0.6, drag: 1.2 });
+    OFX.flare(W.pos, 0.7, 0.14, 1, 0.85, 0.4, { spikes: 6 });
   }
-  onEnd() { for (const W of this.list) if (!W.torn) { W.P.on = false; W.P.m.visible = false; } this.list.length = 0; }
+  onEnd() { for (const W of this.list) if (!W.torn) { W.P.on = false; W.P.m.visible = false; } this.list.length = 0; if (G.boss && G.boss.pose === 'taunt') G.boss.setPose('idle'); }
   isIdle() { return !this.list.some((w) => !w.torn); }
 }
 
 
-// 5. TRAIN HEIST - an 8-bar set piece on the flatcar of a steam train in a canyon. The box
-//    and you never move or accelerate: only the world scrolls past, at one constant speed,
-//    with a level horizon and a stronger comfort vignette. On the beat: tunnel beams to
-//    duck under (always above ~60% of your standing height, shown a beat ahead), signal
-//    arms sweeping across, ghost outlaws galloping alongside and shooting on the off-beat,
-//    and a water tower that dumps a wall of water (BLUE: hold still).
+// 5. TRAIN HEIST - an 8-bar set piece on a flatcar behind a steam locomotive in a canyon. The box
+//    and you never move or accelerate: only the world scrolls past, at one constant speed, with a
+//    level horizon and a stronger comfort vignette. On the beat: tunnel beams to duck under (always
+//    above ~60% of your standing height, shown a beat ahead), semaphore arms sweeping across, ghost
+//    outlaws galloping alongside and shooting on the off-beat, and a water tower that dumps a wall
+//    of water (BLUE: hold still).
 class TrainHeist extends Pattern {
   onStart() {
     TrainKit.init(); OutlawKit.init();
@@ -19022,7 +19309,7 @@ class TrainHeist extends Pattern {
     this.stand = clamp(Math.max(G.xr ? Head.pos.y - rig.position.y : CONFIG.DESKTOP_EYE, Settings.data.seated ? 1.05 : 1.45), 1.05, 2.0);
     this.haz = [];          // { kind, z, y, key, dir, ... }
     this.riders = [];       // the ghost outlaws alongside
-    if (G.boss) { G.boss.root.position.set(0, 1.62, -6.2); G.boss.root.scale.setScalar(0.5); G.boss.setPose('idle'); }
+    if (G.boss) { G.boss.root.position.set(0, 0.95, -5.6); G.boss.root.scale.setScalar(0.5); G.boss.setPose('taunt'); }
     G.audio.sfx.trainWhistle(); G.audio.sfx.wind(0.6);
     G.ui.showPrompt('TRAIN HEIST!  DUCK THE BEAMS, HOLD STILL FOR THE WATER', 3.2, '#ffd27a');
   }
@@ -19060,13 +19347,14 @@ class TrainHeist extends Pattern {
     G.tele.ring(_v1.set(A.center.x, A.max.y - 0.05, A.min.z + 0.3), UP, 0.6, CONFIG.COL.blue, this.bd * 1.1, { pulse: 1 });
     G.battle.teach('blue');
   }
-  // the water wall: a sheet of blue drops crossing the box
+  // the water wall: a sheet of blue drops crossing the box, spray off the spout
   water() {
     const A = G.arena, sp = 2.4;
     for (let i = 0; i < 7; i++) for (let j = 0; j < 6; j++) {
       const b = G.bullets.spawn('drop', lerp(A.min.x + 0.15, A.max.x - 0.15, i / 6), lerp(A.min.y + 0.12, A.max.y - 0.12, j / 5), A.min.z + 0.05); if (!b) return;
       b.vel.set(rand(-0.05, 0.05), -0.2, sp); b.setRule(RULE.BLUE); b.dmg = this.dmg; b.life = 3;
     }
+    for (let k = 0; k < 8; k++) OFX.dust(_v1.set(lerp(A.min.x, A.max.x, k / 7), A.max.y + 0.2, A.min.z - 0.2), 1, 0.4, 1.0, [0.85, 0.92, 1.0], { speed: 0.4, vz: 2, vy: -0.6, rise: -0.4, alpha: 0.45 });
     G.audio.sfx.waterDump();
   }
   // ghost outlaws riding alongside (outside the box), shooting on the off-beat
@@ -19074,7 +19362,7 @@ class TrainHeist extends Pattern {
   onBeat(n, when) {
     const M = this.bpb, bar = Math.floor(n / M), inBar = n % M;
     if (!this.spawning) return;
-    if (n === 3) { TrainKit.tunnel.visible = true; this.tunnelZ = G.arena.min.z - 30; G.audio.sfx.trainWhistle(); }
+    if (n === 3) { TrainKit.tunnel.visible = true; this.tunnelZ = G.arena.min.z - 34; G.audio.sfx.trainWhistle(); }
     // tunnels: beams in bars 1-2 and 5-6
     if ((bar === 1 || bar === 2 || bar === 5) && inBar % 2 === 0) this.beam();
     // signal arms in bars 3-4
@@ -19092,12 +19380,12 @@ class TrainHeist extends Pattern {
     if (!this.spawning || !this.riders.length || h % 2 === 0 || h > (this.beats - 4) * 2) return;
     // a rider fires on the off-beat (they take turns)
     const R = this.riders[(h >> 1) % this.riders.length];
-    this.riderPos(R, _v1); _v1.y += 0.9;
-    _v2.subVectors(G.soul.pos, _v1).normalize().multiplyScalar(2.7);
-    const b = OUT.shot('slug', _v1, _v2, this.dmg);
-    if (b) { b.glowCol.setHex(0x9ac8ff); OUT.flash(_v1, 0.5); G.audio.sfx.revolverShot(when, 0.35, _v1); }
+    this.riderPos(R, _v1); _v1.y += 1.85; _v1.x -= R.side * 0.65;
+    _v2.subVectors(G.soul.pos, _v1).normalize();
+    const b = OUT.shot('slug', _v1, _v3.copy(_v2).multiplyScalar(2.7), this.dmg);
+    if (b) { b.glowCol.setHex(0x9ac8ff); OUT.flash(_v1, 0.5, _v2); G.audio.sfx.revolverShot(when, 0.35, _v1); }
   }
-  riderPos(R, out) { const A = G.arena; return out.set(R.side * (A.max.x + 1.05), A.min.y - 0.05, R.z); }
+  riderPos(R, out) { const A = G.arena; return out.set(R.side * (A.max.x + 1.05), -1.15, R.z); }
   update(dt) {
     super.update(dt);
     const A = G.arena, sp = TrainKit.SPEED;
@@ -19127,12 +19415,14 @@ class TrainHeist extends Pattern {
     }
     // riders gallop alongside (they ride with the train: they bob, they never drift)
     const K = OutlawKit;
+    K.ghostU.uOpacity.value = 1; K.ghostU.uRate.value = 14;
     let m = 0;
     for (const R of this.riders) {
       const bob = Math.abs(Math.sin((this.pb * 2 + R.ph) * Math.PI)) * 0.09;
       this.riderPos(R, _v1); _v1.y += bob;
-      _m1.compose(_v1, _q1.setFromAxisAngle(UP, -Math.PI / 2 + Math.sin(this.pb * 3.1) * 0.05), _s1.setScalar(0.85));
+      _m1.compose(_v1, _q1.setFromAxisAngle(UP, Math.PI + Math.sin(this.pb * 3.1) * 0.05), _s1.set(-0.85 * R.side, 0.85, 0.85));
       K.riders.setMatrixAt(m++, _m1);
+      if (Math.random() < dt * 8) OFX.dust(_v2.set(_v1.x, _v1.y + 0.1, _v1.z + 0.6), 1, 0.35, 0.8, [0.6, 0.72, 0.95], { speed: 0.2, vz: 3, alpha: 0.25 });
     }
     K.riders.count = m; K.riders.instanceMatrix.needsUpdate = true;
   }
@@ -19142,21 +19432,21 @@ class TrainHeist extends Pattern {
     TrainKit.tower.visible = false; TrainKit.tunnel.visible = false;
     OutlawKit.riders.count = 0; this.haz.length = 0; this.riders.length = 0;
     G.fx.tunnelBoost = 0;
-    if (G.boss) { G.boss.root.position.copy(G.boss.home); G.boss.root.scale.setScalar(1); }
+    if (G.boss) { G.boss.root.position.copy(G.boss.home); G.boss.root.scale.setScalar(1); G.boss.setPose('idle'); }
   }
 }
 
-// 6. LASSO LOOPS - a glowing lasso spins over the box, drops around you and tightens on the
-//    downbeat: get out through the shrinking gap before beat 1. Caught: a gentle tug back
-//    to the middle (no damage). The back half of B throws two at once. (THE PROPRIETOR's
+// 6. LASSO LOOPS - he twirls a lasso overhead, throws it and it drops around you, tightening on
+//    the downbeat: get out through the shrinking gap before beat 1. Caught: a gentle tug back to
+//    the middle (no damage). The back half of B throws two at once. (THE PROPRIETOR's
 //    chandelier, if you spared him, pins one of them.)
 class LassoLoops extends Pattern {
-  onStart() { OutlawKit.init(); this.loops = []; this.spin = 0; this.cycle(0); if (G.boss) G.boss.setPose('throw'); }
+  onStart() { OutlawKit.init(); this.loops = []; this.spin = 0; this.cycle(0); if (G.boss) { G.boss.holsterGun(0); G.boss.setPose('lasso'); } }
   cycle(n) {
     const two = OUT.inB2() || this.intensity >= 1.7;
     for (let i = 0; i < (two ? 2 : 1); i++) {
       const L = OutlawKit.lassos[i]; if (!L) break;
-      this.loops.push({ L, i, c: new THREE.Vector3(), drop: n + 2, close: n + 4, state: 'spin', pinned: false, gapA: 0, pinT: 0 });
+      this.loops.push({ L, i, c: new THREE.Vector3(), drop: n + 2, close: n + 4, start: n, state: 'spin', pinned: false, gapA: 0, pinT: 0 });
       L.ring.visible = true; L.rope.visible = true;
     }
     G.audio.sfx.lassoWhoosh(this.bd * 2);
@@ -19197,46 +19487,51 @@ class LassoLoops extends Pattern {
     _v1.subVectors(G.arena.center, s); _v1.y = 0;
     if (_v1.lengthSq() > 0.01) { _v1.normalize().multiplyScalar(1.2); G.loco.push.copy(_v1); G.battle.after(0.5, () => G.loco.push.set(0, 0, 0)); }
     G.ui.showPrompt('LASSOED!', 1.2, '#ffd890'); G.input.pulseAll(0.6, 120); G.audio.sfx.ropeSnap();
-    if (G.boss) G.boss.nodT = 1;
+    OFX.dust(_v1.copy(s).setY(G.arena.min.y + 0.03), 4, 0.2, 0.9);
+    if (G.boss) { G.boss.nodT = 1; G.boss.smirkT = 1.2; }
   }
   closeLoop(P) {
     if (P.pinned) { P.state = 'done'; P.L.ring.visible = false; P.L.rope.visible = false; OutlawKit.chandelier.visible = false; return; }
     const s = G.soul.pos, d = Math.hypot(s.x - P.c.x, s.z - P.c.z);
     if (d < 0.36 && G.soul.active) { this.catchYou(P); return; }
     P.state = 'done'; P.L.ring.visible = false; P.L.rope.visible = false;
+    OFX.dust(_v1.set(P.c.x, G.arena.min.y + 0.03, P.c.z), 3, 0.18, 0.8);
     G.audio.sfx.ropeSnap();
   }
-  // the loop's rope segments (none in the gap)
-  drawLoop(L, cx, y, cz, R, gapA, gap) {
-    const N = 48; let m = 0;
+  // the loop's rope segments (none in the gap); tilt: the loop's lean (radians, round x)
+  drawLoop(L, cx, y, cz, R, gapA, gap, tilt = 0) {
+    const N = 56; let m = 0;
     for (let k = 0; k < N; k++) {
       const a = this.spin + k / N * TAU;
       if (gap > 0 && Math.abs(((a - gapA) % TAU + TAU + Math.PI) % TAU - Math.PI) < gap) continue;
-      _m1.compose(_v1.set(cx + Math.cos(a) * R, y, cz + Math.sin(a) * R), _q1.setFromAxisAngle(UP, -a), _s1.set(0.018, 0.018, TAU * R / N * 1.1));
+      const ox = Math.cos(a) * R, oz = Math.sin(a) * R;
+      _m1.compose(_v1.set(cx + ox, y + oz * Math.sin(tilt), cz + oz * Math.cos(tilt)), _q1.setFromEuler(_e1.set(tilt, -a, 0, 'XYZ')), _s1.set(0.022, 0.022, TAU * R / N * 1.15));
       L.ring.setMatrixAt(m++, _m1);
     }
     L.ring.count = m; L.ring.instanceMatrix.needsUpdate = true;
   }
   update(dt) {
     super.update(dt);
-    const A = G.arena, s = G.soul.pos;
-    this.spin += dt * 2.2;
+    const A = G.arena, s = G.soul.pos, H = G.boss;
+    this.spin += dt * 4.2;
     for (const P of this.loops) {
       if (P.state === 'done') continue;
       const L = P.L;
       let R, y = P.c.y, cx = P.c.x, cz = P.c.z, gap = 0;
       if (P.state === 'spin') {
-        // spinning over the box above where it will fall
-        cx = s.x; cz = s.z; R = 0.5; y = A.max.y + 0.35;
-        this.drawLoop(L, cx, y, cz, R, 0, 0);
+        // twirled over his head for a beat, then thrown in an arc to over the box
+        const hand = H ? H.handPos(0, _v4) : _v4.set(0, 6, -8), sc = H ? H.root.scale.x : 1;
+        const u = clamp((this.pb - P.start - 1) / Math.max(0.5, P.drop - P.start - 1), 0, 1), e = easeInOut(u);
+        const over = _v5.set(s.x, A.max.y + 0.45, s.z);
+        R = lerp(0.85 * sc, 0.55, e);
+        cx = lerp(hand.x, over.x, e); cz = lerp(hand.z, over.z, e); y = lerp(hand.y + 0.35 * sc, over.y, e) + Math.sin(e * Math.PI) * 1.6;
+        this.drawLoop(L, cx, y, cz, R, 0, 0, (1 - e) * 0.35);
       } else if (P.pinned) {
         P.pinT += dt; R = 1.1;
         const K = OutlawKit; K.chandelier.position.y = Math.max(y - 0.05, K.chandelier.position.y - dt * 9);
-        L.ring.material.opacity = Math.max(0, 0.95 - P.pinT);
         this.drawLoop(L, cx, y, cz, R, 0, 0);
       } else {
         [R, gap] = this.shape(P);
-        L.ring.material.opacity = 0.95;
         this.drawLoop(L, cx, y, cz, R, P.gapA, gap);
         // the rope catches you if you touch it anywhere but the gap (it never hurts)
         const dx = s.x - cx, dz = s.z - cz, d = Math.hypot(dx, dz);
@@ -19244,22 +19539,23 @@ class LassoLoops extends Pattern {
           const da = Math.abs(((Math.atan2(dz, dx) - P.gapA) % TAU + TAU + Math.PI) % TAU - Math.PI);
           if (da > gap) { this.catchYou(P); continue; }
         }
-        G.fx.glow.add(cx + Math.cos(P.gapA) * R, y, cz + Math.sin(P.gapA) * R, 0.16, 1, 0.95, 0.75, 0.5, 0);   // the way out
+        G.fx.glow.add(cx + Math.cos(P.gapA) * R, y, cz + Math.sin(P.gapA) * R, 0.18, 1, 0.95, 0.75, 0.55, 0);   // the way out
       }
-      // the rope back to his hand
-      OUT.muzzle(0, _v1); _v2.set(cx + Math.cos(P.gapA + Math.PI) * R, y, cz + Math.sin(P.gapA + Math.PI) * R);
-      L.rope.position.copy(_v1); L.rope.lookAt(_v2); L.rope.scale.set(1, 1, _v1.distanceTo(_v2));
+      // the rope back to his hand (it sags)
+      const hp = H ? H.handPos(0, _v1) : _v1.set(0, 5, -8);
+      _v2.set(cx + Math.cos(P.gapA + Math.PI) * R, y, cz + Math.sin(P.gapA + Math.PI) * R);
+      OutlawKit.drawRope(L, hp, _v2, P.state === 'spin' ? 0.1 : 0.6);
     }
   }
   isIdle() { return !this.loops.length; }
-  onEnd() { for (const P of this.loops) { P.L.ring.visible = false; P.L.rope.visible = false; } OutlawKit.chandelier.visible = false; this.loops.length = 0; G.loco.push.set(0, 0, 0); }
+  onEnd() { for (const P of this.loops) { P.L.ring.visible = false; P.L.rope.visible = false; } OutlawKit.chandelier.visible = false; this.loops.length = 0; G.loco.push.set(0, 0, 0); if (G.boss && G.boss.pose === 'lasso') G.boss.setPose('idle'); }
 }
 
-// 7. DYNAMITE - lit sticks arc into the box. Each fuse is marked a beat at a time and the
-//    spark burns down it; it blows into a radial burst on its beat. Sticks glowing GREEN can
-//    be grabbed and thrown back at him: 60 damage and his hat knocked askew. Risky: if its
-//    fuse runs out in your hand, it goes off right there. (Spared SCR1PT_K1DD1E? his
-//    antivirus.exe quarantines one volley.)
+// 7. DYNAMITE - lit bundles arc into the box. Each fuse is marked a beat at a time and the spark
+//    burns down it; it blows into a radial burst of embers on its beat (fire, smoke, flying rock).
+//    Bundles glowing GREEN can be grabbed and thrown back at him: 60 damage and his hat knocked
+//    askew. Risky: if its fuse runs out in your hand, it goes off right there. (Spared
+//    SCR1PT_K1DD1E? his antivirus.exe quarantines one volley.)
 class DynamiteToss extends Pattern {
   onStart() { OutlawKit.init(); this.sticks = []; this.volley(0); }
   volley(n) {
@@ -19270,9 +19566,9 @@ class DynamiteToss extends Pattern {
     for (let i = 0; i < count; i++) {
       const S = OutlawKit.takeStick(); if (!S) break;
       const a = rand(0, TAU), r = rand(0.55, 1.15);
-      const land = new THREE.Vector3(clamp(s.x + Math.cos(a) * r, A.min.x + 0.2, A.max.x - 0.2), A.min.y + 0.04, clamp(s.z + Math.sin(a) * r, A.min.z + 0.2, A.max.z - 0.2));
+      const land = new THREE.Vector3(clamp(s.x + Math.cos(a) * r, A.min.x + 0.2, A.max.x - 0.2), A.min.y + 0.05, clamp(s.z + Math.sin(a) * r, A.min.z + 0.2, A.max.z - 0.2));
       const fuse = randi(2, 3);
-      const D = { S, from: OUT.muzzle(1, new THREE.Vector3()), land, t0: this.pb, flight: 1, boomAt: this.pb + 1 + fuse, fuse, green: i === greenIdx, state: 'fly', hand: null, vel: new THREE.Vector3(), quarantine: av };
+      const D = { S, from: G.boss ? G.boss.handPos(0, new THREE.Vector3()) : OUT.muzzle(1, new THREE.Vector3()), land, t0: this.pb, flight: 1, boomAt: this.pb + 1 + fuse, fuse, green: i === greenIdx, state: 'fly', hand: null, vel: new THREE.Vector3(), quarantine: av };
       S.glow.visible = D.green; S.g.position.copy(D.from);
       this.sticks.push(D);
       G.tele.ring(land, UP, 0.5, 0xff7a2a, this.bd * (1 + fuse), { pulse: 1, alpha: 0.5 });
@@ -19300,13 +19596,19 @@ class DynamiteToss extends Pattern {
       return;
     }
     G.audio.sfx.dynamiteBoom(onHim ? 1.2 : 1, p);
-    DesertLight.flash(p, 1, 0.55, 0.2, onHim ? 6 : 3.5, 0.35);
-    const k = Flash.reduced ? 0.55 : 1;
-    G.fx.glow.add(p.x, p.y, p.z, 0.9 * k, 1, 0.6, 0.2, 0.9 * k, 0);
-    G.fx.burst(p, 18, 1, 0.55, 0.15, 2.2, 0.07);
+    const k = Flash.reduced ? 0.55 : 1, big = onHim ? 2.2 : 1;
+    DesertLight.flash(p, 1 * k, 0.55 * k, 0.2 * k, onHim ? 7 : 3.8, 0.4);
+    // the fireball, the smoke, flying rock, a shockwave
+    OFX.flare(p, 1.3 * big * k, 0.3, 1, 0.62, 0.2, { spikes: 8 });
+    OFX.flare(p, 0.6 * big * k, 0.18, 1, 0.95, 0.75, { spikes: 5 });
+    G.fx.glow.add(p.x, p.y, p.z, 1.0 * big * k, 1, 0.55, 0.15, 0.9 * k, 0);
+    OFX.spark(p, Math.round(18 * big), 1, 0.7, 0.25, 3.2, { up: 0.6, life: 0.6, grav: 5, len: 0.08 });
+    OFX.dust(_v1.copy(p).setY(p.y + 0.1), Math.round(5 * big), 0.4 * big, 2.2, [0.3, 0.27, 0.25], { speed: 0.6, vy: 0.6, rise: 0.4, alpha: 0.55, drag: 1.4 });
     G.input.pulseAll(onHim ? 0.6 : 1.0, onHim ? 120 : 220);
     if (onHim) return;
+    OFX.rocks(p, 8, 2.2, 0xa86a40, 0.8);
     OUT.dust(p.x, p.z, 12, 1.4);
+    G.tele.ring(_v1.copy(p).setY(G.arena.min.y + 0.02), UP, 1.4, 0xff9a4a, 0.35, { grow: 0.1, pulse: 0, alpha: 0.8 });
     // the radial burst: a ring of embers, a few thrown up (step away from it)
     const sp = 2.1;
     for (let i = 0; i < 14; i++) {
@@ -19323,9 +19625,9 @@ class DynamiteToss extends Pattern {
       const S = D.S, g = S.g;
       if (D.state === 'fly') {
         const u = clamp((pb - D.t0) / D.flight, 0, 1);
-        g.position.lerpVectors(D.from, D.land, u); g.position.y += Math.sin(u * Math.PI) * 2.2;
+        g.position.lerpVectors(D.from, D.land, u); g.position.y += Math.sin(u * Math.PI) * 2.6;
         g.rotation.x += dt * 8; g.rotation.z += dt * 5;
-        if (u >= 1) { D.state = 'lit'; g.rotation.set(0, rand(0, TAU), 0); G.audio.sfx.thud(); OUT.dust(D.land.x, D.land.z, 4, 0.5); }
+        if (u >= 1) { D.state = 'lit'; g.rotation.set(0, rand(0, TAU), 0); G.audio.sfx.thud(); OUT.dust(D.land.x, D.land.z, 5, 0.6); }
       } else if (D.state === 'held') {
         const h = D.hand;
         if (!h || !h.connected || !h.b.grip) { this.letGo(D); continue; }
@@ -19337,26 +19639,28 @@ class DynamiteToss extends Pattern {
         const d = _v3.length();
         D.vel.lerp(_v3.normalize().multiplyScalar(Math.max(8, D.vel.length())), Math.min(1, dt * 5));
         g.position.addScaledVector(D.vel, dt); g.rotation.x += dt * 14;
-        if (d < 0.7) { this.hitHim(D); continue; }
+        if (Math.random() < 0.6) OFX.spark(g.position, 1, 0.3, 1, 0.45, 0.6, { life: 0.4, grav: 0.5 });
+        if (d < 0.9) { this.hitHim(D); continue; }
       } else if (D.state === 'drop') {
         D.vel.y -= 9.8 * dt; g.position.addScaledVector(D.vel, dt);
-        if (g.position.y <= A.min.y + 0.04) { g.position.y = A.min.y + 0.04; D.state = 'lit'; }
+        if (g.position.y <= A.min.y + 0.05) { g.position.y = A.min.y + 0.05; D.state = 'lit'; }
       }
       // the fuse: a marked length that burns down a beat at a time, a spark at its tip
       const left = Math.max(0, D.boomAt - pb), shown = Math.min(left, D.fuse);
-      S.fuse.scale.set(1, Math.max(0.001, shown * 0.05), 1);
-      S.fuse.getWorldPosition(_v4); S.fuse.getWorldDirection(_v5);
+      S.fuse.scale.set(1, Math.max(0.001, shown * 0.06), 1);
+      S.fuse.getWorldPosition(_v4);
       _v6.set(0, 1, 0).applyQuaternion(S.fuse.getWorldQuaternion(_q1));
-      const tip = _v4.addScaledVector(_v6, shown * 0.05);
+      const tip = _v4.addScaledVector(_v6, shown * 0.06);
       const fl = 0.7 + 0.3 * Math.sin(G.time * 40);
-      G.fx.glow.add(tip.x, tip.y, tip.z, 0.07, 1, 0.75, 0.3, fl, 0);
-      for (let k = 1; k <= Math.floor(shown); k++) { _v7.copy(_v4).addScaledVector(_v6, -(shown - k) * 0.05); G.fx.glow.add(_v7.x, _v7.y, _v7.z, 0.02, 1, 1, 1, 0.8, 0); }
-      if (Math.random() < dt * 30) G.fx.parts.emit(tip.x, tip.y, tip.z, rand(-0.4, 0.4), rand(0.2, 0.7), rand(-0.4, 0.4), rand(0.15, 0.35), 0.012, 1, 0.8, 0.3, 1, -1, 1);
-      if (D.green) { S.glow.material.opacity = 0.22 + 0.12 * Math.sin(G.time * 6); g.getWorldPosition(_v7); G.fx.glow.add(_v7.x, _v7.y, _v7.z, 0.16, 0.24, 1, 0.43, 0.55, 0); }
+      G.fx.glow.add(tip.x, tip.y, tip.z, 0.09, 1, 0.75, 0.3, fl, 0);
+      for (let k = 1; k <= Math.floor(shown); k++) { _v7.copy(S.fuse.getWorldPosition(_v8)).addScaledVector(_v6, (shown - k) * 0.06); G.fx.glow.add(_v7.x, _v7.y, _v7.z, 0.025, 1, 1, 1, 0.8, 0); }
+      if (Math.random() < dt * 40) OFX.spark(tip, 1, 1, 0.8, 0.35, 0.9, { up: 0.3, life: 0.3, grav: 2, len: 0.04, w: 0.007 });
+      if (Math.random() < dt * 6) OFX.dust(tip, 1, 0.05, 0.9, [0.6, 0.6, 0.6], { speed: 0.05, rise: 0.25, alpha: 0.3 });
+      if (D.green) { S.glow.material.opacity = 0.22 + 0.12 * Math.sin(G.time * 6); g.getWorldPosition(_v7); G.fx.glow.add(_v7.x, _v7.y, _v7.z, 0.2, 0.24, 1, 0.43, 0.55, 0); }
       // grab a green one (VR: grip near it; desktop: look at it and click)
       if (D.green && D.state === 'lit') {
         if (G.xr) {
-          for (const h of G.input.hands) if (h.connected && !h.busy && h.down('grip') && h.pos.distanceTo(g.position) < 0.18) { D.state = 'held'; D.hand = h; h.busy = true; h.pulse(0.6, 40); G.audio.sfx.pick(); break; }
+          for (const h of G.input.hands) if (h.connected && !h.busy && h.down('grip') && h.pos.distanceTo(g.position) < 0.2) { D.state = 'held'; D.hand = h; h.busy = true; h.pulse(0.6, 40); G.audio.sfx.pick(); break; }
         } else if (G.input.desk.click) {
           _v4.set(0, 0, -1).applyQuaternion(Head.quat); _v5.subVectors(g.position, Head.pos);
           const tt = _v5.dot(_v4);
@@ -19394,9 +19698,9 @@ class DynamiteToss extends Pattern {
 //  Phase 3, MIDNIGHT (C, the finale): the posse, the ricochets and the last ride
 // ---------------------------------------------------------------------------
 // 8. GHOST POSSE - spectral riders gallop in a ring around the box like a carousel (they bob
-//    on the double-time gallop) and fire inward on beats 2 and 4; their shots fizzle out in
-//    the middle of the box. Two gaps in the ring ride round with it: stay out by the wall, in
-//    a gap. Every 2 bars the ring turns round. The hoofbeats are spatialized.
+//    on the double-time gallop, their legs churning mist) and fire inward on beats 2 and 4; their
+//    shots fizzle out in the middle of the box. Two gaps in the ring ride round with it: stay out
+//    by the wall, in a gap. Every 2 bars the ring turns round. The hoofbeats are spatialized.
 class GhostPosse extends Pattern {
   onStart() {
     OutlawKit.init();
@@ -19412,12 +19716,13 @@ class GhostPosse extends Pattern {
     this.fade = 0; this.first = this.fragment ? 1 : 5;   // a bar to watch them ride in
     OutlawKit.posse = this;
     G.audio.sfx.hoofRush();
+    if (G.boss && !this.fragment) G.boss.setPose('taunt');
     const B = G.battle;
     if (B && !B.taught.posse) { B.taught.posse = true; G.ui.showPrompt('GHOST POSSE!  STAY OUT BY THE WALL, IN A GAP', 2.8, '#cfd8ff'); }
   }
   riderPos(R, out) {
     const A = G.arena, a = this.ang + R.i * this.step;
-    return out.set(A.center.x + Math.cos(a) * this.R, A.min.y - 0.32, A.center.z + Math.sin(a) * this.R);
+    return out.set(A.center.x + Math.cos(a) * this.R, A.min.y - 0.06, A.center.z + Math.sin(a) * this.R);
   }
   volleyAt(n) { const k = n % this.bpb; return (k === 1 || k === 3) && n >= this.first && n <= this.beats - 3; }
   onBeat(n, when) {
@@ -19441,6 +19746,7 @@ class GhostPosse extends Pattern {
         const b = OUT.shot('slug', _v1, _v2.set(Math.cos(a + da) * sp, 0, Math.sin(a + da) * sp), this.dmg); if (!b) return;
         b.life = (this.R - 0.3) / (sp * k); b.glowCol.setHex(0x9ac8ff); b.color.setHex(0xdfe8ff);
       }
+      if (this.fade > 0.5) OFX.flare(_v1, 0.35, 0.1, 0.6, 0.8, 1, { spikes: 4 });
     }
     G.audio.sfx.posseVolley(when);
   }
@@ -19453,19 +19759,21 @@ class GhostPosse extends Pattern {
     for (const R of this.riders) R.glint = Math.max(0, R.glint - dt);
     if (OutlawKit.posse !== this) return;   // a newer posse (the last ride) draws the riders
     const K = OutlawKit, A = G.arena;
-    K.riderMat.opacity = 0.24 * this.fade;
+    K.ghostU.uOpacity.value = this.fade * 0.7; K.ghostU.uRate.value = 15;
     let m = 0;
     for (const R of this.riders) {
       this.riderPos(R, _v1);
       _v1.y += Math.abs(Math.sin(this.pb * TAU + R.i)) * 0.12;   // a bob every half beat: the gallop
       const a = this.ang + R.i * this.step;
-      const yaw = Math.atan2(-Math.cos(a), -Math.sin(a)) + Math.PI * (1 - this.dirS) / 2;   // nose along the ring (turning round with it)
-      _m1.compose(_v1, _q1.setFromAxisAngle(UP, yaw), _s1.setScalar(0.85));
+      const yaw = Math.atan2(-Math.sin(a), Math.cos(a)) + Math.PI * (1 - this.dirS) / 2;   // nose along the ring (turning round with it)
+      // its gun hand (its right, -x) faces the middle of the box: mirror it when the ring runs the other way
+      _m1.compose(_v1, _q1.setFromAxisAngle(UP, yaw), _s1.set(0.55 * (this.dirS >= 0 ? 1 : -1), 0.55, 0.55));
       K.riders.setMatrixAt(m++, _m1);
       const gl = this.fade * (0.12 + (R.glint > 0 ? 0.5 * Math.sin((1 - R.glint / this.bd) * Math.PI) : 0));
-      // a cold glow on each ghost, brighter on the gun a beat before it fires
+      // a cold glow on each ghost's gun, brighter a beat before it fires; mist off the hooves
       _v2.set(A.center.x - _v1.x, 0, A.center.z - _v1.z).normalize();
-      G.fx.glow.add(_v1.x + _v2.x * 0.3, _v1.y + 1.25, _v1.z + _v2.z * 0.3, R.glint > 0 ? 0.26 : 0.4, 0.6, 0.75, 1, gl, 0);
+      G.fx.glow.add(_v1.x + _v2.x * 0.42, _v1.y + 1.24, _v1.z + _v2.z * 0.42, R.glint > 0 ? 0.26 : 0.34, 0.6, 0.75, 1, gl, 0);
+      if (Math.random() < dt * 2.5 * this.fade) OFX.dust(_v3.set(_v1.x, A.min.y - 0.2, _v1.z), 1, 0.35, 1.1, [0.55, 0.68, 1.0], { speed: 0.15, rise: 0.25, alpha: 0.22 });
     }
     K.riders.count = this.fade > 0.01 ? m : 0; K.riders.instanceMatrix.needsUpdate = true;
     // moonlight on the walls shows where the gaps are
@@ -19476,11 +19784,11 @@ class GhostPosse extends Pattern {
     }
   }
   isIdle() { return !G.bullets.pools.slug.active.length && this.fade <= 0.01; }
-  onEnd() { if (OutlawKit.posse === this) { OutlawKit.posse = null; if (OutlawKit.ready) OutlawKit.riders.count = 0; } }
+  onEnd() { if (OutlawKit.posse === this) { OutlawKit.posse = null; if (OutlawKit.ready) OutlawKit.riders.count = 0; } if (G.boss && !this.fragment && G.boss.pose === 'taunt') G.boss.setPose('idle'); }
 }
 
 // 9. MOONLIGHT RICOCHET - his shots bounce off the box walls, at most 3 times each. A beat
-//    before each shot its whole bounce path is drawn as a faint silver sight line, so you
+//    before each shot its whole bounce path is traced in drifting motes of moonlight, so you
 //    read the bounces in 3D and stand clear of every leg. (Spared GRANDIOSO? his spotlight
 //    shows one path a beat earlier, warm and bright.)
 class MoonlightRicochet extends Pattern {
@@ -19518,12 +19826,12 @@ class MoonlightRicochet extends Pattern {
   queue(fireAt, early) {
     const pts = this.plan(G.soul.pos); if (!pts) return;
     const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
-    const S = { pts, cum, len: cum[cum.length - 1], fireAt, sp: 3.3 + 0.2 * this.intensity, early };
+    const S = { pts, cum, len: cum[cum.length - 1], fireAt, sp: 3.3 + 0.2 * this.intensity, early, born: this.pb };
     this.shots.push(S);
-    // the sight line: every leg at once, until the slug has run along it
+    // the sight line: a faint thread plus drifting motes along every leg, until the slug has run along it
     const lead = (fireAt - this.pb) * this.bd, k = Math.max(0.3, G.bullets.speedMul), col = early ? 0xfff0c8 : 0xcfd8ff;
-    for (let i = 1; i < pts.length; i++) G.tele.line(pts[i - 1], pts[i], early ? 0.012 : 0.007, col, lead + cum[i] / (S.sp * k) + 0.05, { alpha: early ? 0.9 : 0.55 });
-    for (let i = 1; i < pts.length - 1; i++) G.tele.ring(pts[i], this.wallNormal(pts[i], _v3), 0.07, col, lead + cum[i] / (S.sp * k), { pulse: 1, alpha: 0.7 });
+    S.until = lead + S.len / (S.sp * k) + 0.05; S.t = 0;
+    for (let i = 1; i < pts.length - 1; i++) G.tele.ring(pts[i], this.wallNormal(pts[i], _v3), 0.08, col, lead + cum[i] / (S.sp * k), { pulse: 1, alpha: 0.8 });
     OUT.glint(OUT.muzzle(0, _v1), lead, 0.85, 0.9, 1);
     if (early) this.spotlight(S, lead + 0.6);
   }
@@ -19558,17 +19866,22 @@ class MoonlightRicochet extends Pattern {
     b.beh = BEH.OWNER; b.owner = this; b.dmg = this.dmg; b.life = 12; b.bounds = false;
     b.p0 = 0; b.p1 = S.sp; b.p2 = 1; b.glowCol.setHex(0xcfd8ff); b.scale = 1.25;
     b.ricochet = S; S.b = b;
-    OUT.muzzle(0, _v1); OUT.flash(_v1, 0.7);
-    G.audio.sfx.revolverShot(when, 0.7, _v1);
+    OUT.bossShot(0, 0.75);
+    G.audio.sfx.revolverShot(when, 0.7, OUT.muzzle(0, _v1));
   }
   bulletUpdate(b, dt) {
     const S = b.ricochet; if (!S) { b.age = b.life + 1; return; }
     b.p0 += dt * b.p1 * Math.max(0.3, G.bullets.speedMul);
     const d = b.p0;
-    if (d >= S.len) { G.fx.sparkle(b.pos, 4); b.die(); b.collide = false; S.done = true; b.ricochet = null; return; }
+    if (d >= S.len) { OFX.spark(b.pos, 6, 0.8, 0.85, 1, 1.6, { life: 0.3 }); b.die(); b.collide = false; S.done = true; b.ricochet = null; return; }
     let i = b.p2; while (i < S.pts.length - 1 && S.cum[i] < d) i++;
-    // passed a bounce: a spark, a little dust and a ricochet whine
-    if (i > b.p2) { const q = S.pts[i - 1]; G.fx.sparkle(q, 8); G.audio.sfx.ricochet(undefined, q); b.p2 = i; }
+    // passed a bounce: sparks off the wall, a flare, a ricochet whine
+    if (i > b.p2) {
+      const q = S.pts[i - 1], n = this.wallNormal(q, _v5);
+      OFX.spark(q, 10, 0.85, 0.9, 1, 2.6, { dir: n, spread: 0.9, life: 0.35, grav: 2 });
+      OFX.flare(q, 0.45, 0.12, 0.8, 0.88, 1, { spikes: 4 });
+      G.audio.sfx.ricochet(undefined, q); b.p2 = i;
+    }
     const a = S.pts[i - 1], c = S.pts[i], u = (d - S.cum[i - 1]) / Math.max(1e-4, S.cum[i] - S.cum[i - 1]);
     b.pos.lerpVectors(a, c, u);
     b.vel.subVectors(c, a).setLength(b.p1);   // (the slug points along its flight)
@@ -19576,15 +19889,27 @@ class MoonlightRicochet extends Pattern {
   update(dt) {
     super.update(dt);
     if (this.spotT > 0) { this.spotT -= dt; OutlawKit.spotMat.opacity = 0.14 * Math.min(1, this.spotT * 3); if (this.spotT <= 0) OutlawKit.spot.visible = false; }
+    // moonlight motes drifting along every planned path (ahead of the slug)
+    for (const S of this.shots) {
+      S.t += dt; if (S.t > S.until) continue;
+      const done = S.b && S.b.ricochet ? S.b.p0 : 0, fade = Math.min(1, S.t * 4) * Math.min(1, (S.until - S.t) * 4);
+      const col = S.early ? [1, 0.94, 0.78] : [0.8, 0.86, 1];
+      for (let dd = done + ((G.time * 0.5) % 0.13); dd < S.len; dd += 0.13) {
+        let i = 1; while (i < S.pts.length - 1 && S.cum[i] < dd) i++;
+        const a = S.pts[i - 1], c = S.pts[i], u = (dd - S.cum[i - 1]) / Math.max(1e-4, S.cum[i] - S.cum[i - 1]);
+        _v1.lerpVectors(a, c, clamp(u, 0, 1));
+        G.fx.glow.add(_v1.x, _v1.y, _v1.z, 0.05, col[0], col[1], col[2], 0.9 * fade, 0);
+      }
+    }
   }
   isIdle() { return !this.shots.length; }
   onEnd() { this.shots.length = 0; if (OutlawKit.ready) OutlawKit.spot.visible = false; }
 }
 
 // 10. YEED YOUR LAST HAW - the final attack: a midnight medley, everything back at once,
-//    cycling every 2 bars (tumbleweeds, cacti, lassos, the posse). Then the clock tower in the
-//    distance starts ticking again; in the last 4 bars the bullets slow down and his sign
-//    shrinks: "...hold on. hold on. just... one more sundown. one more."
+//    cycling every 2 bars (tumbleweeds, cacti, lassos, the posse). Then a ghostly clock face
+//    rises in the sky behind him and starts ticking again, like the tower's; in the last 4 bars
+//    the bullets slow down and his sign shrinks: "...hold on. hold on. just... one more sundown."
 class YeedYourLastHaw extends Pattern {
   onStart() {
     OutlawKit.init();
@@ -19613,19 +19938,20 @@ class YeedYourLastHaw extends Pattern {
     const P = this.seq[++this.idx % this.seq.length];
     const f = this.frag(P, 2, 1.6);
     f.start((this.startBeat + n) / this.bpb); this.frags.push(f);
-    if (G.boss) G.boss.doorsPulse();
+    if (G.boss) { G.boss.doorsPulse(); G.boss.setPose(P === LassoLoops ? 'lasso' : P === GhostPosse ? 'draw' : 'taunt'); }
   }
   // the clock starts again; the posse and the herd ride one last time, slower and slower
   lastRide(n, when) {
     for (const f of this.frags) f.stopSpawning();
     for (const P of [GhostPosse, TumbleweedStampede]) { const f = this.frag(P, 4, 1.3); f.start((this.startBeat + n) / this.bpb); this.frags.push(f); }
-    if (DesertKit.ready) DesertKit.startClock();
+    if (DesertKit.ready) { DesertKit.startClock(); DesertKit.showSkyClock(true); }
     this.ticking = true;
     G.audio.sfx.bell(when, DesertKit.ready ? DesertKit.towerPos : null, 0.5);
+    if (G.boss) G.boss.setPose('idle');
     G.battle.after(this.bd * 2, () => {
       if (G.battle.pattern !== this) return;
       G.ui.say(OLINES.oneMore.text, OLINES.oneMore);
-      if (G.boss) { G.boss.rattled = 0; G.boss.tired = true; }
+      if (G.boss) { G.boss.rattled = 0; G.boss.tired = true; G.boss.setPose('holster'); }
     });
   }
   update(dt) {
@@ -19636,15 +19962,16 @@ class YeedYourLastHaw extends Pattern {
     for (let i = this.frags.length - 1; i >= 0; i--) { const f = this.frags[i]; if (!f.spawning && f.isIdle() && f.pb > f.beats) { f.end(); this.frags.splice(i, 1); } }
   }
   isIdle() { return this.frags.every((f) => f.isIdle()); }
-  onEnd() { for (const f of this.frags) f.end(); this.frags.length = 0; G.bullets.speedMul = this.speedMul; if (OutlawKit.ready) OutlawKit.hideAll(); }
+  onEnd() { for (const f of this.frags) f.end(); this.frags.length = 0; G.bullets.speedMul = this.speedMul; if (OutlawKit.ready) OutlawKit.hideAll(); if (DesertKit.ready) DesertKit.showSkyClock(false); }
 }
 
 // ---------------------------------------------------------------------------
 //  THE STARE-DOWN (GAP 1). This bar line is two beats from the song's first silence. He fans
 //  a ring of silver stars around you; when the music stops everything freezes: the stars hang
-//  in the air, a lone tumbleweed drifts across his mesa in slow motion, the wind howls and he
-//  spins his revolver, eyes locked on you. When B hits (the next bar line) every star fires
-//  at once, in at where you were. The ring has an obvious gap - be in it (or out of the ring).
+//  in the air, the dust hangs, a lone tumbleweed drifts across his mesa in slow motion, the
+//  wind howls, his eyes flash and he spins his revolver, eyes locked on you. When B hits (the
+//  next bar line) every star fires at once, in at where you were. The ring has an obvious gap -
+//  be in it (or out of the ring).
 // ---------------------------------------------------------------------------
 class StareDown extends Pattern {
   onStart() {
@@ -19676,7 +20003,7 @@ class StareDown extends Pattern {
       b.beh = BEH.OWNER; b.owner = this; b.dmg = this.dmg; b.life = 30; b.bounds = false; b.collide = false;
       b.p0 = h / 2; b.p2 = 3.4; b.base.copy(_v1); b.tgt.copy(this.C).addScaledVector(this.dirs[i], this.R);
     }
-    G.audio.sfx.hammerFan(when);
+    G.audio.sfx.hammerFan(when); OUT.bossShot(0, 0.6);
   }
   onBeat(n, when) {
     this.n = n;
@@ -19684,19 +20011,26 @@ class StareDown extends Pattern {
     if (n === this.hitAt) this.fireAll(when);
   }
   freeze(when) {
-    G.bullets.frozen = true;
-    if (G.boss) { G.boss.spinGun = this.bd * 2; G.boss.stare = 1; G.boss.setPose('spin'); }
+    G.bullets.frozen = true; OFX.frozen = true;
+    if (G.boss) {
+      G.boss.spinGun = this.bd * 2; G.boss.stare = 1; G.boss.setPose('spin');
+      // his eyes flash
+      G.boss.head.localToWorld(_v1.set(0.26, 0.12, 0.7)); OFX.flare(_v1, 0.5, this.bd, 1, 0.95, 0.8, { glint: true, spikes: 4 });
+      G.boss.head.localToWorld(_v1.set(-0.26, 0.12, 0.7)); OFX.flare(_v1, 0.5, this.bd, 1, 0.95, 0.8, { glint: true, spikes: 4 });
+    }
     OutlawKit.rollWeed(this.bd * 2.2);
-    G.audio.sfx.windHowl(1.4);
+    G.audio.sfx.windHowl(1.4); G.audio.sfx.stareSting();
     // the way out, shown plainly: a line of sunlight through the gap
     G.tele.line(this.C, _v1.copy(this.C).addScaledVector(this.gap, 1.5), 0.02, 0xfff3c4, this.bd * 2.05, { pulse: 1, alpha: 0.8 });
     G.tele.ring(_v1.copy(this.C).addScaledVector(this.gap, this.R + 0.25), this.gap, 0.4, 0xfff3c4, this.bd * 2.05, { pulse: 1, alpha: 0.7 });
     G.ui.showPrompt('THE STARE-DOWN', 1.6, '#fff3c4');
   }
   fireAll(when) {
-    G.bullets.frozen = false;
+    G.bullets.frozen = false; OFX.frozen = false;
     if (G.boss) { G.boss.stare = 0; G.boss.setPose('draw'); }
     G.audio.sfx.revolverShot(when, 1); G.audio.sfx.hammerFan(when); G.audio.sfx.revolverShot(when + 0.06, 0.6);
+    OUT.bossShot(0, 1.1);
+    for (const b of G.bullets.pools.sstar.active) if (b.owner === this && Math.random() < 0.35) OFX.flare(b.pos, 0.3, 0.12, 1, 0.95, 0.7, { spikes: 4 });
     G.input.pulseAll(0.7, 90);
     G.battle.applyPhase(1);   // GOLDEN HOUR (the light starts turning gold right now)
   }
@@ -19713,7 +20047,7 @@ class StareDown extends Pattern {
     }
   }
   isIdle() { return !G.bullets.pools.sstar.active.length; }
-  onEnd() { G.bullets.frozen = false; if (G.boss) G.boss.stare = 0; }
+  onEnd() { G.bullets.frozen = false; OFX.frozen = false; if (G.boss) G.boss.stare = 0; }
 }
 
 // SUNSET (GAP 2): two beats from the second silence he holsters and looks at the sun. In the
@@ -19725,7 +20059,11 @@ class SunsetSeq extends Pattern {
   onBeat(n, when) {
     const sky = G.bg.desert;
     if (n === 2) {
-      if (sky) sky.setMode('night', this.bd * 2);
+      if (sky) {
+        sky.setMode('night', this.bd * 2);
+        // the last flash of the sun on the horizon
+        const sd = sky.sunDir; _v1.copy(sd).multiplyScalar(120); _v1.y = Math.max(_v1.y, 2); OFX.flare(_v1, 26, this.bd * 1.6, 1, 0.6, 0.25, { glint: true, spikes: 6 });
+      }
       if (G.boss) { G.boss.applyPhaseLook(2, false, this.bd * 2); G.boss.hatFly(); }
       if (DesertKit.ready) DesertKit.hawkOn = false;
       G.audio.sfx.windHowl(1.2); G.audio.sfx.hatWhoosh();
@@ -19740,6 +20078,7 @@ class SunsetSeq extends Pattern {
   isIdle() { return true; }
   onEnd() { if (G.boss) G.boss.lookSun = 0; }
 }
+// @@/PATTERNS
 
 // ---------------------------------------------------------------------------
 //  THE FINAL DUEL (the outro). The box is gone: a dusty street at midnight, SUNDOWN about
@@ -19941,6 +20280,15 @@ Object.assign(Sfx.prototype, {
   // a cash-register tick that rises as the bounty climbs
   cashTick(t, k = 0) { if (this.a.gate('cash', 0.04)) this.tone({ type: 'square', f: 900 + 900 * k, t, dur: 0.035, vol: 0.035 }); },
   paperTear() { this.noise({ type: 'bandpass', f: 900, f2: 3200, Q: 2, dur: 0.28, vol: 0.24, slide: 0.25 }); },
+  // a bounty paying out: a spill of coins
+  coinBurst(pos) { const dest = this.at(pos), t = this.a.now; for (let i = 0; i < 7; i++) { const tt = t + i * 0.035 + Math.random() * 0.02; this.tone({ type: 'sine', f: 2600 + Math.random() * 1800, t: tt, dur: 0.16, vol: 0.035, dest }); this.tone({ type: 'sine', f: 5200 + Math.random() * 900, t: tt + 0.01, dur: 0.1, vol: 0.015, dest }); } },
+  // the stare-down: a low twang and a long, falling whistle
+  stareSting() {
+    const t = this.a.now;
+    this.tone({ type: 'triangle', f: 110, f2: 104, t, dur: 1.6, vol: 0.12, attack: 0.005 });
+    this.tone({ type: 'sawtooth', f: 220, f2: 208, t, dur: 0.9, vol: 0.025, attack: 0.005 });
+    this.tone({ type: 'sine', f: 1480, f2: 990, t: t + 0.1, dur: 1.5, vol: 0.05, attack: 0.08, vib: 14, vibRate: 6 });
+  },
   // the train: a whistle of two sines and a chug of filtered noise on the gallop
   trainWhistle() { const t = this.a.now; for (const [f, v] of [[466, 0.05], [587, 0.04], [698, 0.025]]) this.tone({ type: 'sine', f, t, dur: 1.4, vol: v, attack: 0.12, hold: 0.9, vib: 4, vibRate: 5 }); this.noise({ type: 'bandpass', f: 1800, Q: 2, t, dur: 1.3, vol: 0.03, attack: 0.1 }); },
   trainChug(t, accent) { this.noise({ type: 'bandpass', f: accent ? 300 : 420, Q: 0.9, t, dur: accent ? 0.16 : 0.1, vol: accent ? 0.12 : 0.06 }); },
@@ -20295,7 +20643,7 @@ BOSSES.outlaw = {
     DesertKit.update(dt, dt); FenceKit.update(dt); OutlawKit.update(dt); TrainKit.update(dt); OFX.update(dt);
     if (FenceKit.ready && !DesertLight.steady.some((l) => l.fence)) DesertLight.steady.push(...FenceKit.lampLights());
     DrawKit.update(rdt); DrawKit.updateCam(dt);
-    OUT.updateGlints(dt); if (G.boss) OUT.floorDust();
+    OUT.updateGlints(dt); if (G.boss) { OUT.floorDust(); OUT.trails(); }
     if (G.bg.theme === 'desert') DesertLight.apply(dt);
     if (!B || !G.boss) return;
     // HOLSTER: drawing during his attack calls the act off
