@@ -3153,8 +3153,8 @@ class Background {
   // void theme from the active boss: 'manor' (checker void + mansion) or 'server' (navy + hex rain)
   setTheme(name) {
     this.theme = name;
-    const manor = name === 'manor';
-    this.sky.visible = manor; this.floor.visible = manor; this.manor.visible = manor;
+    const manor = name === 'manor', hall = name === 'hall';
+    this.sky.visible = manor || hall; this.floor.visible = manor; this.manor.visible = manor;
     if (name === 'server' && !this.server) this.buildServer();
     if (this.server) for (const m of this.server.meshes) m.visible = name === 'server';
     if (name === 'circus' && !this.circus) this.circus = new CircusSky();   // boss 3's sky above the clouds
@@ -3270,6 +3270,7 @@ class Background {
     this.uniforms.uTime.value = t;
     this.uniforms.uPulse.value = (bass * 1.1 + G.fx.beatPulse * 0.35) * amp;
     this.uniforms.uDim.value = this.dim;
+    if (this.theme === 'hall') return;   // boss 1: the grand hall (HallKit) stands between you and the void
     for (let i = 0; i < this.winCount; i++) {
       const f = this.winOn[i] * (0.75 + 0.25 * Math.sin(t * 3 + this.winFlicker[i]) * (Flash.reduced ? 0.3 : 1));
       this.windows.setColorAt(i, _c1.setHex(CONFIG.COL.gold).multiplyScalar(f));
@@ -6921,6 +6922,1629 @@ registerKit(FurnKit, function () { this.types = {}; this.pendulums = []; });
 registerKit(BallKit);
 function disposeKits() { for (const k of KITS) k.dispose(); }
 
+// @@MANOR (boss 1, remastered)
+// ============================================================================
+//  THE MANOR, remastered (boss 1): the fight moves inside the grand hall. You stand on the gallery;
+//  THE PROPRIETOR stands on the ballroom floor below. Textures, the hall, its light, its ghosts.
+// ============================================================================
+// ---------------------------------------------------------------- the manor's textures (canvas, built with the fight)
+// colour maps multiply over each part's vertex colour (so most parts are white); one cache, freed with the fight
+const ManorTex = {
+  cache: {},
+  get(name) { if (!this.cache[name]) { this.cache[name] = this['make_' + name](); this.cache[name].userData.shared = true; } return this.cache[name]; },
+  dispose() { for (const k in this.cache) this.cache[k].dispose(); this.cache = {}; },
+  hh(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); },
+  // ---- the hall's wallpaper: plum damask with a satin-sheen motif edged in gold leaf (half-drop repeat)
+  make_damask() {
+    const N = 512;
+    return softTex(N, N, (g) => {
+      const bg = g.createLinearGradient(0, 0, N, 0);
+      bg.addColorStop(0, '#2a0a33'); bg.addColorStop(0.5, '#320c3c'); bg.addColorStop(1, '#2a0a33');
+      g.fillStyle = bg; g.fillRect(0, 0, N, N);
+      for (let x = 0; x < N; x += 8) { g.fillStyle = 'rgba(255,210,255,0.022)'; g.fillRect(x, 0, 3, N); }
+      for (const [cx, cy] of [[128, 128], [384, 384]]) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) manorDamask(g, cx + ox, cy + oy, 104, 1);
+      for (const [cx, cy] of [[384, 128], [128, 384]]) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) manorDamask(g, cx + ox, cy + oy, 38, 0);
+      // paper grain and a little age
+      for (let i = 0; i < 12000; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,220,255'},${(Math.random() * 0.05).toFixed(3)})`; g.fillRect(Math.random() * N, Math.random() * N, 1, 1 + Math.random() * 3); }
+    }, { repeat: true });
+  },
+  // ---- the ballroom floor: polished black and cream marble, veined, with brass inlay (2 x 2 tiles)
+  make_marble() {
+    const N = 512, T = N / 2, hh = this.hh;
+    return softTex(N, N, (g) => {
+      pixelFill(g, N, N, (x, y) => {
+        const tx = Math.floor(x / T), ty = Math.floor(y / T), dark = (tx + ty) % 2 === 0;
+        const u = x / T, v = y / T, sd = tx * 7 + ty * 13;
+        const warp = ONoise.fbm2(u * 1.6 + sd, v * 1.6 + sd * 0.5, 4, 256);
+        const vein = Math.abs(Math.sin((u * 0.9 + v * 1.4 + warp * 3.4 + hh(sd) * 6) * 2.2));
+        const fine = Math.pow(1 - vein, 18) + Math.pow(1 - Math.abs(Math.sin((u * 2.3 - v * 0.8 + warp * 5) * 3.1)), 40) * 0.5;
+        const cloud = ONoise.fbm2(u * 3.2 + 11 + sd, v * 3.2 + 5, 3, 256);
+        let r, gg, b;
+        if (dark) { const k = 10 + cloud * 16; r = k + 3 + fine * 70; gg = k + fine * 64; b = k + 8 + fine * 84; }
+        else { const k = 64 + cloud * 26; const vv = fine * 70; r = k + 34 + vv; gg = k * 0.28 + vv * 0.55; b = k * 0.42 + vv * 0.62; }
+        const ex = Math.min(x % T, T - 1 - (x % T)), ey = Math.min(y % T, T - 1 - (y % T)), e = Math.min(ex, ey);
+        if (e < 2) { const sh = 0.75 + 0.25 * hh(x * 3 + y); r = 190 * sh; gg = 148 * sh; b = 70 * sh; }
+        else if (e < 4) { r *= 0.62; gg *= 0.62; b *= 0.62; }
+        return [clamp(r, 0, 255), clamp(gg, 0, 255), clamp(b, 0, 255)];
+      });
+    }, { repeat: true });
+  },
+  // ---- the gallery floor: French-chevron parquet in honey, walnut and mahogany
+  make_parquet() {
+    const N = 256, Lc = 32, W = 16, hh = this.hh;
+    return softTex(N, N, (g) => {
+      pixelFill(g, N, N, (x, y) => {
+        const col = Math.floor(x / Lc), xx = x % Lc, dir = col % 2 ? 1 : -1;
+        const t = ((y + dir * xx) % N + N) % N, pi = Math.floor(t / W), across = t % W;
+        const id = col * 31 + pi * 7;
+        const tone = 0.7 + 0.4 * hh(id), warm = hh(id * 1.9);
+        const grain = 0.5 + 0.5 * Math.sin((xx * 0.35 + ONoise.n2(x * 0.2 + id, y * 0.9) * 4) * 2.4 + id);
+        let k = tone * (0.84 + 0.16 * grain);
+        if (across < 1 || across > W - 2) k *= 0.45;
+        if (xx < 1 || xx > Lc - 2) k *= 0.55;
+        return [clamp((78 + 34 * warm) * k, 0, 255), clamp((40 + 14 * warm) * k, 0, 255), clamp((22 + 8 * warm) * k, 0, 255)];
+      });
+    }, { repeat: true });
+  },
+  // ---- the gallery rug: crimson field, navy borders, a gold medallion
+  make_rug() {
+    const N = 512;
+    return softTex(N, N, (g) => {
+      const C = N / 2;
+      g.fillStyle = '#3a0a18'; g.fillRect(0, 0, N, N);
+      // field pattern: small gold-and-pink flowers on a lattice
+      for (let y = 40; y < N - 40; y += 22) for (let x = 40; x < N - 40; x += 22) {
+        if (Math.hypot(x - C, y - C) < 150) continue;
+        g.fillStyle = (x + y) % 44 ? 'rgba(170,130,60,0.3)' : 'rgba(170,80,110,0.28)';
+        g.fillRect(x - 2, y - 2, 4, 4); g.fillRect(x - 5, y - 1, 10, 2); g.fillRect(x - 1, y - 5, 2, 10);
+      }
+      // borders
+      const band = (o, w, col) => { g.fillStyle = col; g.fillRect(o, o, N - 2 * o, w); g.fillRect(o, N - o - w, N - 2 * o, w); g.fillRect(o, o, w, N - 2 * o); g.fillRect(N - o - w, o, w, N - 2 * o); };
+      band(0, 30, '#120e24'); band(30, 4, '#8a6a30'); band(34, 14, '#4a0e1e'); band(48, 3, '#8a6a30'); band(51, 8, '#120e24');
+      for (let i = 12; i < N - 12; i += 16) for (const [x, y] of [[i, 15], [i, N - 15], [15, i], [N - 15, i]]) { g.fillStyle = '#8a6a30'; g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 6, y); g.lineTo(x, y + 6); g.lineTo(x - 6, y); g.fill(); g.fillStyle = '#6a1428'; g.fillRect(x - 1.5, y - 1.5, 3, 3); }
+      // corner pieces and the medallion
+      const star = (cx, cy, r, n, inner, col) => { g.fillStyle = col; g.beginPath(); for (let k = 0; k <= n * 2; k++) { const a = k / (n * 2) * TAU - Math.PI / 2, rr = k % 2 ? r * inner : r; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); } g.fill(); };
+      for (const [cx, cy] of [[59, 59], [N - 59, 59], [59, N - 59], [N - 59, N - 59]]) { star(cx, cy, 46, 8, 0.6, '#120e24'); star(cx, cy, 30, 8, 0.55, '#8a6a30'); star(cx, cy, 16, 8, 0.6, '#3a0a18'); }
+      star(C, C, 150, 12, 0.72, '#120e24'); star(C, C, 140, 12, 0.72, '#8a6a30'); star(C, C, 132, 12, 0.72, '#1a1634');
+      g.fillStyle = '#3a0a18'; g.beginPath(); g.arc(C, C, 84, 0, TAU); g.fill();
+      g.strokeStyle = '#8a6a30'; g.lineWidth = 4; g.beginPath(); g.arc(C, C, 84, 0, TAU); g.stroke();
+      star(C, C, 70, 8, 0.45, '#8a6a30'); star(C, C, 44, 8, 0.5, '#8a3a52'); star(C, C, 22, 8, 0.5, '#c8a878');
+      for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; g.fillStyle = '#8a3a52'; g.beginPath(); g.arc(C + Math.cos(a) * 112, C + Math.sin(a) * 112, 5, 0, TAU); g.fill(); }
+      // wear and pile
+      pixelNoise(g, N, N, 0.18, 0.06);
+    });
+  },
+  // ---- mahogany wainscot: raised panels, gold beading, a chair rail (two panels per tile)
+  make_wainscot() {
+    const W = 512, H = 256, hh = this.hh;
+    return softTex(W, H, (g) => {
+      pixelFill(g, W, H, (x, y) => { const gr = ONoise.fbm2(x / W * 3, y / H * 40, 3, 256), k = 0.75 + 0.35 * gr; return [64 * k, 30 * k, 16 * k]; });
+      // chair rail and baseboard
+      const rail = (y0, h, top) => { const gr = g.createLinearGradient(0, y0, 0, y0 + h); gr.addColorStop(0, top); gr.addColorStop(0.5, '#5a2a14'); gr.addColorStop(1, '#1a0a04'); g.fillStyle = gr; g.fillRect(0, y0, W, h); };
+      rail(0, 22, '#8a4a24'); rail(H - 26, 26, '#4a2410');
+      g.fillStyle = '#c8a040'; g.fillRect(0, 22, W, 2); g.fillRect(0, H - 28, W, 2);
+      for (let i = 0; i < 2; i++) {
+        const x0 = i * 256 + 26, y0 = 44, w = 204, h = H - 44 - 50;
+        // bevel: light top/left, dark bottom/right; the raised field slightly lighter
+        g.fillStyle = 'rgba(255,190,140,0.14)'; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + w, y0); g.lineTo(x0 + w - 14, y0 + 14); g.lineTo(x0 + 14, y0 + 14); g.lineTo(x0 + 14, y0 + h - 14); g.lineTo(x0, y0 + h); g.fill();
+        g.fillStyle = 'rgba(0,0,0,0.38)'; g.beginPath(); g.moveTo(x0 + w, y0); g.lineTo(x0 + w, y0 + h); g.lineTo(x0, y0 + h); g.lineTo(x0 + 14, y0 + h - 14); g.lineTo(x0 + w - 14, y0 + h - 14); g.lineTo(x0 + w - 14, y0 + 14); g.fill();
+        g.fillStyle = 'rgba(255,200,150,0.06)'; g.fillRect(x0 + 14, y0 + 14, w - 28, h - 28);
+        g.strokeStyle = '#b8903c'; g.lineWidth = 2; g.strokeRect(x0 - 5, y0 - 5, w + 10, h + 10);
+        g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1; g.strokeRect(x0 - 3, y0 - 3, w + 6, h + 6);
+      }
+      pixelNoise(g, W, H, 0.1, 0.03);
+    }, { repeat: true });
+  },
+  // ---- the coffered ceiling: plum coffers in gilded frames with a rosette (one coffer per tile)
+  make_coffer() {
+    const N = 256;
+    return softTex(N, N, (g) => {
+      g.fillStyle = '#3a1a10'; g.fillRect(0, 0, N, N);
+      const gr = g.createLinearGradient(0, 0, N, N); gr.addColorStop(0, '#5a2c18'); gr.addColorStop(1, '#24100a');
+      g.fillStyle = gr; g.fillRect(0, 0, N, 26); g.fillRect(0, 0, 26, N);
+      g.fillStyle = '#1c0c06'; g.fillRect(0, N - 26, N, 26); g.fillRect(N - 26, 0, 26, N);
+      // stepped recess
+      for (let k = 0; k < 4; k++) { const o = 26 + k * 9; g.fillStyle = ['#2a0e2c', '#22091f', '#1c0719', '#170513'][k]; g.fillRect(o, o, N - 2 * o, N - 2 * o); g.strokeStyle = k === 1 ? '#c8a040' : 'rgba(0,0,0,0.35)'; g.lineWidth = k === 1 ? 2 : 1; g.strokeRect(o + 0.5, o + 0.5, N - 2 * o - 1, N - 2 * o - 1); }
+      // rosette
+      const C = N / 2;
+      for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; g.fillStyle = '#b8903c'; g.beginPath(); g.ellipse(C + Math.cos(a) * 18, C + Math.sin(a) * 18, 13, 5, a, 0, TAU); g.fill(); }
+      g.fillStyle = '#e8c870'; g.beginPath(); g.arc(C, C, 9, 0, TAU); g.fill();
+      g.fillStyle = '#7a5a20'; g.beginPath(); g.arc(C, C, 4, 0, TAU); g.fill();
+      // dentils along the frame
+      for (let i = 30; i < N - 30; i += 10) { g.fillStyle = '#c8a040'; g.fillRect(i, 28, 5, 5); g.fillRect(28, i, 5, 5); }
+      pixelNoise(g, N, N, 0.12, 0.03);
+    }, { repeat: true });
+  },
+  // ---- a tall six-panel mahogany door with brass hardware (white parts of the mesh take it as is)
+  make_door() {
+    const W = 256, H = 512;
+    return softTex(W, H, (g) => {
+      pixelFill(g, W, H, (x, y) => { const gr = ONoise.fbm2(x / W * 30, y / H * 4, 3, 256), k = 0.7 + 0.4 * gr; return [78 * k, 34 * k, 16 * k]; });
+      const panel = (x0, y0, w, h) => {
+        g.fillStyle = 'rgba(0,0,0,0.42)'; g.fillRect(x0 - 4, y0 - 4, w + 8, h + 8);
+        g.fillStyle = 'rgba(255,180,120,0.16)'; g.fillRect(x0, y0, w, 10); g.fillRect(x0, y0, 10, h);
+        g.fillStyle = 'rgba(0,0,0,0.32)'; g.fillRect(x0, y0 + h - 10, w, 10); g.fillRect(x0 + w - 10, y0, 10, h);
+        g.strokeStyle = '#b8903c'; g.lineWidth = 2; g.strokeRect(x0 + 14, y0 + 14, w - 28, h - 28);
+      };
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 2; c++) panel(28 + c * 108, [30, 196, 330][r], 92, r === 1 ? 110 : r === 0 ? 140 : 150);
+      // brass: a knob plate and a keyhole escutcheon
+      g.fillStyle = '#c8a040'; g.fillRect(212, 256, 16, 50);
+      const kn = g.createRadialGradient(220, 270, 1, 220, 272, 12); kn.addColorStop(0, '#fff2b0'); kn.addColorStop(0.5, '#c8a040'); kn.addColorStop(1, '#5a4010');
+      g.fillStyle = kn; g.beginPath(); g.arc(220, 272, 11, 0, TAU); g.fill();
+      g.fillStyle = '#1a0a04'; g.beginPath(); g.arc(220, 294, 3, 0, TAU); g.fill(); g.fillRect(219, 294, 2, 7);
+      pixelNoise(g, W, H, 0.08, 0.03);
+    });
+  },
+  // ---- heavy velvet drapes: deep folds, a soft sheen, a gold bullion fringe along the bottom
+  make_curtain() {
+    const W = 256, H = 512;
+    return softTex(W, H, (g) => {
+      pixelFill(g, W, H, (x, y) => {
+        const f = 0.5 + 0.5 * Math.cos((x / W * 5 + ONoise.n2(x * 0.02, y * 0.004) * 0.6) * TAU);
+        const k = Math.pow(f, 1.6), sheen = Math.pow(f, 12) * 0.35, top = 1 - 0.35 * Math.exp(-y / 40);
+        if (y > H - 34) { const tas = (x % 10) < 6 ? 1 : 0.55, yy = (y - (H - 34)) / 34; return [clamp((200 * tas - 40 * yy) * (0.6 + 0.4 * k), 0, 255), clamp((150 * tas - 40 * yy) * (0.6 + 0.4 * k), 0, 255), clamp(60 * tas * (0.6 + 0.4 * k), 0, 255)]; }
+        return [clamp((44 + 130 * k) * top + sheen * 255, 0, 255), clamp((6 + 18 * k) * top + sheen * 120, 0, 255), clamp((16 + 34 * k) * top + sheen * 150, 0, 255)];
+      });
+    }, { repeat: true });
+  },
+  // ---- a clock face: cream enamel, roman numerals, a gilt bezel
+  make_clock() {
+    const N = 256, C = N / 2;
+    return softTex(N, N, (g) => {
+      g.fillStyle = '#1a0a04'; g.fillRect(0, 0, N, N);
+      const bz = g.createRadialGradient(C, C, 100, C, C, 128); bz.addColorStop(0, '#fff0a8'); bz.addColorStop(0.5, '#c8a040'); bz.addColorStop(1, '#5a4010');
+      g.fillStyle = bz; g.beginPath(); g.arc(C, C, 127, 0, TAU); g.fill();
+      const dial = g.createRadialGradient(C - 20, C - 20, 10, C, C, 112); dial.addColorStop(0, '#fffaf0'); dial.addColorStop(1, '#d8ccb0');
+      g.fillStyle = dial; g.beginPath(); g.arc(C, C, 108, 0, TAU); g.fill();
+      g.strokeStyle = '#2a1a10'; g.lineWidth = 2; g.beginPath(); g.arc(C, C, 98, 0, TAU); g.stroke(); g.beginPath(); g.arc(C, C, 72, 0, TAU); g.stroke();
+      for (let k = 0; k < 60; k++) { const a = k / 60 * TAU; g.lineWidth = k % 5 ? 1 : 3; g.beginPath(); g.moveTo(C + Math.cos(a) * 98, C + Math.sin(a) * 98); g.lineTo(C + Math.cos(a) * (k % 5 ? 92 : 88), C + Math.sin(a) * (k % 5 ? 92 : 88)); g.stroke(); }
+      const RN = ['XII', 'I', 'II', 'III', 'IIII', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+      g.fillStyle = '#1a0a04'; g.font = 'bold 20px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (let k = 0; k < 12; k++) { const a = k / 12 * TAU - Math.PI / 2; g.save(); g.translate(C + Math.cos(a) * 80, C + Math.sin(a) * 80); g.rotate(a + Math.PI / 2); g.fillText(RN[k], 0, 0); g.restore(); }
+      g.fillStyle = '#c8a040'; g.beginPath(); g.arc(C, C, 6, 0, TAU); g.fill();
+    });
+  },
+  // ---- grey-around-0.5 detail for plaster, stone and wood (world-space tri-planar; linear)
+  make_noise() {
+    const N = 128;
+    return softTex(N, N, (g) => { pixelFill(g, N, N, (x, y) => { const v = 128 + (ONoise.fbm2(x / 16, y / 16, 4, 8) - 0.5) * 110 + (Math.random() - 0.5) * 14; return [v, v, v]; }); }, { repeat: true, linear: true });
+  },
+  // ---- the portraits on the walls: eight oil paintings in one atlas (4 x 2 cells of 256 x 512)
+  make_portraits() {
+    const W = 1024, H = 1024;
+    return softTex(W, H, (g) => { for (let i = 0; i < 8; i++) { g.save(); g.translate((i % 4) * 256, Math.floor(i / 4) * 512); g.beginPath(); g.rect(0, 0, 256, 512); g.clip(); manorPainting(g, i, 256, 512); g.restore(); } });
+  },
+  // ---- PORTRAIT GAZE's paintings: four sitters with hollow eyes (the real eyes are 3D), cells of 256 x 320
+  make_gaze() {
+    const W = 1024, H = 320;
+    return softTex(W, H, (g) => { for (let i = 0; i < 4; i++) { g.save(); g.translate(i * 256, 0); g.beginPath(); g.rect(0, 0, 256, 320); g.clip(); manorGazePainting(g, i, 256, 320); g.restore(); } });
+  },
+};
+// speckle + a faint mottle over a finished canvas (wear, pile, grain)
+function pixelNoise(g, w, h, amt, mottle) {
+  const img = g.getImageData(0, 0, w, h), d = img.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4, k = 1 + (Math.random() - 0.5) * amt + (ONoise.n2(x / 24, y / 24) - 0.5) * mottle * 2;
+    d[i] = clamp(d[i] * k, 0, 255); d[i + 1] = clamp(d[i + 1] * k, 0, 255); d[i + 2] = clamp(d[i + 2] * k, 0, 255);
+  }
+  g.putImageData(img, 0, 0);
+}
+// one damask ornament at (cx, cy), about 2s tall; big (1): a flame crest, curling leaves, a lily fan; small (0): a rosette
+function manorDamask(g, cx, cy, s, big) {
+  g.save(); g.translate(cx, cy); g.scale(s / 100, s / 100);
+  const sheen = '#3c1248', deep = '#2a0a34', gold = 'rgba(196,154,70,0.42)';
+  const half = (fill, stroke) => {
+    g.beginPath();
+    if (big) {
+      // the flame crest
+      g.moveTo(0, -150); g.bezierCurveTo(22, -128, 30, -100, 10, -78); g.bezierCurveTo(32, -70, 34, -50, 0, -40);
+      // the curling side leaf
+      g.moveTo(4, -36); g.bezierCurveTo(52, -82, 98, -54, 92, -10); g.bezierCurveTo(88, 26, 54, 34, 40, 14); g.bezierCurveTo(58, 16, 66, -6, 52, -16); g.bezierCurveTo(40, -24, 22, -10, 6, -2);
+      // the lower scroll and the lily fan
+      g.moveTo(2, 2); g.bezierCurveTo(40, 6, 74, 40, 60, 80); g.bezierCurveTo(52, 104, 22, 104, 24, 84); g.bezierCurveTo(34, 76, 40, 62, 18, 52); g.bezierCurveTo(10, 50, 4, 54, 0, 58);
+      g.moveTo(0, 86); g.bezierCurveTo(18, 104, 16, 128, 0, 150);
+    } else {
+      for (let k = 0; k < 3; k++) { const a = -Math.PI / 2 + k * Math.PI / 2; g.moveTo(0, 0); g.bezierCurveTo(Math.cos(a - 0.5) * 60, Math.sin(a - 0.5) * 60, Math.cos(a + 0.5) * 60, Math.sin(a + 0.5) * 60, 0, 0); }
+    }
+    if (fill) { g.fillStyle = fill; g.fill(); }
+    if (stroke) { g.strokeStyle = stroke; g.lineWidth = 2.6; g.stroke(); }
+  };
+  for (const sx of [1, -1]) { g.save(); g.scale(sx, 1); half(sheen, null); g.restore(); }
+  for (const sx of [1, -1]) { g.save(); g.scale(sx, 1); g.translate(0, 3); half(null, 'rgba(0,0,0,0.35)'); g.restore(); }
+  for (const sx of [1, -1]) { g.save(); g.scale(sx, 1); half(null, gold); g.restore(); }
+  // gold-leaf dots and a magenta glint
+  g.fillStyle = '#e8c870';
+  if (big) { for (const [x, y] of [[0, -58], [0, 30], [0, 118], [92, -10], [-92, -10], [60, 80], [-60, 80]]) { g.beginPath(); g.arc(x, y, 5, 0, TAU); g.fill(); } g.fillStyle = '#c23cff'; g.beginPath(); g.arc(0, -58, 2.4, 0, TAU); g.fill(); }
+  else { g.beginPath(); g.arc(0, 0, 7, 0, TAU); g.fill(); g.fillStyle = deep; g.beginPath(); g.arc(0, 0, 3, 0, TAU); g.fill(); }
+  g.restore();
+}
+// shared oil-paint finish: brush strokes, craquelure, a yellowed varnish, a dark vignette
+function manorPaintFinish(g, W, H, seed) {
+  let s = seed * 9301 + 49297; const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  const img = g.getImageData(0, 0, W, H), d = img.data;
+  for (let k = 0; k < 900; k++) {   // short directional strokes that smear the colour under them
+    const x = Math.floor(rnd() * W), y = Math.floor(rnd() * H), i = (y * W + x) * 4, a = rnd() * 0.5 - 0.25, len = 6 + rnd() * 14;
+    g.strokeStyle = `rgba(${d[i]},${d[i + 1]},${d[i + 2]},0.35)`; g.lineWidth = 2 + rnd() * 3;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+  }
+  g.strokeStyle = 'rgba(20,10,0,0.13)'; g.lineWidth = 0.8;
+  for (let k = 0; k < 70; k++) { let x = rnd() * W, y = rnd() * H; g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 5; j++) { x += (rnd() - 0.5) * 30; y += (rnd() - 0.5) * 30; g.lineTo(x, y); } g.stroke(); }
+  const vg = g.createRadialGradient(W / 2, H * 0.42, W * 0.2, W / 2, H / 2, H * 0.7); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(200,150,60,0.07)'; g.fillRect(0, 0, W, H);
+}
+// a painted face (oval, lit from the upper left): returns the eye positions; hollow eyes leave dark sockets
+function manorFace(g, cx, cy, rx, ry, skin, o = {}) {
+  const sk = g.createRadialGradient(cx - rx * 0.4, cy - ry * 0.35, rx * 0.1, cx, cy, ry * 1.1);
+  sk.addColorStop(0, skin[0]); sk.addColorStop(0.6, skin[1]); sk.addColorStop(1, skin[2]);
+  g.fillStyle = sk; g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, TAU); g.fill();
+  const ey = cy - ry * 0.12, ex = rx * 0.42;
+  if (o.hollow) {
+    for (const s of [-1, 1]) { const eg = g.createRadialGradient(cx + s * ex, ey, 1, cx + s * ex, ey, rx * 0.3); eg.addColorStop(0, '#000'); eg.addColorStop(0.7, '#0a0404'); eg.addColorStop(1, 'rgba(10,4,4,0)'); g.fillStyle = eg; g.beginPath(); g.ellipse(cx + s * ex, ey, rx * 0.3, rx * 0.22, 0, 0, TAU); g.fill(); }
+  } else {
+    for (const s of [-1, 1]) {
+      g.fillStyle = 'rgba(60,30,20,0.35)'; g.beginPath(); g.ellipse(cx + s * ex, ey - rx * 0.04, rx * 0.26, rx * 0.15, 0, 0, TAU); g.fill();
+      g.fillStyle = '#f0e6d8'; g.beginPath(); g.ellipse(cx + s * ex, ey, rx * 0.19, rx * 0.09, 0, 0, TAU); g.fill();
+      g.fillStyle = o.eye || '#2a1a10'; g.beginPath(); g.arc(cx + s * ex + rx * 0.02, ey, rx * 0.085, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(cx + s * ex - rx * 0.02, ey - rx * 0.05, 2, 2);
+    }
+  }
+  // brows, nose shadow, mouth
+  g.strokeStyle = o.brow || 'rgba(50,25,15,0.7)'; g.lineWidth = Math.max(1.5, rx * 0.06);
+  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(cx + s * ex - rx * 0.18, ey - rx * 0.24); g.quadraticCurveTo(cx + s * ex, ey - rx * (o.sad ? 0.22 : 0.32), cx + s * ex + rx * 0.2, ey - rx * (o.sad ? 0.3 : 0.24)); g.stroke(); }
+  g.fillStyle = 'rgba(80,40,25,0.35)'; g.beginPath(); g.moveTo(cx + rx * 0.02, ey + rx * 0.05); g.lineTo(cx + rx * 0.12, cy + ry * 0.3); g.lineTo(cx - rx * 0.06, cy + ry * 0.32); g.fill();
+  g.strokeStyle = o.lips || '#7a2a2a'; g.lineWidth = Math.max(1.5, rx * 0.07);
+  g.beginPath(); g.moveTo(cx - rx * 0.24, cy + ry * 0.52); g.quadraticCurveTo(cx, cy + ry * (o.smile ? 0.62 : 0.5), cx + rx * 0.24, cy + ry * 0.52); g.stroke();
+  g.fillStyle = 'rgba(200,60,60,0.12)'; for (const s of [-1, 1]) { g.beginPath(); g.arc(cx + s * rx * 0.52, cy + ry * 0.22, rx * 0.2, 0, TAU); g.fill(); }
+  return { ey, ex };
+}
+// the eight hall portraits (cell i of the atlas)
+function manorPainting(g, i, W, H) {
+  const bgc = [['#2a2418', '#0c0a06'], ['#1e2420', '#080a08'], ['#20181e', '#0a060a'], ['#24201a', '#0a0806'], ['#1a1e24', '#06080a'], ['#2a1a14', '#0a0604'], ['#2a0a30', '#0a020c'], ['#101a2c', '#04060c']][i];
+  const bg = g.createLinearGradient(0, 0, W * 0.4, H); bg.addColorStop(0, bgc[0]); bg.addColorStop(1, bgc[1]);
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const SK = [['#f2dcc4', '#d8b090', '#8a5a40'], ['#f0e0d0', '#c8a088', '#6a4030']];
+  const shoulders = (col, y0, w) => { const gr = g.createLinearGradient(0, y0, 0, H); gr.addColorStop(0, col[0]); gr.addColorStop(1, col[1]); g.fillStyle = gr; g.beginPath(); g.moveTo(W / 2 - w, H); g.bezierCurveTo(W / 2 - w, y0 + 40, W / 2 - w * 0.5, y0, W / 2, y0); g.bezierCurveTo(W / 2 + w * 0.5, y0, W / 2 + w, y0 + 40, W / 2 + w, H); g.fill(); };
+  if (i === 0) {          // THE LADY: violet ball gown, high powdered hair, pearls, a fan
+    g.fillStyle = 'rgba(120,80,40,0.25)'; g.fillRect(W * 0.62, 0, W * 0.38, H * 0.7);   // a drape behind
+    shoulders(['#6a2a8a', '#2a0a3a'], 250, 110);
+    g.fillStyle = '#e8d8c8'; g.beginPath(); g.moveTo(W / 2 - 50, 262); g.quadraticCurveTo(W / 2, 300, W / 2 + 50, 262); g.lineTo(W / 2 + 30, 250); g.lineTo(W / 2 - 30, 250); g.fill();
+    g.fillStyle = '#e8e0d8'; g.beginPath(); g.ellipse(W / 2, 120, 62, 90, 0, 0, TAU); g.fill();       // the tall powdered hair
+    manorFace(g, W / 2, 190, 40, 52, SK[1], { lips: '#a03040' });
+    for (let k = 0; k < 11; k++) { const a = Math.PI * (0.15 + k * 0.07); g.fillStyle = '#fff8f0'; g.beginPath(); g.arc(W / 2 + Math.cos(a) * 42, 252 + Math.sin(a) * 22, 4, 0, TAU); g.fill(); }
+    g.fillStyle = '#d8b84a'; g.beginPath(); g.moveTo(80, 420); for (let k = 0; k <= 8; k++) { const a = -2.6 + k * 0.25; g.lineTo(80 + Math.cos(a) * 70, 420 + Math.sin(a) * 70); } g.fill();
+  } else if (i === 1) {   // THE COLONEL: powdered wig, scarlet coat, gold epaulettes, a medal
+    shoulders(['#a01820', '#3a0608'], 240, 118);
+    for (const s of [-1, 1]) { g.fillStyle = '#d8b84a'; g.beginPath(); g.ellipse(W / 2 + s * 92, 262, 30, 12, s * 0.2, 0, TAU); g.fill(); }
+    g.fillStyle = '#f0f0f0'; g.beginPath(); g.moveTo(W / 2 - 22, 236); g.lineTo(W / 2 + 22, 236); g.lineTo(W / 2, 300); g.fill();
+    g.fillStyle = '#e6e2dc'; for (const s of [-1, 1]) { g.beginPath(); g.ellipse(W / 2 + s * 48, 186, 18, 36, 0, 0, TAU); g.fill(); }
+    g.beginPath(); g.ellipse(W / 2, 140, 52, 40, 0, Math.PI, TAU); g.fill();
+    manorFace(g, W / 2, 180, 40, 50, SK[0], { brow: 'rgba(220,220,220,0.9)' });
+    g.fillStyle = '#d8b84a'; g.beginPath(); g.arc(W / 2 + 46, 330, 13, 0, TAU); g.fill(); g.fillStyle = '#3a6ab0'; g.fillRect(W / 2 + 40, 306, 12, 14);
+  } else if (i === 2) {   // THE WIDOW: black lace veil, pale, a cameo at the throat
+    shoulders(['#1a1a20', '#060608'], 248, 108);
+    manorFace(g, W / 2, 196, 38, 50, ['#f4ece8', '#d8c8c4', '#8a7878'], { sad: 1, lips: '#5a2a3a', eye: '#3a3a4a' });
+    g.fillStyle = 'rgba(8,8,12,0.62)'; g.beginPath(); g.moveTo(W / 2 - 70, 330); g.quadraticCurveTo(W / 2 - 80, 110, W / 2, 112); g.quadraticCurveTo(W / 2 + 80, 110, W / 2 + 70, 330); g.lineTo(W / 2 + 40, 250); g.quadraticCurveTo(W / 2, 140, W / 2 - 40, 250); g.fill();
+    g.strokeStyle = 'rgba(80,80,90,0.25)'; g.lineWidth = 1; for (let k = 0; k < 16; k++) { g.beginPath(); g.moveTo(W / 2 - 70 + k * 9, 120); g.lineTo(W / 2 - 80 + k * 10, 330); g.stroke(); }
+    g.fillStyle = '#f0e8e0'; g.beginPath(); g.ellipse(W / 2, 268, 11, 14, 0, 0, TAU); g.fill(); g.strokeStyle = '#d8b84a'; g.lineWidth = 3; g.stroke();
+  } else if (i === 3) {   // THE TWINS: two pale children in white, one holding a doll
+    for (const s of [-1, 1]) {
+      const cx = W / 2 + s * 56;
+      const gr = g.createLinearGradient(0, 270, 0, H); gr.addColorStop(0, '#e8e4ec'); gr.addColorStop(1, '#6a6670'); g.fillStyle = gr;
+      g.beginPath(); g.moveTo(cx - 60, H); g.quadraticCurveTo(cx - 54, 280, cx, 272); g.quadraticCurveTo(cx + 54, 280, cx + 60, H); g.fill();
+      g.fillStyle = s < 0 ? '#5a3a20' : '#d8c070'; g.beginPath(); g.ellipse(cx, 210, 40, 44, 0, Math.PI * 0.95, TAU * 1.02); g.fill();
+      manorFace(g, cx, 224, 30, 38, ['#f4ece8', '#dcd0cc', '#9a8a88'], { sad: 1, eye: '#4a5a7a' });
+    }
+    g.fillStyle = '#d8a0a8'; g.beginPath(); g.arc(W / 2 + 70, 380, 16, 0, TAU); g.fill(); g.fillStyle = '#7a3a4a'; g.fillRect(W / 2 + 58, 394, 24, 30);
+  } else if (i === 4) {   // THE GENTLEMAN: top hat, monocle, waxed moustache, a cravat
+    shoulders(['#2a2a34', '#08080c'], 250, 112);
+    g.fillStyle = '#f4f0e8'; g.beginPath(); g.moveTo(W / 2 - 26, 246); g.lineTo(W / 2 + 26, 246); g.lineTo(W / 2 + 14, 300); g.lineTo(W / 2 - 14, 300); g.fill();
+    g.fillStyle = '#7a1a3a'; g.beginPath(); g.moveTo(W / 2 - 16, 262); g.lineTo(W / 2 + 16, 262); g.lineTo(W / 2, 286); g.fill();
+    manorFace(g, W / 2, 194, 38, 50, SK[0]);
+    g.fillStyle = '#3a2418'; g.beginPath(); g.moveTo(W / 2, 218); g.quadraticCurveTo(W / 2 - 34, 214, W / 2 - 46, 200); g.quadraticCurveTo(W / 2 - 26, 224, W / 2, 224); g.quadraticCurveTo(W / 2 + 26, 224, W / 2 + 46, 200); g.quadraticCurveTo(W / 2 + 34, 214, W / 2, 218); g.fill();
+    g.fillStyle = '#101014'; g.fillRect(W / 2 - 40, 60, 80, 92); g.fillRect(W / 2 - 62, 146, 124, 12); g.fillStyle = '#5a1a2a'; g.fillRect(W / 2 - 40, 132, 80, 10);
+    g.strokeStyle = '#d8b84a'; g.lineWidth = 2.5; g.beginPath(); g.arc(W / 2 + 17, 182, 11, 0, TAU); g.stroke(); g.beginPath(); g.moveTo(W / 2 + 27, 188); g.quadraticCurveTo(W / 2 + 40, 240, W / 2 + 30, 300); g.stroke();
+  } else if (i === 5) {   // THE CAT: a black cat in an Elizabethan ruff, very serious
+    shoulders(['#4a1a2a', '#14060a'], 280, 100);
+    for (let k = 0; k < 18; k++) { const a = k / 18 * TAU; g.fillStyle = k % 2 ? '#f4f0e6' : '#dcd6c8'; g.beginPath(); g.ellipse(W / 2 + Math.cos(a) * 52, 268 + Math.sin(a) * 18, 22, 10, a, 0, TAU); g.fill(); }
+    g.fillStyle = '#121014'; g.beginPath(); g.ellipse(W / 2, 200, 52, 50, 0, 0, TAU); g.fill();
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(W / 2 + s * 46, 170); g.lineTo(W / 2 + s * 40, 118); g.lineTo(W / 2 + s * 14, 156); g.fill(); }
+    for (const s of [-1, 1]) { g.fillStyle = '#c8d040'; g.beginPath(); g.ellipse(W / 2 + s * 20, 196, 11, 8, 0, 0, TAU); g.fill(); g.fillStyle = '#000'; g.fillRect(W / 2 + s * 20 - 1.5, 189, 3, 14); }
+    g.fillStyle = '#d07a8a'; g.beginPath(); g.moveTo(W / 2 - 5, 214); g.lineTo(W / 2 + 5, 214); g.lineTo(W / 2, 220); g.fill();
+    g.strokeStyle = 'rgba(230,230,230,0.6)'; g.lineWidth = 1; for (const s of [-1, 1]) for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(W / 2 + s * 10, 220 + k * 3); g.lineTo(W / 2 + s * 52, 212 + k * 8); g.stroke(); }
+  } else if (i === 6) {   // THE PROPRIETOR himself: a chandelier for a head, in his tailcoat (painted when he was new)
+    shoulders(['#3a1446', '#0e0414'], 270, 120);
+    g.fillStyle = '#f4f0e8'; g.beginPath(); g.moveTo(W / 2 - 30, 262); g.lineTo(W / 2 + 30, 262); g.lineTo(W / 2, 330); g.fill();
+    g.fillStyle = '#c23cff'; g.beginPath(); g.moveTo(W / 2, 274); g.lineTo(W / 2 - 26, 262); g.lineTo(W / 2 - 26, 288); g.fill(); g.beginPath(); g.moveTo(W / 2, 274); g.lineTo(W / 2 + 26, 262); g.lineTo(W / 2 + 26, 288); g.fill();
+    g.strokeStyle = '#2a1a2a'; g.lineWidth = 6; g.beginPath(); g.moveTo(W / 2, 250); g.quadraticCurveTo(W / 2 + 6, 120, W / 2 + 24, 60); g.stroke();
+    g.strokeStyle = '#d8b84a'; g.lineWidth = 5; g.beginPath(); g.ellipse(W / 2, 168, 86, 22, 0, 0, TAU); g.stroke();
+    g.lineWidth = 3; g.beginPath(); g.ellipse(W / 2, 200, 50, 12, 0, 0, TAU); g.stroke();
+    for (let k = 0; k < 7; k++) { const x = W / 2 - 78 + k * 26; g.fillStyle = '#f4ecd8'; g.fillRect(x - 5, 128, 10, 34); const fl = g.createRadialGradient(x, 118, 1, x, 118, 16); fl.addColorStop(0, k === 2 || k === 4 ? '#ffe8a0' : '#fff0c0'); fl.addColorStop(1, 'rgba(255,170,60,0)'); g.fillStyle = fl; g.beginPath(); g.arc(x, 118, 16, 0, TAU); g.fill(); }
+    for (let k = 0; k < 12; k++) { g.fillStyle = 'rgba(220,240,255,0.85)'; g.beginPath(); g.moveTo(W / 2 - 80 + k * 14.5, 184); g.lineTo(W / 2 - 75 + k * 14.5, 210); g.lineTo(W / 2 - 70 + k * 14.5, 184); g.fill(); }
+    g.fillStyle = '#ffd23c'; for (const s of [-1, 1]) { g.beginPath(); g.arc(W / 2 + s * 26, 116, 6, 0, TAU); g.fill(); }
+  } else {                // THE MANOR at night: the house on its hill under a ringed moon
+    const sky = g.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#0a0c24'); sky.addColorStop(0.6, '#2a1a40'); sky.addColorStop(1, '#0a0610');
+    g.fillStyle = sky; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,250,220,0.9)'; g.beginPath(); g.arc(178, 92, 26, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(255,250,220,0.25)'; g.lineWidth = 3; g.beginPath(); g.arc(178, 92, 40, 0, TAU); g.stroke();
+    g.fillStyle = '#06040a'; g.beginPath(); g.moveTo(0, 360); g.quadraticCurveTo(W / 2, 300, W, 360); g.lineTo(W, H); g.lineTo(0, H); g.fill();
+    g.fillStyle = '#100818'; g.fillRect(60, 220, 136, 110); g.beginPath(); g.moveTo(52, 222); g.lineTo(128, 170); g.lineTo(204, 222); g.fill();
+    for (const x of [44, 196]) { g.fillRect(x - 14, 190, 28, 140); g.beginPath(); g.moveTo(x - 18, 192); g.lineTo(x, 150); g.lineTo(x + 18, 192); g.fill(); }
+    g.fillStyle = '#ffd23c'; for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) if ((r * 4 + c) % 3) g.fillRect(74 + c * 30, 236 + r * 28, 10, 14);
+  }
+  manorPaintFinish(g, W, H, i + 1);
+}
+// PORTRAIT GAZE's four sitters (hollow sockets at the 3D eyes: x 128 +/- 34, y 123)
+function manorGazePainting(g, i, W, H) {
+  const bgc = [['#2a2418', '#0a0806'], ['#1a2420', '#060a08'], ['#24161e', '#0a0408'], ['#20202a', '#06060a']][i];
+  const bg = g.createLinearGradient(0, 0, W * 0.4, H); bg.addColorStop(0, bgc[0]); bg.addColorStop(1, bgc[1]);
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const coat = [['#5a2a7a', '#1a0626'], ['#2a4a5a', '#081418'], ['#6a2a2a', '#1a0606'], ['#3a3a2a', '#0e0e08']][i];
+  const gr = g.createLinearGradient(0, 210, 0, H); gr.addColorStop(0, coat[0]); gr.addColorStop(1, coat[1]); g.fillStyle = gr;
+  g.beginPath(); g.moveTo(W / 2 - 112, H); g.bezierCurveTo(W / 2 - 110, 240, W / 2 - 50, 214, W / 2, 214); g.bezierCurveTo(W / 2 + 50, 214, W / 2 + 110, 240, W / 2 + 112, H); g.fill();
+  g.fillStyle = '#f0ece4'; g.beginPath(); g.moveTo(W / 2 - 24, 214); g.lineTo(W / 2 + 24, 214); g.lineTo(W / 2, 262); g.fill();
+  const hair = ['#3a2210', '#e8e4dc', '#6a1a1a', '#141414'][i];
+  g.fillStyle = hair; g.beginPath(); g.ellipse(W / 2, 108, 66, 62, 0, Math.PI * 0.92, TAU * 1.04); g.fill();
+  if (i === 1) { for (const s of [-1, 1]) { g.beginPath(); g.ellipse(W / 2 + s * 58, 150, 18, 34, 0, 0, TAU); g.fill(); } }
+  if (i === 3) { g.fillRect(W / 2 - 44, 20, 88, 56); g.fillRect(W / 2 - 64, 70, 128, 10); }
+  // the face: its eyes sit exactly where the 3D eyeballs go
+  const cx = W / 2, cy = 142;
+  const sk = g.createRadialGradient(cx - 18, cy - 20, 4, cx, cy, 64); sk.addColorStop(0, '#f0dcc8'); sk.addColorStop(0.6, '#cfa888'); sk.addColorStop(1, '#7a5040');
+  g.fillStyle = sk; g.beginPath(); g.ellipse(cx, cy, 52, 64, 0, 0, TAU); g.fill();
+  for (const s of [-1, 1]) {
+    const eg = g.createRadialGradient(cx + s * 34, 123, 2, cx + s * 34, 123, 17); eg.addColorStop(0, '#000'); eg.addColorStop(0.75, '#080202'); eg.addColorStop(1, 'rgba(8,2,2,0)');
+    g.fillStyle = eg; g.beginPath(); g.ellipse(cx + s * 34, 123, 17, 13, 0, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(40,20,10,0.75)'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx + s * 34 - 14, 104); g.quadraticCurveTo(cx + s * 34, 98 - (i === 2 ? 4 : 0), cx + s * 34 + 14, 106); g.stroke();
+  }
+  g.fillStyle = 'rgba(80,40,25,0.4)'; g.beginPath(); g.moveTo(cx + 2, 128); g.lineTo(cx + 10, 160); g.lineTo(cx - 6, 162); g.fill();
+  g.strokeStyle = '#7a2a2a'; g.lineWidth = 3.5; g.beginPath(); g.moveTo(cx - 14, 180); g.quadraticCurveTo(cx, i === 0 ? 188 : 176, cx + 14, 180); g.stroke();
+  manorPaintFinish(g, W, H, 20 + i);
+}
+
+// ---------------------------------------------------------------- the grand hall's layout (metres; you stand at the origin)
+const MANOR = {
+  FLOOR: -5.8,    // the ballroom floor, where THE PROPRIETOR stands
+  EDGE: -1.95,    // the gallery's front edge (your balustrade)
+  HW: 12,         // half the hall's width
+  FAR: -24,       // the far wall with the three storm windows
+  CEIL: 11,       // the coffered ceiling
+  BACK: 8.5,      // the gallery's back wall (the fireplace)
+  BOSS_Z: -8.8,
+};
+// a plane whose uvs are in tiles (tu x tv metres per texture repeat)
+function mPlane(w, h, tu, tv) { const g = new THREE.PlaneGeometry(w, h); const U = g.attributes.uv; for (let i = 0; i < U.count; i++) U.setXY(i, U.getX(i) * w / tu, U.getY(i) * h / (tv || tu)); return g; }
+// an atlas cell (col, row of cols x rows) on a plane's uvs
+function mCell(g, col, row, cols, rows, frac = 1) { const U = g.attributes.uv; for (let i = 0; i < U.count; i++) U.setXY(i, (col + U.getX(i)) / cols, 1 - (row + (1 - U.getY(i)) * frac) / rows); return g; }
+// a vase baluster (lathe), h tall
+function mBaluster(h, r = 0.06, seg = 8) {
+  const P = [[0, 0], [r * 1.25, 0], [r * 1.25, 0.06], [r * 0.7, 0.1], [r * 1.35, 0.32], [r * 1.1, 0.48], [r * 0.55, 0.6], [r * 0.6, 0.78], [r * 1.0, 0.86], [r * 1.2, 0.92], [r * 1.2, 1], [0, 1]];
+  return new THREE.LatheGeometry(P.map(([x, y]) => new THREE.Vector2(x, y * h)), seg);
+}
+// a fluted pilaster from y0 to y1 against a wall (local: x across, z out of the wall)
+function mPilaster(P, y0, y1, w, col, gold) {
+  const h = y1 - y0;
+  P.push({ geo: new THREE.BoxGeometry(w * 1.2, 0.5, 0.34), matrix: M4(0, y0 + 0.25, 0.17), color: col });
+  P.push({ geo: new THREE.BoxGeometry(w, h - 1.3, 0.24), matrix: M4(0, y0 + 0.5 + (h - 1.3) / 2, 0.12), color: col });
+  for (let k = -2; k <= 2; k++) P.push({ geo: new THREE.BoxGeometry(w * 0.08, h - 1.6, 0.03), matrix: M4(k * w * 0.18, y0 + 0.65 + (h - 1.6) / 2, 0.245), color: 0xa89a84 });
+  P.push({ geo: new THREE.BoxGeometry(w * 1.25, 0.18, 0.34), matrix: M4(0, y1 - 0.71, 0.17), color: gold });
+  P.push({ geo: new THREE.BoxGeometry(w * 1.4, 0.5, 0.4), matrix: M4(0, y1 - 0.4, 0.2), color: col });
+  for (const s of [-1, 1]) P.push({ geo: new THREE.CylinderGeometry(0.12, 0.12, 0.1, 10), matrix: M4(s * w * 0.55, y1 - 0.45, 0.4, Math.PI / 2, 0, 0), color: gold });
+}
+// an ornate gilt frame (w x h opening) in local space, the painting's front at z = 0
+function mFrame(P, w, h, d = 0.12) {
+  const G1 = 0xc8a040, G2 = 0x8a6420, G3 = 0xe8c870, b = Math.min(w, h) * 0.09 + 0.06;
+  const bar = (x, y, L, horiz, wd, z, col) => P.push({ geo: new THREE.BoxGeometry(horiz ? L : wd, horiz ? wd : L, d * z), matrix: M4(x, y, d * z / 2), color: col });
+  bar(0, h / 2 + b / 2, w + 2 * b, true, b, 1, G1); bar(0, -h / 2 - b / 2, w + 2 * b, true, b, 1, G1);
+  bar(-w / 2 - b / 2, 0, h, false, b, 1, G1); bar(w / 2 + b / 2, 0, h, false, b, 1, G1);
+  bar(0, h / 2 + b * 0.12, w + b * 0.3, true, b * 0.25, 1.3, G3); bar(0, -h / 2 - b * 0.12, w + b * 0.3, true, b * 0.25, 1.3, G3);
+  bar(-w / 2 - b * 0.12, 0, h, false, b * 0.25, 1.3, G3); bar(w / 2 + b * 0.12, 0, h, false, b * 0.25, 1.3, G3);
+  bar(0, h / 2 + b * 0.92, w + 2 * b, true, b * 0.18, 1.2, G2); bar(0, -h / 2 - b * 0.92, w + 2 * b, true, b * 0.18, 1.2, G2);
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) P.push({ geo: new THREE.SphereGeometry(b * 0.42, 10, 8), matrix: M4(sx * (w / 2 + b / 2), sy * (h / 2 + b / 2), d * 1.1, 0, 0, 0, 1, 1, 0.6), color: G3 });
+  P.push({ geo: new THREE.ConeGeometry(b * 0.5, b * 1.1, 4), matrix: M4(0, h / 2 + b * 1.4, d * 0.7, 0, Math.PI / 4, 0), color: G3 });
+  P.push({ geo: new THREE.SphereGeometry(b * 0.3, 8, 6), matrix: M4(0, -h / 2 - b * 1.2, d * 0.7), color: G3 });
+}
+// a door architrave with a pediment (opening w x h, bottom at y = 0)
+function mDoorCase(P, w, h, col, gold) {
+  const t = 0.16 + w * 0.04;
+  P.push({ geo: new THREE.BoxGeometry(t, h + t, 0.14), matrix: M4(-w / 2 - t / 2, (h + t) / 2, 0.07), color: col });
+  P.push({ geo: new THREE.BoxGeometry(t, h + t, 0.14), matrix: M4(w / 2 + t / 2, (h + t) / 2, 0.07), color: col });
+  P.push({ geo: new THREE.BoxGeometry(w + 2 * t, t, 0.14), matrix: M4(0, h + t / 2, 0.07), color: col });
+  P.push({ geo: new THREE.BoxGeometry(w + 2 * t + 0.3, 0.12, 0.26), matrix: M4(0, h + t + 0.06, 0.13), color: gold });
+  const pd = new THREE.Shape(); pd.moveTo(-w / 2 - t - 0.15, 0); pd.lineTo(w / 2 + t + 0.15, 0); pd.lineTo(0, w * 0.22 + 0.2); pd.lineTo(-w / 2 - t - 0.15, 0);
+  P.push({ geo: new THREE.ExtrudeGeometry(pd, { depth: 0.16, bevelEnabled: false }), matrix: M4(0, h + t + 0.12, 0.02), color: col });
+  P.push({ geo: new THREE.SphereGeometry(0.1 + w * 0.02, 8, 6), matrix: M4(0, h + t + 0.24 + w * 0.06, 0.2), color: gold });
+}
+// a candle sconce: a brass back plate, a curled arm, a cup and a candle; returns the flame (local)
+function mSconce(P, n = 2) {
+  const B = 0xc8a040, C = 0xf4ecd8, fl = [];
+  P.push({ geo: new THREE.CylinderGeometry(0.11, 0.11, 0.05, 10), matrix: M4(0, 0, 0.025, Math.PI / 2, 0, 0), color: B });
+  for (let k = 0; k < n; k++) {
+    const x = n === 1 ? 0 : (k - (n - 1) / 2) * 0.36;
+    P.push({ geo: new THREE.TorusGeometry(0.13, 0.016, 5, 10, Math.PI), matrix: M4(x * 0.5, -0.02, 0.15, 0, Math.PI / 2, 0), color: B });
+    P.push({ geo: new THREE.CylinderGeometry(0.018, 0.018, Math.abs(x) + 0.05, 5), matrix: M4(x / 2, -0.15, 0.28, 0, 0, Math.PI / 2), color: B });
+    P.push({ geo: new THREE.CylinderGeometry(0.07, 0.04, 0.06, 10), matrix: M4(x, -0.12, 0.28), color: B });
+    P.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.2, 8), matrix: M4(x, 0.01, 0.28), color: C });
+    fl.push(new THREE.Vector3(x, 0.15, 0.28));
+  }
+  return fl;
+}
+// a crystal chandelier: gold rings and scrolled arms, cream candles, a canopy and chain (crystals are instanced)
+// returns { geo, candles: [local Vector3], crystals: [{ x, y, z, len }] }
+function mChandelier(R, tiers = 2, armsN = 10) {
+  const P = [], B = 0xc8a040, B2 = 0xe8c870, C = 0xf4ecd8, candles = [], crystals = [];
+  P.push({ geo: new THREE.LatheGeometry([[0, 0], [0.16, 0], [0.22, -0.18], [0.16, -0.4], [0.24, -0.62], [0.12, -0.9], [0.2, -1.15], [0.36, -1.32], [0.1, -1.55], [0, -1.6]].map(([x, y]) => new THREE.Vector2(x * R, y * R)), 12), color: B });
+  for (let t = 0; t < tiers; t++) {
+    const r = R * (t ? 0.62 : 1.05), y = -R * (t ? 0.6 : 1.1), n = t ? Math.round(armsN * 0.6) : armsN;
+    P.push({ geo: new THREE.TorusGeometry(r, 0.035 * R, 6, 40), matrix: M4(0, y, 0, Math.PI / 2, 0, 0), color: B });
+    P.push({ geo: new THREE.TorusGeometry(r * 0.94, 0.018 * R, 5, 40), matrix: M4(0, y - 0.07 * R, 0, Math.PI / 2, 0, 0), color: B2 });
+    for (let k = 0; k < n; k++) {
+      const a = (k + t * 0.5) / n * TAU, ca = Math.cos(a), sa = Math.sin(a);
+      // an S-scroll arm from the stem out to the ring, then up to a candle cup
+      const curve = new THREE.CubicBezierCurve3(new THREE.Vector3(ca * 0.15 * R, y + 0.25 * R, sa * 0.15 * R), new THREE.Vector3(ca * r * 0.3, y - 0.35 * R, sa * r * 0.3), new THREE.Vector3(ca * r * 0.8, y - 0.2 * R, sa * r * 0.8), new THREE.Vector3(ca * r, y + 0.12 * R, sa * r));
+      P.push({ geo: new THREE.TubeGeometry(curve, 8, 0.022 * R, 5, false), color: B });
+      P.push({ geo: new THREE.CylinderGeometry(0.075 * R, 0.045 * R, 0.07 * R, 8), matrix: M4(ca * r, y + 0.15 * R, sa * r), color: B });
+      P.push({ geo: new THREE.CylinderGeometry(0.1 * R, 0.1 * R, 0.015 * R, 10), matrix: M4(ca * r, y + 0.115 * R, sa * r), color: B2 });
+      const ch = (t ? 0.2 : 0.26) * R;
+      P.push({ geo: new THREE.CylinderGeometry(0.03 * R, 0.032 * R, ch, 7), matrix: M4(ca * r, y + 0.19 * R + ch / 2, sa * r), color: C });
+      candles.push(new THREE.Vector3(ca * r, y + 0.2 * R + ch + 0.05 * R, sa * r));
+      // crystals: one hanging under each candle cup, a swag drop between arms
+      crystals.push({ x: ca * r, y: y + 0.05 * R, z: sa * r, len: 0.18 * R });
+      const a2 = a + Math.PI / n, r2 = r * 0.97;
+      crystals.push({ x: Math.cos(a2) * r2, y: y - 0.12 * R, z: Math.sin(a2) * r2, len: 0.26 * R });
+    }
+  }
+  for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; crystals.push({ x: Math.cos(a) * 0.32 * R, y: -1.38 * R, z: Math.sin(a) * 0.32 * R, len: 0.3 * R }); }
+  crystals.push({ x: 0, y: -1.62 * R, z: 0, len: 0.5 * R });
+  return { geo: mergeGeos(P), candles, crystals };
+}
+// the ghostly guests: a waltzing couple (him facing -z, her facing +z), a lady, a gentleman (feet at y = 0)
+const ManorGhostGeo = {
+  lady(x = 0, z = 0, ry = 0) {
+    const M = (px, py, pz, rx = 0, rr = 0, rz = 0, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().makeRotationY(ry).multiply(M4(px, py, pz, rx, rr, rz, sx, sy, sz)).premultiply(new THREE.Matrix4().makeTranslation(x, 0, z));
+    return [
+      { geo: new THREE.LatheGeometry([[0, 0], [0.5, 0], [0.48, 0.12], [0.36, 0.45], [0.2, 0.8], [0.13, 0.98], [0, 1.0]].map(([a, b]) => new THREE.Vector2(a, b)), 14), matrix: M(0, 0, 0) },
+      { geo: new THREE.CylinderGeometry(0.14, 0.11, 0.42, 10), matrix: M(0, 1.18, 0) },
+      { geo: new THREE.SphereGeometry(0.16, 10, 6, 0, TAU, 0, Math.PI / 2), matrix: M(0, 1.36, 0, 0, 0, 0, 1.2, 0.5, 0.9) },
+      { geo: new THREE.CylinderGeometry(0.04, 0.05, 0.1, 8), matrix: M(0, 1.45, 0) },
+      { geo: new THREE.SphereGeometry(0.105, 12, 10), matrix: M(0, 1.6, 0, 0, 0, 0, 0.9, 1.1, 0.95) },
+      { geo: new THREE.SphereGeometry(0.1, 10, 8), matrix: M(0, 1.72, -0.05) },
+      { geo: new THREE.SphereGeometry(0.065, 8, 6), matrix: M(0, 1.8, -0.08) },
+    ];
+  },
+  gent(x = 0, z = 0, ry = 0) {
+    const M = (px, py, pz, rx = 0, rr = 0, rz = 0, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().makeRotationY(ry).multiply(M4(px, py, pz, rx, rr, rz, sx, sy, sz)).premultiply(new THREE.Matrix4().makeTranslation(x, 0, z));
+    return [
+      { geo: new THREE.CylinderGeometry(0.07, 0.06, 0.9, 8), matrix: M(-0.09, 0.45, 0) },
+      { geo: new THREE.CylinderGeometry(0.07, 0.06, 0.9, 8), matrix: M(0.09, 0.45, 0) },
+      { geo: new THREE.CylinderGeometry(0.2, 0.17, 0.6, 10), matrix: M(0, 1.2, 0, 0, 0, 0, 1, 1, 0.75) },
+      { geo: new THREE.BoxGeometry(0.3, 0.5, 0.04), matrix: M(0, 0.78, -0.13, -0.12, 0, 0) },
+      { geo: new THREE.SphereGeometry(0.2, 10, 6, 0, TAU, 0, Math.PI / 2), matrix: M(0, 1.46, 0, 0, 0, 0, 1.15, 0.45, 0.8) },
+      { geo: new THREE.SphereGeometry(0.105, 12, 10), matrix: M(0, 1.66, 0, 0, 0, 0, 0.92, 1.1, 0.95) },
+      { geo: new THREE.CylinderGeometry(0.15, 0.15, 0.015, 12), matrix: M(0, 1.77, 0) },
+      { geo: new THREE.CylinderGeometry(0.09, 0.1, 0.2, 12), matrix: M(0, 1.87, 0) },
+    ];
+  },
+  pair() {
+    const P = [...this.gent(0, 0.2, Math.PI), ...this.lady(0, -0.2, 0)];
+    // arms: his on her waist, hers on his shoulder, their joined hands held out to the side
+    P.push({ geo: new THREE.CylinderGeometry(0.035, 0.03, 0.42, 6), matrix: M4(0.16, 1.28, 0.02, 1.2, 0, 0.5) });
+    P.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.4, 6), matrix: M4(-0.12, 1.36, -0.02, -1.0, 0, -0.3) });
+    P.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), matrix: M4(-0.36, 1.4, 0, 0, 0, Math.PI / 2 - 0.25) });
+    return mergeGeos(P);
+  },
+};
+// the ghosts' look: a cool glow brightest at their edges, flickering a little (instanced; additive)
+const MANOR_GHOST_VS = `varying vec3 vN; varying vec3 vW; varying float vI;
+  void main(){ vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal); vI = float(gl_InstanceID);
+    gl_Position = projectionMatrix * viewMatrix * w; }`;
+const MANOR_GHOST_FS = `uniform vec3 uCol; uniform vec3 uCol2; uniform float uA; uniform float uTime; uniform float uGlitch;
+  varying vec3 vN; varying vec3 vW; varying float vI;
+  void main(){
+    vec3 V = normalize(cameraPosition - vW); float fr = 1.0 - abs(dot(normalize(vN), V)); fr = fr * fr;
+    float band = 0.75 + 0.25 * sin(vW.y * 18.0 - uTime * 3.0 + vI * 1.7);
+    float fl = 0.85 + 0.15 * sin(uTime * (7.0 + vI) + vI * 3.1);
+    float gl = step(0.92 - uGlitch * 0.4, fract(sin(floor(vW.y * 14.0) * 91.3 + floor(uTime * 12.0)) * 4375.85)) * uGlitch;
+    vec3 c = mix(uCol, uCol2, clamp(vW.y * 0.3 + fr, 0.0, 1.0)) * (0.04 + 0.85 * fr) * band * fl + vec3(1.0, 0.3, 0.8) * gl * 0.3;
+    gl_FragColor = vec4(c * uA, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// the storm through the windows: violet night, rolling clouds, a ringed moon, rain, leaded diamond panes,
+// lightning; at phase III the void and static bleed through; at dawn (SPARE) a warm sunrise
+const MANOR_WIN_FS = `uniform float uTime; uniform float uFlash; uniform float uStatic; uniform float uDawn; uniform float uDim; uniform float uBoltX; uniform float uOut;
+  varying vec2 vUv; varying vec3 vW;
+  float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h1(i), h1(i + vec2(1, 0)), f.x), mix(h1(i + vec2(0, 1)), h1(i + vec2(1, 1)), f.x), f.y); }
+  float fbm(vec2 p){ float a = 0.5, t = 0.0; for (int i = 0; i < 4; i++) { t += a * n2(p); p *= 2.03; a *= 0.5; } return t; }
+  void main(){
+    vec2 p = vW.xy * 0.08 + vec2(0.0, 0.6);
+    vec3 top = vec3(0.008, 0.01, 0.035), hor = vec3(0.05, 0.022, 0.08);
+    vec3 col = mix(hor, top, smoothstep(-0.1, 1.2, p.y));
+    float cl = fbm(p * vec2(1.4, 2.4) + vec2(uTime * 0.018, 0.0));
+    float cl2 = fbm(p * vec2(2.8, 4.0) - vec2(uTime * 0.03, uTime * 0.006));
+    // the moon (behind the clouds), with a pale ring
+    vec2 mp = vW.xy - vec2(1.3, 5.7); float md = length(mp);
+    float moon = smoothstep(0.62, 0.58, md);
+    col += vec3(0.85, 0.82, 1.0) * moon * (0.75 + 0.25 * n2(mp * 4.0));
+    col += vec3(0.3, 0.28, 0.5) * exp(-md * 0.9) * 0.3 + vec3(0.5, 0.48, 0.7) * smoothstep(0.08, 0.0, abs(md - 1.45)) * 0.08;
+    float cov = smoothstep(0.42, 0.8, cl);
+    vec3 cloudCol = mix(vec3(0.015, 0.014, 0.035), vec3(0.09, 0.08, 0.15), cl2) + vec3(0.45, 0.44, 0.65) * exp(-md * 0.6) * 0.45;
+    col = mix(col, cloudCol, cov * 0.92);
+    // lightning: the whole sky lights from behind the clouds, a forked bolt now and then
+    float bx = vW.x - uBoltX + (n2(vec2(vW.y * 2.0, uBoltX * 9.0)) - 0.5) * 1.4 + (n2(vec2(vW.y * 7.0, uBoltX)) - 0.5) * 0.4;
+    float bolt = smoothstep(0.09, 0.0, abs(bx)) * step(0.55, uFlash) * step(1.5, vW.y);
+    col += vec3(0.7, 0.72, 1.0) * uFlash * (0.25 + 0.75 * cov) + vec3(0.9, 0.92, 1.0) * bolt * 2.0;
+    // rain streaks
+    vec2 rp = vec2(vW.x * 9.0 + vW.y * 0.9, vW.y * 0.6 + uTime * 3.2);
+    float rain = smoothstep(0.985, 1.0, h1(vec2(floor(rp.x), floor(rp.y * 3.0)))) * smoothstep(0.0, 0.25, fract(rp.y * 3.0));
+    col += vec3(0.35, 0.4, 0.6) * rain * 0.35;
+    // dawn (SPARE): warm light rising from the bottom of the windows
+    vec3 dawn = mix(vec3(1.0, 0.62, 0.32), vec3(0.55, 0.62, 0.95), smoothstep(-2.0, 7.0, vW.y)) * (0.9 + 0.1 * cl2);
+    col = mix(col, dawn, uDawn);
+    // the void and static bleed through (phase III)
+    float ch = mod(floor(vW.x * 1.2 + uTime * 0.2) + floor(vW.y * 1.2), 2.0);
+    vec3 voidc = mix(vec3(0.16, 0.0, 0.24), vec3(0.04, 0.0, 0.08), ch);
+    float st = h1(floor(vW.xy * 40.0) + floor(uTime * 24.0));
+    float tear = smoothstep(0.55, 0.62, n2(vW.xy * 0.6 + vec2(0.0, uTime * 0.1)) + uStatic * 0.5);
+    col = mix(col, mix(voidc, vec3(st * st) * vec3(0.5, 0.4, 0.6), 0.15), tear * uStatic * 0.85);
+    // leaded diamond panes and the inner shadow of the frame
+    vec2 lp = vW.xy * vec2(2.4, 1.6); vec2 dg = abs(fract(vec2(lp.x + lp.y, lp.x - lp.y) * 0.5) - 0.5);
+    float lead = smoothstep(0.035, 0.0, min(dg.x, dg.y));
+    col *= 1.0 - lead * 0.75;
+    col += vec3(0.015, 0.012, 0.03) * (1.0 - lead) * (0.5 + 0.5 * n2(vW.xy * 3.0));
+    vec2 e = min(vUv, 1.0 - vUv); col *= 0.55 + 0.45 * smoothstep(0.0, 0.08, min(e.x, e.y));
+    gl_FragColor = vec4(col * uDim * (1.0 - uOut * 0.9), 1.0);
+    #include <colorspace_fragment>
+  }`;
+// fire in the hearth: licking tongues of flame (crossed quads, additive)
+const MANOR_FIRE_FS = `uniform float uTime; uniform float uK; varying vec2 vUv; varying float vSeed;
+  float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h1(i), h1(i + vec2(1, 0)), f.x), mix(h1(i + vec2(0, 1)), h1(i + vec2(1, 1)), f.x), f.y); }
+  void main(){
+    vec2 p = vUv; float t = uTime * 1.6 + vSeed * 7.0;
+    float n = n2(vec2(p.x * 4.0 + vSeed * 3.0, p.y * 3.0 - t * 1.4)) * 0.6 + n2(vec2(p.x * 9.0, p.y * 7.0 - t * 2.3)) * 0.4;
+    float w = (1.0 - p.y) * 0.55 + 0.05;
+    float body = smoothstep(w, w * 0.4, abs(p.x - 0.5 + (n - 0.5) * 0.35 * p.y)) * smoothstep(1.0, 0.25, p.y + (n - 0.5) * 0.45);
+    vec3 c = mix(vec3(1.0, 0.25, 0.04), vec3(1.0, 0.85, 0.45), smoothstep(0.2, 0.9, body * (1.0 - p.y * 0.6)));
+    gl_FragColor = vec4(c * body * uK * 1.4, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// torn wallpaper (phase III): static where the paper has peeled, a glowing lip along each tear (alpha)
+const MANOR_TEAR_FS = `uniform float uPeel; uniform float uTime; uniform sampler2D uMask; varying vec3 vW; varying vec2 vUv;
+  float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  void main(){
+    float m = texture2D(uMask, vUv).r;
+    float th = 1.0 - uPeel;
+    if (m < th - 0.03) discard;
+    float inside = smoothstep(th, th + 0.015, m);
+    float st = h1(floor(vUv * 900.0) + floor(uTime * 20.0));
+    vec3 stat = vec3(st * st) * vec3(0.6, 0.5, 0.8) * 0.45 + vec3(0.05, 0.0, 0.08);
+    float scan = 0.7 + 0.3 * sin(vUv.y * 1400.0 + uTime * 30.0);
+    vec3 lip = mix(vec3(0.9, 0.18, 0.7), vec3(0.35, 0.12, 0.4), smoothstep(th - 0.03, th, m));
+    vec3 c = mix(lip * 1.4, stat * scan, inside);
+    gl_FragColor = vec4(c, 1.0);
+    #include <colorspace_fragment>
+  }`;
+
+// a generic world-position + uv vertex shader for the hall's own shader materials
+const MANOR_WV_VS = `varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+// the hall's moods: warm party light (I), cold moonlight in the EAST WING (II), the manor screaming (III)
+const MANOR_LOOKS = [
+  { key: [1.0, 0.74, 0.46], keyK: 0.85, sky: [0.2, 0.13, 0.26], ground: [0.26, 0.15, 0.09], rim: [0.95, 0.5, 1.0], candle: 1.0, storm: 0.3, peel: 0, ghostA: 0.85, sway: 0.025, eye: [1, 0.75, 0.3] },
+  { key: [0.6, 0.66, 1.0], keyK: 0.8, sky: [0.13, 0.13, 0.3], ground: [0.12, 0.1, 0.14], rim: [0.45, 0.85, 1.0], candle: 0.78, storm: 0.65, peel: 0, ghostA: 0.65, sway: 0.05, eye: [1, 0.45, 0.12] },
+  { key: [0.9, 0.32, 0.4], keyK: 0.7, sky: [0.15, 0.05, 0.14], ground: [0.14, 0.04, 0.07], rim: [1.0, 0.25, 0.75], candle: 0.66, storm: 1.0, peel: 0.3, ghostA: 0.5, sway: 0.1, eye: [1, 0.12, 0.35] },
+];
+// ---------------------------------------------------------------------------
+//  ManorLight: the shared lit-material light block (CircusShade) for the hall: the mood's key and fill,
+//  the candle pools, the moonbeam, his candle eyes; short flashes (attacks, lightning) on top
+// ---------------------------------------------------------------------------
+const ManorLight = {
+  pts: [],   // { pos, c, radius, t, life }
+  flash(pos, r, g, b, radius, life) { if (this.pts.length >= 2) this.pts.shift(); this.pts.push({ pos: pos.clone(), c: [r, g, b], radius, t: 0, life }); },
+  clear() { this.pts.length = 0; },
+  // boss 2's copy-pasted manor attacks are lit too: a cool server-room light while he is on
+  forKiddie() {
+    const U = CircusShade.uniforms();
+    U.uKeyDir.value.set(0.3, 0.85, 0.42).normalize(); U.uKeyCol.value.set(0.55, 0.85, 0.85);
+    U.uSky.value.set(0.25, 0.32, 0.42); U.uGround.value.set(0.08, 0.12, 0.16); U.uRimCol.value.set(0.16, 1.0, 0.84);
+    U.uPtN.value = 0; U.uSpN.value = 0; U.uHaze.value.set(0, 0, 0, 0); U.uHaze2.value.set(0, 0, 0, 0);
+  },
+};
+// ---------------------------------------------------------------------------
+//  HallKit: the grand hall. You stand on the gallery behind a marble balustrade, the ballroom floor 5.8 m below;
+//  THE PROPRIETOR stands on it. Damask walls over mahogany wainscot, fluted pilasters, portraits that watch,
+//  three storm windows behind him in velvet drapes, a coffered ceiling, five crystal chandeliers, a fireplace
+//  behind you under his own portrait, a grandfather clock, and the guests: ghostly couples waltzing below,
+//  a few more on the gallery. The hall follows his mood and comes apart in phase III.
+// ---------------------------------------------------------------------------
+const HallKit = {
+  ready: false,
+  init() {
+    if (this.ready) return;
+    const T = ManorTex, lit = (o) => CircusShade.material(o), Mn = MANOR;
+    const root = this.root = new THREE.Group(); scene.add(root);
+    this.portraits = [];
+    const noise = T.get('noise');
+    this.mats = {
+      wall: lit({ map: T.get('damask'), gloss: 0.25, shine: 16, rim: 0.2, emit: 0.05, wrap: 0.5 }),
+      wains: lit({ map: T.get('wainscot'), gloss: 0.8, shine: 46, rim: 0.2, emit: 0.04 }),
+      trim: lit({ gloss: 0.8, shine: 50, rim: 0.3, emit: 0.06, tri: noise, triST: [0.9, 0.9, 0.3, 0] }),
+      floor: lit({ map: T.get('marble'), gloss: 1.5, shine: 90, rim: 0.12, emit: 0.03 }),
+      par: lit({ map: T.get('parquet'), gloss: 0.9, shine: 50, rim: 0.12, emit: 0.04 }),
+      rug: lit({ map: T.get('rug'), gloss: 0.04, shine: 8, rim: 0.35, emit: 0.05 }),
+      ceil: lit({ map: T.get('coffer'), gloss: 0.4, shine: 30, rim: 0.1, emit: 0.05 }),
+      door: lit({ map: T.get('door'), gloss: 0.8, shine: 40, rim: 0.25, emit: 0.05 }),
+      curtain: lit({ map: T.get('curtain'), gloss: 0.6, shine: 20, rim: 0.65, emit: 0.05, side: THREE.DoubleSide }),
+      art: lit({ map: T.get('portraits'), gloss: 0.55, shine: 70, rim: 0.08, emit: 0.1 }),
+      clock: lit({ map: T.get('clock'), gloss: 1.0, shine: 60, emit: 0.16 }),
+      crystal: lit({ color: 0xc8e4ff, gloss: 2.4, shine: 140, rim: 1.2, emit: 0.32, vertexColors: false }),
+      leaf: lit({ map: T.get('door'), gloss: 0.8, shine: 40, rim: 0.25, emit: 0.05, vertexColors: false }),
+      tile: lit({ map: T.get('coffer'), gloss: 0.4, shine: 30, rim: 0.1, emit: 0.05, vertexColors: false }),
+    };
+    const P = { wall: [], wains: [], trim: [], floor: [], par: [], rug: [], ceil: [], door: [], curtain: [], art: [], clock: [] };
+    const CREAM = 0xd8ccb6, MAHOG = 0x4a2010, GOLD = 0xc8a040, DARK = 0x1a0a10, BRONZE = 0x3a2a1a, PLUMM = 0x2e1a28, EBONY = 0x2a140c;
+    const wallAt = (list, w, h, tu, tv, m) => list.push({ geo: mPlane(w, h, tu, tv), matrix: m });
+    this.flames = [];   // { p (world), s, k (0..1 lit order), out (lights-out threshold), col }
+    const flame = (p, s = 1, col) => this.flames.push({ p: p.clone(), s, k: 0, out: Math.random(), col: col || null });
+    // ---- floors: the ballroom's marble, the gallery's parquet, the rug under your feet
+    P.floor.push({ geo: mPlane(2 * Mn.HW, Mn.EDGE - Mn.FAR, 3, 3), matrix: M4(0, Mn.FLOOR, (Mn.EDGE + Mn.FAR) / 2, -Math.PI / 2) });
+    P.par.push({ geo: mPlane(2 * Mn.HW, Mn.BACK - Mn.EDGE, 1.6, 1.6), matrix: M4(0, 0, (Mn.BACK + Mn.EDGE) / 2, -Math.PI / 2) });
+    P.rug.push({ geo: new THREE.PlaneGeometry(5.4, 5.6), matrix: M4(0, 0.006, 1.0, -Math.PI / 2) });
+    // ---- the gallery's front (below your balustrade, facing the hall): wallpaper, wainscot, a heavy cornice
+    wallAt(P.wall, 2 * Mn.HW, -0.7 - Mn.FLOOR, 2, 2, M4(0, (Mn.FLOOR - 0.7) / 2, Mn.EDGE, 0, Math.PI, 0));
+    wallAt(P.wains, 2 * Mn.HW, 1.6, 2, 1.6, M4(0, Mn.FLOOR + 0.8, Mn.EDGE - 0.02, 0, Math.PI, 0));
+    P.trim.push({ geo: new THREE.BoxGeometry(2 * Mn.HW, 0.5, 0.5), matrix: M4(0, -0.42, Mn.EDGE - 0.1), color: CREAM });
+    P.trim.push({ geo: new THREE.BoxGeometry(2 * Mn.HW, 0.1, 0.62), matrix: M4(0, -0.13, Mn.EDGE - 0.12), color: GOLD });
+    P.trim.push({ geo: new THREE.BoxGeometry(2 * Mn.HW, 0.14, 0.42), matrix: M4(0, -0.74, Mn.EDGE - 0.06), color: MAHOG });
+    for (let x = -Mn.HW + 0.1; x < Mn.HW; x += 0.24) P.trim.push({ geo: new THREE.BoxGeometry(0.1, 0.12, 0.08), matrix: M4(x, -0.6, Mn.EDGE - 0.36), color: GOLD });
+    for (const x of [-10, -6, -2, 2, 6, 10]) { const pp = []; mPilaster(pp, Mn.FLOOR, -0.7, 0.9, CREAM, GOLD); for (const q of pp) P.trim.push({ geo: q.geo, matrix: new THREE.Matrix4().makeTranslation(x, 0, Mn.EDGE).multiply(new THREE.Matrix4().makeRotationY(Math.PI)).multiply(q.matrix), color: q.color }); }
+    // ---- the balustrade (the middle span is its own mesh: it sinks out of the way of the CLOCKWORK CORRIDOR)
+    const bz = Mn.EDGE + 0.14, PM = [];
+    const balSpan = (list, x0, x1) => {
+      const L = x1 - x0, cx = (x0 + x1) / 2;
+      list.push({ geo: new THREE.BoxGeometry(L, 0.13, 0.32), matrix: M4(cx, 0.065, bz), color: PLUMM });
+      list.push({ geo: new THREE.BoxGeometry(L, 0.04, 0.27), matrix: M4(cx, 0.15, bz), color: GOLD });
+      const n = Math.max(1, Math.round(L / 0.24));
+      for (let i = 0; i < n; i++) list.push({ geo: mBaluster(0.7, 0.042), matrix: M4(x0 + (i + 0.5) * L / n, 0.17, bz), color: EBONY });
+      list.push({ geo: new THREE.BoxGeometry(L, 0.06, 0.2), matrix: M4(cx, 0.9, bz), color: PLUMM });
+      list.push({ geo: new THREE.CylinderGeometry(0.11, 0.11, L, 10), matrix: M4(cx, 0.98, bz, 0, 0, Math.PI / 2, 1, 1, 1.25), color: MAHOG });
+      list.push({ geo: new THREE.BoxGeometry(L, 0.018, 0.26), matrix: M4(cx, 0.925, bz), color: GOLD });
+    };
+    const newel = (list, x, lamp) => {
+      list.push({ geo: new THREE.BoxGeometry(0.36, 0.16, 0.4), matrix: M4(x, 0.08, bz), color: PLUMM });
+      list.push({ geo: new THREE.BoxGeometry(0.3, 0.86, 0.34), matrix: M4(x, 0.59, bz), color: PLUMM });
+      list.push({ geo: new THREE.BoxGeometry(0.38, 0.1, 0.42), matrix: M4(x, 1.07, bz), color: MAHOG });
+      list.push({ geo: new THREE.BoxGeometry(0.31, 0.04, 0.35), matrix: M4(x, 0.8, bz), color: GOLD });
+      if (lamp) {   // a three-candle candelabra on the post
+        list.push({ geo: new THREE.CylinderGeometry(0.03, 0.06, 0.42, 8), matrix: M4(x, 1.33, bz), color: GOLD });
+        list.push({ geo: new THREE.TorusGeometry(0.18, 0.018, 5, 14, Math.PI), matrix: M4(x, 1.48, bz, 0, 0, Math.PI), color: GOLD });
+        for (const dx of [-0.18, 0, 0.18]) { list.push({ geo: new THREE.CylinderGeometry(0.05, 0.03, 0.05, 8), matrix: M4(x + dx, dx ? 1.5 : 1.58, bz), color: GOLD }); list.push({ geo: new THREE.CylinderGeometry(0.022, 0.022, 0.16, 6), matrix: M4(x + dx, (dx ? 1.5 : 1.58) + 0.1, bz), color: 0xf4ecd8 }); flame(_v1.set(x + dx, (dx ? 1.5 : 1.58) + 0.22, bz), 0.8); }
+      } else list.push({ geo: new THREE.SphereGeometry(0.11, 10, 8), matrix: M4(x, 1.22, bz), color: GOLD });
+    };
+    for (const [a, b] of [[-Mn.HW, -8.1], [-7.9, -4.3], [-4.1, -2.3], [2.3, 4.1], [4.3, 7.9], [8.1, Mn.HW]]) balSpan(P.trim, a, b);
+    for (const x of [-11.85, -8, -4.2, -2.2, 2.2, 4.2, 8, 11.85]) newel(P.trim, x, x === -4.2 || x === 4.2 || x === -8 || x === 8);
+    // the middle span is a low parapet with brass footlights (his speech bubble floats just above it, like a stage)
+    { const L = 4.08, x0 = -2.04, n = 20;
+      PM.push({ geo: new THREE.BoxGeometry(L, 0.13, 0.32), matrix: M4(0, 0.065, bz), color: PLUMM });
+      PM.push({ geo: new THREE.BoxGeometry(L, 0.04, 0.27), matrix: M4(0, 0.15, bz), color: GOLD });
+      for (let i = 0; i < n; i++) PM.push({ geo: mBaluster(0.24, 0.03), matrix: M4(x0 + (i + 0.5) * L / n, 0.17, bz), color: EBONY });
+      PM.push({ geo: new THREE.BoxGeometry(L, 0.05, 0.26), matrix: M4(0, 0.43, bz), color: PLUMM });
+      PM.push({ geo: new THREE.CylinderGeometry(0.075, 0.075, L, 10), matrix: M4(0, 0.49, bz, 0, 0, Math.PI / 2, 1, 1, 1.4), color: MAHOG });
+      PM.push({ geo: new THREE.BoxGeometry(L, 0.012, 0.2), matrix: M4(0, 0.452, bz), color: GOLD });
+      this.footlights = [];
+      for (const fx of [-1.55, -0.52, 0.52, 1.55]) {
+        // a little shell hood on a brass foot: its dark back to you, open to the stage
+        PM.push({ geo: new THREE.CylinderGeometry(0.06, 0.06, 0.13, 10, 1, true, 0, Math.PI), matrix: M4(fx, 0.6, bz + 0.01, -Math.PI / 2, 0, -Math.PI / 2), color: PLUMM });
+        PM.push({ geo: new THREE.TorusGeometry(0.06, 0.008, 4, 10, Math.PI), matrix: M4(fx - 0.065, 0.6, bz + 0.01, Math.PI / 2, Math.PI / 2, 0), color: GOLD });
+        PM.push({ geo: new THREE.TorusGeometry(0.06, 0.008, 4, 10, Math.PI), matrix: M4(fx + 0.065, 0.6, bz + 0.01, Math.PI / 2, Math.PI / 2, 0), color: GOLD });
+        PM.push({ geo: new THREE.CylinderGeometry(0.014, 0.02, 0.06, 6), matrix: M4(fx, 0.56, bz + 0.03), color: GOLD });
+        this.footlights.push(new THREE.Vector3(fx, 0.6, bz - 0.04));
+      }
+    }
+    // ---- side walls (x = +/- HW): wallpaper, wainscot (hall + gallery), pilasters, doors, portraits, sconces
+    for (const s of [-1, 1]) {
+      const X = s * Mn.HW, ry = -s * Math.PI / 2, rot = new THREE.Matrix4().makeRotationY(ry);
+      const onWall = (z, y, local) => new THREE.Matrix4().makeTranslation(X, y, z).multiply(rot).multiply(local || new THREE.Matrix4());
+      wallAt(P.wall, Mn.BACK - Mn.FAR, Mn.CEIL - Mn.FLOOR, 2, 2, onWall((Mn.BACK + Mn.FAR) / 2, (Mn.CEIL + Mn.FLOOR) / 2));
+      wallAt(P.wains, Mn.EDGE - Mn.FAR, 1.6, 2, 1.6, onWall((Mn.EDGE + Mn.FAR) / 2, Mn.FLOOR + 0.8, M4(0, 0, 0.02)));
+      wallAt(P.wains, Mn.BACK - Mn.EDGE, 1.1, 2, 1.1, onWall((Mn.BACK + Mn.EDGE) / 2, 0.55, M4(0, 0, 0.02)));
+      // rails: chair rail on the gallery, picture rail, the frieze band under the cornice
+      for (const [y, h, d, c] of [[1.12, 0.06, 0.06, GOLD], [Mn.FLOOR + 1.62, 0.08, 0.08, GOLD], [Mn.CEIL - 1.5, 0.12, 0.1, GOLD]]) P.trim.push({ geo: new THREE.BoxGeometry(Mn.BACK - Mn.FAR, h, d), matrix: onWall((Mn.BACK + Mn.FAR) / 2, y, M4(0, 0, d / 2)), color: c });
+      for (const z of [-23.3, -18, -12, -6, 3.2, 8.0]) { const pp = []; mPilaster(pp, z > Mn.EDGE ? 0 : Mn.FLOOR, Mn.CEIL - 1.3, 0.95, CREAM, GOLD); for (const q of pp) P.trim.push({ geo: q.geo, matrix: onWall(z, 0, q.matrix), color: q.color }); }
+      // hall doors: their own instanced leaves (they swing open in the EAST WING)
+      for (const z of [-9, -15]) { const pp = []; mDoorCase(pp, 2.6, 4.4, MAHOG, GOLD); for (const q of pp) P.trim.push({ geo: q.geo, matrix: onWall(z, Mn.FLOOR, q.matrix), color: q.color }); P.trim.push({ geo: new THREE.PlaneGeometry(2.6, 4.4), matrix: onWall(z, Mn.FLOOR + 2.2, M4(0, 0, 0.012)), color: 0x040106 }); }
+      // gallery door
+      { const pp = []; mDoorCase(pp, 1.4, 2.6, MAHOG, GOLD); for (const q of pp) P.trim.push({ geo: q.geo, matrix: onWall(5.6, 0, q.matrix), color: q.color }); P.door.push({ geo: new THREE.PlaneGeometry(1.4, 2.6), matrix: onWall(5.6, 1.3, M4(0, 0, 0.03)) }); }
+      // portraits: above the hall doors and at the far end; one on the gallery
+      const cells = s < 0 ? [0, 1, 2, 7] : [3, 4, 5, 3];
+      [[-9, 2.6, 2.4, 3.6], [-15, 2.6, 2.4, 3.6], [-20.7, 1.4, 2.2, 3.2], [1.0, 2.1, 1.3, 1.9]].forEach(([z, y, w, h], k) => {
+        const pp = []; mFrame(pp, w, h, 0.14); for (const q of pp) P.trim.push({ geo: q.geo, matrix: onWall(z, y, M4(0, 0, 0.02).multiply(q.matrix)), color: q.color });
+        const frac = Math.min(1, 0.5 * h / w);
+        P.art.push({ geo: mCell(new THREE.PlaneGeometry(w, h), cells[k] % 4, Math.floor(cells[k] / 4), 4, 2, frac), matrix: onWall(z, y, M4(0, 0, 0.035)) });
+        this.portraits.push({ cell: cells[k], m: onWall(z, y, M4(0, 0, 0.04)), w, h, frac });
+      });
+      // sconces: on the hall pilasters (looking over the rail you see them burn) and flanking the gallery portrait
+      for (const [z, y, n] of [[-6, 0.4, 2], [-12, 0.4, 2], [-18, 0.4, 2], [-0.4, 2.0, 1], [2.4, 2.0, 1], [6.9, 2.0, 1]]) {
+        const pp = [], fl = mSconce(pp, n), pz = z, off = z < Mn.EDGE ? 0.36 : 0;
+        for (const q of pp) P.trim.push({ geo: q.geo, matrix: onWall(pz, y, M4(0, 0, off).multiply(q.matrix)), color: q.color });
+        for (const f of fl) flame(f.applyMatrix4(onWall(pz, y, M4(0, 0, off))), 0.9);
+      }
+    }
+    // ---- the far wall: three storm windows in stone surrounds, velvet drapes, the grand doors behind him
+    wallAt(P.wall, 2 * Mn.HW, Mn.CEIL - Mn.FLOOR, 2, 2, M4(0, (Mn.CEIL + Mn.FLOOR) / 2, Mn.FAR));
+    wallAt(P.wains, 2 * Mn.HW, 1.6, 2, 1.6, M4(0, Mn.FLOOR + 0.8, Mn.FAR + 0.02));
+    P.trim.push({ geo: new THREE.BoxGeometry(2 * Mn.HW, 0.12, 0.1), matrix: M4(0, Mn.CEIL - 1.5, Mn.FAR + 0.05), color: GOLD });
+    const winParts = [], WIN = [[-7.6, -2.6, 1.6, 7.8], [0, -0.7, 1.9, 6.9], [7.6, -2.6, 1.6, 7.8]];   // x, y0, half width, straight height
+    for (const [wx, y0, hw, hgt] of WIN) {
+      const sh = new THREE.Shape(); sh.moveTo(-hw, 0); sh.lineTo(hw, 0); sh.lineTo(hw, hgt); sh.absarc(0, hgt, hw, 0, Math.PI, false); sh.lineTo(-hw, 0);
+      const g = new THREE.ShapeGeometry(sh, 24), U = g.attributes.uv, Pp = g.attributes.position;
+      for (let i = 0; i < U.count; i++) U.setXY(i, (Pp.getX(i) + hw) / (2 * hw), Pp.getY(i) / (hgt + hw));
+      winParts.push({ geo: g, matrix: M4(wx, y0, Mn.FAR + 0.04) });
+      // stone surround: jambs, the arch, a keystone, the sill
+      for (const sx of [-1, 1]) P.trim.push({ geo: new THREE.BoxGeometry(0.4, hgt, 0.36), matrix: M4(wx + sx * (hw + 0.2), y0 + hgt / 2, Mn.FAR + 0.18), color: CREAM });
+      P.trim.push({ geo: new THREE.TorusGeometry(hw + 0.2, 0.2, 6, 24, Math.PI), matrix: M4(wx, y0 + hgt, Mn.FAR + 0.18, 0, 0, 0, 1, 1, 0.9), color: CREAM });
+      P.trim.push({ geo: new THREE.BoxGeometry(0.5, 0.7, 0.44), matrix: M4(wx, y0 + hgt + hw + 0.2, Mn.FAR + 0.22), color: 0xd8ccb8 });
+      P.trim.push({ geo: new THREE.BoxGeometry(2 * hw + 1.0, 0.24, 0.6), matrix: M4(wx, y0 - 0.12, Mn.FAR + 0.3), color: CREAM });
+      // mullions and transoms (bronze)
+      for (const mx of [-hw / 3, hw / 3]) P.trim.push({ geo: new THREE.BoxGeometry(0.07, hgt + hw * 0.92, 0.1), matrix: M4(wx + mx, y0 + (hgt + hw * 0.92) / 2, Mn.FAR + 0.1), color: BRONZE });
+      for (const ty of [hgt * 0.33, hgt * 0.66, hgt]) P.trim.push({ geo: new THREE.BoxGeometry(2 * hw, 0.07, 0.1), matrix: M4(wx, y0 + ty, Mn.FAR + 0.1), color: BRONZE });
+      // drapes: two folded panels tied back a third of the way up, a pelmet across the top
+      const top = y0 + hgt + hw + 0.9, len = top - Mn.FLOOR - 0.1;
+      for (const sx of [-1, 1]) {
+        const cg = new THREE.PlaneGeometry(1.6, len, 14, 24), Q = cg.attributes.position;
+        for (let i = 0; i < Q.count; i++) {
+          const x = Q.getX(i), y = Q.getY(i), v = (y + len / 2) / len, tie = Math.exp(-Math.pow((v - 0.3) / 0.12, 2));
+          const pinch = 1 - 0.55 * tie;
+          Q.setXYZ(i, x * pinch + sx * tie * 0.35, y, Math.sin((x + 0.8) * 7.5) * 0.09 * (1 + tie) + 0.06);
+        }
+        cg.computeVertexNormals();
+        const U2 = cg.attributes.uv; for (let i = 0; i < U2.count; i++) U2.setXY(i, U2.getX(i) * 1.2, U2.getY(i) * len / 3.2);
+        P.curtain.push({ geo: cg, matrix: M4(wx + sx * (hw + 0.75), Mn.FLOOR + 0.1 + len / 2, Mn.FAR + 0.45) });
+        P.trim.push({ geo: new THREE.TorusGeometry(0.16, 0.05, 6, 12), matrix: M4(wx + sx * (hw + 0.5), Mn.FLOOR + 0.1 + len * 0.3, Mn.FAR + 0.6, Math.PI / 2, 0, 0), color: GOLD });
+      }
+      const pel = new THREE.PlaneGeometry(2 * hw + 2.2, 1.1, 20, 4), Q2 = pel.attributes.position;
+      for (let i = 0; i < Q2.count; i++) { const x = Q2.getX(i), y = Q2.getY(i); Q2.setXYZ(i, x, y - Math.max(0, Math.cos(x / (hw + 1.1) * Math.PI * 2.5)) * 0.25 * (0.5 - y), Math.sin(x * 3) * 0.05); }
+      pel.computeVertexNormals(); P.curtain.push({ geo: pel, matrix: M4(wx, top - 0.3, Mn.FAR + 0.62) });
+      P.trim.push({ geo: new THREE.CylinderGeometry(0.06, 0.06, 2 * hw + 2.6, 8), matrix: M4(wx, top + 0.25, Mn.FAR + 0.5, 0, 0, Math.PI / 2), color: GOLD });
+      for (const sx of [-1, 1]) P.trim.push({ geo: new THREE.SphereGeometry(0.14, 10, 8), matrix: M4(wx + sx * (hw + 1.32), top + 0.25, Mn.FAR + 0.5), color: GOLD });
+    }
+    this.winGeo = mergeGeos(winParts);
+    // the grand doors (behind him) and two great candelabra floor stands
+    { const pp = []; mDoorCase(pp, 3.6, 5.0, MAHOG, GOLD); for (const q of pp) P.trim.push({ geo: q.geo, matrix: new THREE.Matrix4().makeTranslation(0, Mn.FLOOR, Mn.FAR).multiply(q.matrix), color: q.color }); }
+    for (const sx of [-1, 1]) P.door.push({ geo: new THREE.PlaneGeometry(1.8, 5.0), matrix: M4(sx * 0.9, Mn.FLOOR + 2.5, Mn.FAR + 0.04, 0, 0, 0, -sx, 1, 1) });
+    for (const sx of [-1, 1]) {
+      const cx = sx * 3.4, cz = Mn.FAR + 1.2;
+      P.trim.push({ geo: new THREE.CylinderGeometry(0.35, 0.5, 0.3, 10), matrix: M4(cx, Mn.FLOOR + 0.15, cz), color: GOLD });
+      P.trim.push({ geo: new THREE.LatheGeometry([[0.06, 0], [0.12, 0.3], [0.07, 0.9], [0.16, 1.4], [0.06, 2.0], [0.1, 2.6], [0.05, 3.2]].map(([a, b]) => new THREE.Vector2(a, b)), 10), matrix: M4(cx, Mn.FLOOR + 0.3, cz), color: GOLD });
+      for (let k = 0; k < 5; k++) { const a = k / 5 * TAU, r = k ? 0.5 : 0; const px = cx + Math.cos(a) * r, pz = cz + Math.sin(a) * r, py = Mn.FLOOR + 3.6 + (k ? 0 : 0.25); if (k) P.trim.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), matrix: M4(cx + Math.cos(a) * 0.25, Mn.FLOOR + 3.45, cz + Math.sin(a) * 0.25, 0, -a, Math.PI / 2), color: GOLD }); P.trim.push({ geo: new THREE.CylinderGeometry(0.05, 0.05, 0.36, 8), matrix: M4(px, py, pz), color: 0xf4ecd8 }); flame(_v1.set(px, py + 0.26, pz), 1.4); }
+    }
+    // ---- the gallery's back wall: the fireplace under his portrait, two doors, the grandfather clock
+    wallAt(P.wall, 2 * Mn.HW, Mn.CEIL, 2, 2, M4(0, Mn.CEIL / 2, Mn.BACK, 0, Math.PI, 0));
+    wallAt(P.wains, 2 * Mn.HW, 1.1, 2, 1.1, M4(0, 0.55, Mn.BACK - 0.02, 0, Math.PI, 0));
+    P.trim.push({ geo: new THREE.BoxGeometry(2 * Mn.HW, 0.06, 0.06), matrix: M4(0, 1.12, Mn.BACK - 0.04), color: GOLD });
+    const FB = Mn.BACK - 0.3;
+    P.trim.push({ geo: new THREE.BoxGeometry(3.6, 2.3, 0.6), matrix: M4(0, 1.15, FB), color: 0xece4d8 });
+    P.trim.push({ geo: new THREE.BoxGeometry(1.8, 1.3, 0.7), matrix: M4(0, 0.65, FB - 0.06), color: 0x0c0606 });
+    P.trim.push({ geo: new THREE.BoxGeometry(4.0, 0.14, 0.86), matrix: M4(0, 2.36, FB - 0.08), color: 0xd8ccb8 });
+    P.trim.push({ geo: new THREE.BoxGeometry(3.7, 0.08, 0.7), matrix: M4(0, 2.24, FB - 0.04), color: GOLD });
+    for (const sx of [-1, 1]) { P.trim.push({ geo: new THREE.BoxGeometry(0.42, 2.2, 0.72), matrix: M4(sx * 1.32, 1.1, FB - 0.08), color: 0xf2ece0 }); P.trim.push({ geo: new THREE.SphereGeometry(0.16, 10, 8), matrix: M4(sx * 1.32, 1.95, FB - 0.48, 0, 0, 0, 1, 1.4, 0.6), color: GOLD }); }
+    P.trim.push({ geo: new THREE.BoxGeometry(4.4, 0.08, 1.6), matrix: M4(0, 0.04, FB - 0.7), color: 0x2a2026 });
+    for (const sx of [-1, 1]) { P.trim.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), matrix: M4(sx * 0.55, 0.2, FB - 0.45, Math.PI / 2, 0, 0), color: 0x2a2a2a }); P.trim.push({ geo: new THREE.SphereGeometry(0.07, 8, 6), matrix: M4(sx * 0.55, 0.32, FB - 0.7), color: GOLD }); }
+    for (let k = 0; k < 3; k++) P.trim.push({ geo: new THREE.CylinderGeometry(0.09, 0.1, 1.1, 8), matrix: M4((k - 1) * 0.12, 0.18 + (k % 2) * 0.12, FB - 0.35 - (k % 2) * 0.1, 0, (k - 1) * 0.3, Math.PI / 2), color: 0x2a1408 });
+    // his portrait above the mantel
+    { const pp = []; mFrame(pp, 2.0, 2.8, 0.16); for (const q of pp) P.trim.push({ geo: q.geo, matrix: M4(0, 4.0, Mn.BACK - 0.02, 0, Math.PI, 0).multiply(q.matrix), color: q.color });
+      P.art.push({ geo: mCell(new THREE.PlaneGeometry(2.0, 2.8), 2, 1, 4, 2, 0.7), matrix: M4(0, 4.0, Mn.BACK - 0.04, 0, Math.PI, 0) });
+      this.portraits.push({ cell: 6, m: M4(0, 4.0, Mn.BACK - 0.05, 0, Math.PI, 0), w: 2.0, h: 2.8, frac: 0.7 }); }
+    this.portraitEyes();
+    // mantel candelabras
+    for (const sx of [-1, 1]) for (const dx of [-0.16, 0, 0.16]) { const px = sx * 1.6 + dx, py = 2.43 + (dx ? 0.22 : 0.32); P.trim.push({ geo: new THREE.CylinderGeometry(0.025, 0.05, py - 2.43, 6), matrix: M4(px, (py + 2.43) / 2, FB - 0.2), color: GOLD }); P.trim.push({ geo: new THREE.CylinderGeometry(0.022, 0.022, 0.16, 6), matrix: M4(px, py + 0.08, FB - 0.2), color: 0xf4ecd8 }); flame(_v1.set(px, py + 0.21, FB - 0.2), 0.8); }
+    // doors either side
+    for (const sx of [-1, 1]) { const pp = []; mDoorCase(pp, 1.5, 2.7, MAHOG, GOLD); for (const q of pp) P.trim.push({ geo: q.geo, matrix: M4(sx * 5.4, 0, Mn.BACK, 0, Math.PI, 0).multiply(q.matrix), color: q.color }); P.door.push({ geo: new THREE.PlaneGeometry(1.5, 2.7), matrix: M4(sx * 5.4, 1.35, Mn.BACK - 0.03, 0, Math.PI, 0) }); }
+    // the grandfather clock (its pendulum swings on the beat)
+    { const cx = -8.6, cz = Mn.BACK - 0.36, W = 0x3a1608;
+      for (const [w, h, d, y] of [[0.8, 0.5, 0.5, 0.25], [0.62, 1.5, 0.42, 1.25], [0.8, 0.9, 0.5, 2.45], [0.9, 0.12, 0.56, 2.96]]) P.trim.push({ geo: new THREE.BoxGeometry(w, h, d), matrix: M4(cx, y, cz), color: W });
+      P.trim.push({ geo: new THREE.BoxGeometry(0.4, 1.1, 0.02), matrix: M4(cx, 1.3, cz - 0.22), color: 0x0a0404 });
+      for (const sx of [-1, 1]) P.trim.push({ geo: new THREE.SphereGeometry(0.06, 8, 6), matrix: M4(cx + sx * 0.36, 3.12, cz - 0.1), color: GOLD });
+      P.trim.push({ geo: new THREE.TorusGeometry(0.25, 0.03, 6, 20), matrix: M4(cx, 2.45, cz - 0.26), color: GOLD });
+      P.clock.push({ geo: new THREE.CircleGeometry(0.24, 24), matrix: M4(cx, 2.45, cz - 0.255, 0, Math.PI, 0) });
+      const pend = new THREE.Mesh(mergeGeos([{ geo: new THREE.BoxGeometry(0.02, 0.8, 0.02), matrix: M4(0, -0.4, 0), color: GOLD }, { geo: new THREE.CylinderGeometry(0.11, 0.11, 0.03, 16), matrix: M4(0, -0.82, 0, Math.PI / 2, 0, 0), color: 0xe8c870 }]), this.mats.trim);
+      pend.position.set(cx, 1.85, cz - 0.24); root.add(pend); this.pendulum = pend;
+    }
+    // ---- the ceiling: coffers in a perimeter cornice; the middle coffers are loose (they drift away in phase III)
+    const CH = { x0: -4.5, x1: 4.5, z0: -15, z1: -6 };
+    const ceilQuad = (x0, x1, z0, z1) => P.ceil.push({ geo: mPlane(x1 - x0, z1 - z0, 3, 3), matrix: M4((x0 + x1) / 2, Mn.CEIL, (z0 + z1) / 2, Math.PI / 2) });
+    ceilQuad(-Mn.HW, Mn.HW, Mn.FAR, CH.z0); ceilQuad(-Mn.HW, Mn.HW, CH.z1, Mn.BACK); ceilQuad(-Mn.HW, CH.x0, CH.z0, CH.z1); ceilQuad(CH.x1, Mn.HW, CH.z0, CH.z1);
+    for (const [w, d, y] of [[0.9, 0.5, Mn.CEIL - 0.45], [0.6, 0.35, Mn.CEIL - 0.95]]) {
+      P.trim.push({ geo: new THREE.BoxGeometry(2 * Mn.HW, d, w), matrix: M4(0, y, Mn.FAR + w / 2), color: CREAM }); P.trim.push({ geo: new THREE.BoxGeometry(2 * Mn.HW, d, w), matrix: M4(0, y, Mn.BACK - w / 2), color: CREAM });
+      for (const sx of [-1, 1]) P.trim.push({ geo: new THREE.BoxGeometry(w, d, Mn.BACK - Mn.FAR), matrix: M4(sx * (Mn.HW - w / 2), y, (Mn.BACK + Mn.FAR) / 2), color: CREAM });
+    }
+    for (let z = Mn.FAR + 0.3; z < Mn.BACK; z += 0.5) for (const sx of [-1, 1]) P.trim.push({ geo: new THREE.BoxGeometry(0.16, 0.16, 0.2), matrix: M4(sx * (Mn.HW - 0.95), Mn.CEIL - 1.25, z), color: GOLD });
+    this.tiles = new THREE.InstancedMesh(new THREE.BoxGeometry(3, 0.3, 3), this.mats.tile, 9);
+    this.tileHome = [];
+    for (let i = 0; i < 9; i++) { const x = CH.x0 + 1.5 + (i % 3) * 3, z = CH.z0 + 1.5 + Math.floor(i / 3) * 3; this.tileHome.push({ x, z, y: Mn.CEIL + 0.15, lift: 0, spin: rand(-0.4, 0.4), tilt: rand(-0.3, 0.3), delay: rand(0, 6) }); _m1.makeTranslation(x, Mn.CEIL + 0.15, z); this.tiles.setMatrixAt(i, _m1); }
+    root.add(this.tiles);
+    // ---- merge and add the static meshes
+    const add = (list, mat, name) => { if (!list.length) return null; const m = new THREE.Mesh(mergeGeos(list), mat); m.name = name; root.add(m); return m; };
+    add(P.floor, this.mats.floor, 'floor'); add(P.par, this.mats.par, 'parquet'); add(P.rug, this.mats.rug, 'rug');
+    add(P.wall, this.mats.wall, 'wall'); add(P.wains, this.mats.wains, 'wains'); add(P.trim, this.mats.trim, 'trim');
+    add(P.ceil, this.mats.ceil, 'ceil'); add(P.door, this.mats.door, 'door'); add(P.curtain, this.mats.curtain, 'curtain');
+    add(P.art, this.mats.art, 'art'); add(P.clock, this.mats.clock, 'clock');
+    this.railMid = add(PM, this.mats.trim, 'railMid'); this.railSink = 0;
+    // the hall doors' leaves (instanced; pivot on the hinge)
+    this.leaves = new THREE.InstancedMesh(new THREE.BoxGeometry(1.3, 4.4, 0.08).translate(0.65, 2.2, 0), this.mats.leaf, 8);
+    this.leafInfo = [];
+    for (const s of [-1, 1]) for (const z of [-9, -15]) for (const side of [-1, 1]) this.leafInfo.push({ s, z, side, open: 0, target: 0, flap: 0 });
+    root.add(this.leaves);
+    // rooms behind the hall doors: a warm (or eerie) glow when they open
+    // ---- the windows
+    this.winU = { uTime: { value: 0 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uDawn: { value: 0 }, uDim: { value: 1 }, uBoltX: { value: 0 }, uOut: { value: 0 } };
+    this.windows = new THREE.Mesh(this.winGeo, new THREE.ShaderMaterial({ uniforms: this.winU, vertexShader: MANOR_WV_VS, fragmentShader: MANOR_WIN_FS }));
+    root.add(this.windows);
+    // moonbeams: soft additive shafts from the three windows down onto the ballroom floor
+    const shaft = (x, y0, hw, hgt) => {
+      const g = new THREE.CylinderGeometry(hw * 0.95, hw * 1.6, 1, 4, 1, true); g.rotateY(Math.PI / 4); g.translate(0, -0.5, 0);
+      const a = new THREE.Vector3(x, y0 + hgt * 0.6, Mn.FAR + 0.3), b = new THREE.Vector3(x * 0.6, Mn.FLOOR, Mn.FAR + 9);
+      const len = a.distanceTo(b); g.scale(1, len, 0.35);
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), b.clone().sub(a).normalize());
+      return { geo: g, matrix: new THREE.Matrix4().compose(a, q, new THREE.Vector3(1, 1, 1)) };
+    };
+    this.beamU = { uK: { value: 0.3 }, uCol: { value: new THREE.Color(0.55, 0.6, 1.0) } };
+    this.beams = new THREE.Mesh(mergeGeos(WIN.map(([x, y0, hw, h]) => shaft(x, y0, hw, h))), new THREE.ShaderMaterial({
+      uniforms: this.beamU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: `varying float vY; varying vec3 vN; varying vec3 vW; void main(){ vY = uv.y; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform float uK; uniform vec3 uCol; varying float vY; varying vec3 vN; varying vec3 vW;
+        void main(){ vec3 V = normalize(cameraPosition - vW); float f = pow(abs(dot(normalize(vN), V)), 1.5); float a = f * smoothstep(0.0, 0.5, vY) * uK * 0.16;
+          gl_FragColor = vec4(uCol * a, 1.0);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    root.add(this.beams);
+    // ---- the fire
+    { const N = 5, pos = [], uv = [], seed = [], idx = [];
+      for (let k = 0; k < N; k++) {
+        const a = k / N * Math.PI, w = 0.55 + (k % 2) * 0.2, h = 0.75 + (k % 3) * 0.15, cx = (k - 2) * 0.12, base = pos.length / 3;
+        for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 1]]) { pos.push(cx + (u - 0.5) * w * Math.cos(a), 0.18 + v * h, FB - 0.4 + (u - 0.5) * w * Math.sin(a) * 0.5); uv.push(u, v); seed.push(k * 0.37); }
+        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1)); g.setIndex(idx);
+      this.fireU = { uTime: { value: 0 }, uK: { value: 1 } };
+      this.fire = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: this.fireU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+        vertexShader: `attribute float aSeed; varying vec2 vUv; varying float vSeed; void main(){ vUv = uv; vSeed = aSeed; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: MANOR_FIRE_FS }));
+      this.fire.renderOrder = 19; root.add(this.fire);
+      this.firePos = new THREE.Vector3(0, 0.7, FB - 0.6);
+    }
+    // ---- chandeliers (each its own swaying mesh; every crystal in one instanced mesh)
+    this.chands = []; const cr = [];
+    for (const [x, y, z, R, arms] of [[-6.5, 7.6, -16, 1.25, 12], [6.5, 7.6, -16, 1.25, 12], [-6.5, 7.3, -7, 1.05, 10], [6.5, 7.3, -7, 1.05, 10], [0, 7.7, 3.2, 1.0, 10]]) {
+      const c = mChandelier(R, 2, arms);
+      const g = new THREE.Group(); g.position.set(x, y, z); root.add(g);
+      const m = new THREE.Mesh(c.geo, this.mats.trim); g.add(m);
+      const chain = new THREE.Mesh(mergeGeos([{ geo: new THREE.CylinderGeometry(0.035, 0.035, Mn.CEIL - y, 6), color: 0x8a6420 }]), this.mats.trim); chain.position.y = (Mn.CEIL - y) / 2; g.add(chain);
+      this.chands.push({ g, candles: c.candles, cr0: cr.length, n: c.crystals.length, ph: rand(0, TAU), sw: 0, x, y, z });
+      for (const q of c.crystals) cr.push(q);
+    }
+    { const cp = []; for (const c of this.chands) { cp.push({ geo: new THREE.CylinderGeometry(0.5, 0.2, 0.3, 12), matrix: M4(c.x, Mn.CEIL - 0.15, c.z), color: GOLD }); cp.push({ geo: new THREE.CylinderGeometry(0.9, 0.9, 0.06, 20), matrix: M4(c.x, Mn.CEIL - 0.02, c.z), color: 0xe8c870 }); } root.add(new THREE.Mesh(mergeGeos(cp), this.mats.trim)); }
+    this.crystals = cr;
+    this.crystalMesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(1, 0), this.mats.crystal, cr.length);
+    this.crystalMesh.frustumCulled = false; this.crystalMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(this.crystalMesh);
+    // ---- the guests: ghostly couples waltzing on the ballroom floor; ladies and gentlemen on the gallery
+    this.ghostU = { uCol: { value: new THREE.Color(0.55, 1.0, 0.92) }, uCol2: { value: new THREE.Color(0.85, 0.75, 1.0) }, uA: { value: 0 }, uTime: { value: 0 }, uGlitch: { value: 0 } };
+    const ghostMat = () => new THREE.ShaderMaterial({ uniforms: this.ghostU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexShader: MANOR_GHOST_VS, fragmentShader: MANOR_GHOST_FS });
+    const gm = ghostMat();
+    this.dancers = new THREE.InstancedMesh(ManorGhostGeo.pair(), gm, 7);
+    this.ladies = new THREE.InstancedMesh(mergeGeos(ManorGhostGeo.lady()), gm, 3);
+    this.gents = new THREE.InstancedMesh(mergeGeos(ManorGhostGeo.gent()), gm, 3);
+    for (const m of [this.dancers, this.ladies, this.gents]) { m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.renderOrder = 6; root.add(m); }
+    this.dance = []; for (let i = 0; i < 7; i++) this.dance.push({ a: i / 7 * TAU + rand(-0.2, 0.2), r: 6.2 + (i % 3) * 1.4, spin: rand(0, TAU), turn: 0 });
+    this.guests = [[-7.6, -0.6, 0], [-9.4, 1.6, 1], [-6.4, 5.4, 0], [7.8, -0.4, 1], [9.2, 2.2, 0], [6.6, 5.0, 1]].map(([x, z, lady], i) => ({ x, z, lady, ph: rand(0, TAU), yaw: Math.atan2(-x, -z) + rand(-0.8, 0.8), face: 0, idx: 0 }));
+    let li = 0, gi = 0; for (const g of this.guests) g.idx = g.lady ? li++ : gi++;
+    // ---- phase III: torn wallpaper with static behind it; loose fragments drifting up into the void
+    this.tearU = { uPeel: { value: 0 }, uTime: { value: 0 }, uMask: { value: this.tearMask() } };
+    const tp = [];
+    for (const s of [-1, 1]) tp.push({ geo: mPlane(Mn.BACK - Mn.FAR, Mn.CEIL - Mn.FLOOR - 1.7, 7, 7), matrix: M4(s * (Mn.HW - 0.03), (Mn.CEIL + Mn.FLOOR + 1.7) / 2 - 0.9, (Mn.BACK + Mn.FAR) / 2, 0, -s * Math.PI / 2, 0) });
+    tp.push({ geo: mPlane(2 * Mn.HW, Mn.CEIL - Mn.FLOOR - 1.7, 7, 7), matrix: M4(0, (Mn.CEIL + Mn.FLOOR + 1.7) / 2 - 0.9, Mn.FAR + 0.03) });
+    this.tears = new THREE.Mesh(mergeGeos(tp), new THREE.ShaderMaterial({ uniforms: this.tearU, vertexShader: MANOR_WV_VS, fragmentShader: MANOR_TEAR_FS }));
+    this.tears.visible = false; root.add(this.tears);
+    const fragMat = CircusShade.material({ map: T.get('damask'), mapST: [0.25, 0.25, 0, 0], gloss: 0.3, rim: 0.4, emit: 0.12, side: THREE.DoubleSide, vertexColors: false });
+    this.frags = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 0.5, 0.03), fragMat, 40);
+    this.frags.frustumCulled = false; this.frags.count = 0; this.frags.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(this.frags);
+    this.fragList = [];
+    // ---- motes drifting in the candlelight
+    this.motes = []; for (let i = 0; i < 70; i++) this.motes.push({ x: rand(-11, 11), y: rand(Mn.FLOOR + 1, Mn.CEIL - 2), z: rand(Mn.FAR + 1, Mn.BACK - 1), ph: rand(0, TAU), sp: rand(0.05, 0.18) });
+    // state
+    this.look = { key: new THREE.Vector3(), sky: new THREE.Vector3(), ground: new THREE.Vector3(), rim: new THREE.Vector3(), eye: new THREE.Vector3(), keyK: 1, candle: 1, storm: 0.3, peel: 0, ghostA: 0.85, sway: 0.03 };
+    this.setPhase(0, true);
+    this.ignite = 0; this.out = 0; this.outOn = false; this.dawnK = 0; this.dawnOn = false; this.tired = false;
+    this.flashK = 0; this.boltT = rand(4, 9); this.strikes = 0; this.peelSpike = 0;
+    this.wingOpen = 0; this.sinkTarget = 0;
+    this.ready = true;
+  },
+  portraits: [],
+  // the painted eyes of every portrait (world positions) - they glow and follow you in the EAST WING
+  portraitEyes() {
+    const F = { 0: [[128, 190, 40, 52]], 1: [[128, 180, 40, 50]], 2: [[128, 196, 38, 50]], 3: [[72, 224, 30, 38], [184, 224, 30, 38]], 4: [[128, 194, 38, 50]], 5: [[128, 200, 52, 50, 1]], 6: [[128, 128, 1, 1, 2]], 7: [] };
+    this.eyes = [];
+    for (const p of this.portraits) {
+      for (const f of F[p.cell] || []) {
+        const [cx, cy, rx, ry, kind] = f;
+        const pts = kind === 1 ? [[cx - 20, 196], [cx + 20, 196]] : kind === 2 ? [[102, 116], [154, 116]] : [[cx - rx * 0.42, cy - ry * 0.12], [cx + rx * 0.42, cy - ry * 0.12]];
+        for (const [ex, ey] of pts) this.eyes.push({ p: new THREE.Vector3((ex / 256 - 0.5) * p.w, (0.5 - ey / (512 * (p.frac || 1))) * p.h, 0.02).applyMatrix4(p.m), cat: kind === 1, prop: kind === 2 });
+      }
+    }
+  },
+  // the tear mask: where the paper gives way first (linear fbm, tiled)
+  tearMask() {
+    const N = 256;
+    return softTex(N, N, (g) => { pixelFill(g, N, N, (x, y) => { const v = ONoise.fbm2(x / 32, y / 32, 4, 8) * 0.8 + ONoise.n2(x / 6, y / 6, 42) * 0.2, k = clamp((v - 0.25) * 1.9, 0, 1) * 255; return [k, k, k]; }); }, { repeat: true, linear: true });
+  },
+  setPhase(p, instant) {
+    const L = MANOR_LOOKS[clamp(p, 0, 2)];
+    this.phase = p; this.target = L;
+    if (instant) { const l = this.look; l.key.fromArray(L.key); l.sky.fromArray(L.sky); l.ground.fromArray(L.ground); l.rim.fromArray(L.rim); l.eye.fromArray(L.eye); l.keyK = L.keyK; l.candle = L.candle; l.storm = L.storm; l.peel = L.peel; l.ghostA = L.ghostA; l.sway = L.sway; }
+    if (p >= 1 && this.leafInfo) for (const d of this.leafInfo) d.target = p >= 1 ? 1.15 : 0;
+    if (p === 0 && this.leafInfo) for (const d of this.leafInfo) { d.target = 0; if (instant) d.open = 0; }
+    if (p < 2 && this.tileHome && instant) for (const t of this.tileHome) t.lift = 0;
+  },
+  onBeat(b) {
+    if (!this.ready) return;
+    for (const c of this.chands) c.sw += (Math.random() - 0.5) * 0.02 * (1 + G.audio.treble);
+    if (this.phase >= 2 && !Flash.reduced && ((b % 4) + 4) % 4 === 0 && !this.outOn && !this.dawnOn) { const d = pick(this.leafInfo); d.flap = 1; }
+  },
+  // the FIGHT ending: the candles go out one by one, then the hall falls dark
+  lightsOut() { this.outOn = true; },
+  // the SPARE ending: dawn comes up in the windows, the guests drift away
+  dawn() { this.dawnOn = true; },
+  // a retry puts everything back
+  resetLook(p) { this.outOn = false; this.out = 0; this.dawnOn = false; this.dawnK = 0; this.setPhase(p, true); for (const t of this.tileHome) t.lift = 0; this.fragList.length = 0; this.sinkTarget = 0; },
+  // CLOCKWORK CORRIDOR: the middle of the balustrade sinks into the floor while the hallway stands there
+  sinkRail(on) { this.sinkTarget = on ? 1 : 0; },
+  // lightning: the windows flash, the hall goes blue-white for an instant, thunder rolls in a moment later
+  strike() {
+    const red = Flash.reduced;
+    this.flashK = red ? 0.35 : 1; this.winU.uBoltX.value = rand(-9, 9); this.strikes++;
+    ManorLight.flash(_v1.set(this.winU.uBoltX.value * 0.5, 5, MANOR.FAR + 3), 0.55 * this.flashK, 0.6 * this.flashK, 0.9 * this.flashK, 30, red ? 0.6 : 0.35);
+    if (G.audio && G.audio.sfx.thunder) G.audio.sfx.thunder(rand(0.5, 1.6));
+  },
+  update(dt, rdt) {
+    if (!this.ready) return;
+    const t = G.time, Mn = MANOR, L = this.target, l = this.look, red = Flash.reduced;
+    // the mood eases toward the phase's look; tired: the candles burn low
+    const k = 1 - Math.exp(-rdt * 0.8);
+    _v1.fromArray(L.key); l.key.lerp(_v1, k); _v1.fromArray(L.sky); l.sky.lerp(_v1, k); _v1.fromArray(L.ground); l.ground.lerp(_v1, k); _v1.fromArray(L.rim); l.rim.lerp(_v1, k); _v1.fromArray(L.eye); l.eye.lerp(_v1, k);
+    l.keyK = lerp(l.keyK, L.keyK, k); l.storm = lerp(l.storm, L.storm, k); l.ghostA = lerp(l.ghostA, L.ghostA, k); l.sway = lerp(l.sway, L.sway, k);
+    l.candle = lerp(l.candle, L.candle * (this.tired ? 0.55 : 1), k);
+    l.peel = lerp(l.peel, L.peel, 1 - Math.exp(-rdt * 0.35));
+    this.ignite = Math.min(1, this.ignite + rdt * 0.32);
+    if (this.outOn) this.out = Math.min(1, this.out + rdt * 0.3);
+    if (this.dawnOn) this.dawnK = Math.min(1, this.dawnK + rdt * 0.15);
+    const dim = G.bg.dim, outK = 1 - this.out;
+    // lightning
+    this.boltT -= rdt;
+    if (this.boltT <= 0 && this.ignite > 0.6 && !this.outOn && !this.dawnOn) { this.strike(); this.boltT = l.storm > 0.8 ? rand(4, 8) : l.storm > 0.5 ? rand(7, 13) : rand(13, 24); }
+    this.flashK = Math.max(0, this.flashK - rdt * (red ? 1.2 : 2.6));
+    const fl = this.flashK > 0 ? this.flashK * (red ? 1 : (0.6 + 0.4 * Math.sin(this.flashK * 40))) : 0;
+    this.peelSpike = Math.max(0, this.peelSpike - rdt * 0.8);
+    // windows, moonbeams, fire
+    const W = this.winU; W.uTime.value = t; W.uFlash.value = fl; W.uDim.value = dim * (0.75 + 0.25 * this.ignite); W.uOut.value = this.out; W.uDawn.value = this.dawnK;
+    W.uStatic.value = clamp(l.peel * 1.6 + this.peelSpike + G.fx.glitch * 0.4, 0, 1) * (1 - this.dawnK);
+    this.beamU.uK.value = (0.35 + l.storm * 0.4 + fl * 2.5) * dim * outK * (1 - this.dawnK * 0.3);
+    this.beamU.uCol.value.setRGB(0.55 + this.dawnK * 0.45, 0.6 + this.dawnK * 0.15, 1.0 - this.dawnK * 0.55);
+    this.fireU.uTime.value = t; this.fireU.uK.value = l.candle * dim * outK * this.ignite;
+    // candle flames: lit in a wave out from him at the start; out one by one at the end
+    const glow = G.fx.glow, cK = l.candle * dim * (1 + G.audio.bass * 0.25);
+    for (let i = 0; i < this.flames.length; i++) {
+      const f = this.flames[i];
+      const lit = clamp((this.ignite * 34 - f.p.distanceTo(_v2.set(0, 0, Mn.BOSS_Z)) * 1.0) / 3, 0, 1) * (this.out > f.out * 0.85 ? 0 : 1);
+      if (lit <= 0.01) continue;
+      const fk = (0.82 + 0.18 * Math.sin(t * 11 + i * 1.7) * Math.sin(t * 7.3 + i)) * cK * lit;
+      glow.add(f.p.x, f.p.y, f.p.z, 0.45 * f.s, 1.0 * fk, 0.6 * fk, 0.22 * fk, 0.55, 0);
+      glow.add(f.p.x, f.p.y, f.p.z, 0.1 * f.s, 1, 0.92, 0.7, fk, 0);
+    }
+    // the fire's embers and glow
+    if (this.fireU.uK.value > 0.05) { const fp = this.firePos; glow.add(fp.x, fp.y - 0.35, fp.z, 2.2, 1, 0.45, 0.15, 0.35 * this.fireU.uK.value, 0); if (chance(rdt * 6)) G.fx.parts.emit(fp.x + rand(-0.4, 0.4), fp.y - 0.3, fp.z, rand(-0.1, 0.1), rand(0.5, 1.1), rand(-0.05, 0.05), rand(0.8, 1.6), 0.025, 1, 0.6, 0.2, 0.6, -0.15, 0); }
+    // chandeliers: sway (more as he loses it), crystals swing a little behind, a glint on the beat
+    const sw = l.sway * (red ? 0.6 : 1);
+    for (const c of this.chands) {
+      c.sw *= Math.exp(-rdt * 1.2);
+      c.g.rotation.z = Math.sin(t * 0.9 + c.ph) * sw + c.sw * 0.5; c.g.rotation.x = Math.sin(t * 0.7 + c.ph * 2) * sw * 0.7;
+      c.g.updateMatrixWorld(true);
+      for (let i = 0; i < c.candles.length; i++) {
+        const lit = clamp((this.ignite * 34 - Math.hypot(c.x, c.z - Mn.BOSS_Z) - 3) / 3, 0, 1) * (this.out > ((i * 0.37 + c.ph) % 1) * 0.8 ? 0 : 1);
+        if (lit <= 0.01) continue;
+        _v1.copy(c.candles[i]).applyMatrix4(c.g.matrixWorld);
+        const fk = (0.82 + 0.18 * Math.sin(t * 12 + i * 2.1 + c.ph)) * cK * lit;
+        glow.add(_v1.x, _v1.y, _v1.z, 0.42, 1.0 * fk, 0.62 * fk, 0.25 * fk, 0.5, 0);
+        glow.add(_v1.x, _v1.y, _v1.z, 0.1, 1, 0.94, 0.72, fk, 0);
+      }
+      for (let i = 0; i < c.n; i++) {
+        const q = this.crystals[c.cr0 + i], ang = Math.sin(t * 1.6 + i * 0.7 + c.ph) * 0.06 + c.sw * 0.4;
+        _v1.set(q.x, q.y - q.len, q.z); _e1.set(ang * 0.5, 0, ang); _q1.setFromEuler(_e1); _s1.set(0.05 * (q.len / 0.25), q.len, 0.05 * (q.len / 0.25));
+        _m1.compose(_v1, _q1, _s1).premultiply(c.g.matrixWorld); this.crystalMesh.setMatrixAt(c.cr0 + i, _m1);
+      }
+    }
+    this.crystalMesh.instanceMatrix.needsUpdate = true;
+    // the grandfather clock's pendulum (one swing per two beats)
+    this.pendulum.rotation.z = Math.sin(G.clock.beat * Math.PI) * 0.22;
+    // the middle of the balustrade sinks (and rises) for the CLOCKWORK CORRIDOR
+    this.railSink = damp(this.railSink, this.sinkTarget, 3, rdt);
+    this.railMid.position.y = -0.8 * this.railSink; this.railMid.visible = this.railSink < 0.97;
+    if (this.railMid.visible) { const fk = cK * clamp(this.ignite * 3 - 0.5, 0, 1) * (1 - this.railSink); for (const f of this.footlights) { glow.add(f.x, f.y + this.railMid.position.y, f.z, 0.5, 1 * fk, 0.7 * fk, 0.35 * fk, 0.6, 0); glow.add(f.x, f.y + this.railMid.position.y, f.z, 0.12, 1, 0.95, 0.8, fk, 0); } }
+    // the hall doors: in the EAST WING they swing open on dark rooms; in phase III they flap on the beat
+    for (let i = 0; i < this.leafInfo.length; i++) {
+      const d = this.leafInfo[i];
+      d.flap = Math.max(0, d.flap - rdt * 3);
+      d.open = damp(d.open, d.target * (1 - this.out) + d.flap * 0.6, 1.4, rdt);
+      const hingeZ = d.z + d.side * 1.3, X = d.s * (Mn.HW - 0.06);
+      const yaw = d.side * Math.PI / 2 + d.side * d.s * d.open;
+      _v1.set(X, Mn.FLOOR, hingeZ); _q1.setFromAxisAngle(UP, yaw); _m1.compose(_v1, _q1, _s1.set(1, 1, 1)); this.leaves.setMatrixAt(i, _m1);
+      if (d.open > 0.2) { const gx = X - d.s * 1.2, gk = d.open * dim * outK; if (this.phase >= 2) glow.add(gx, Mn.FLOOR + 2, d.z, 3.2, 0.9 * gk, 0.15 * gk, 0.5 * gk, 0.35, 0); else glow.add(gx, Mn.FLOOR + 2, d.z, 3.2, 0.25 * gk, 0.7 * gk, 0.75 * gk, 0.3, 0); }
+    }
+    this.leaves.instanceMatrix.needsUpdate = true;
+    // the guests
+    const gU = this.ghostU; gU.uTime.value = t;
+    gU.uA.value = l.ghostA * dim * outK * smooth01(this.ignite * 1.5 - 0.3) * (1 - this.dawnK) * (this.tired ? 0.5 : 1);
+    gU.uGlitch.value = this.phase >= 2 ? 0.4 + G.fx.glitch * 0.6 : G.fx.glitch * 0.4;
+    gU.uCol.value.setRGB(this.phase >= 2 ? 1.0 : 0.55, this.phase >= 2 ? 0.45 : 1.0, this.phase >= 2 ? 0.75 : 0.92);
+    const ghostsOn = gU.uA.value > 0.01;
+    this.dancers.visible = this.ladies.visible = this.gents.visible = ghostsOn;
+    if (ghostsOn) {
+      const bar = G.clock.beat / 4, watch = this.phase >= 1 ? 1 : 0;
+      for (let i = 0; i < this.dance.length; i++) {
+        const d = this.dance[i];
+        d.turn = damp(d.turn, watch, 1.2, rdt);
+        d.a += rdt * 0.09 * (1 - d.turn * 0.85) * (this.phase >= 2 ? 2.2 : 1);
+        d.spin += rdt * (2.4 * (1 - d.turn) + (this.phase >= 2 ? 3 : 0));
+        const x = Math.cos(d.a) * d.r, z = Mn.BOSS_Z + Math.sin(d.a) * d.r * 0.7;
+        const faceYou = Math.atan2(-x, -z);
+        const yaw = lerp(d.spin, faceYou, d.turn) + (this.phase >= 2 ? Math.sin(t * 9 + i) * 0.4 : 0);
+        _v1.set(x, Mn.FLOOR + Math.abs(Math.sin((bar + i * 0.13) * Math.PI * 2)) * 0.06, z); _q1.setFromAxisAngle(UP, yaw);
+        _m1.compose(_v1, _q1, _s1.set(1.05, 1.05, 1.05)); this.dancers.setMatrixAt(i, _m1);
+      }
+      this.dancers.instanceMatrix.needsUpdate = true;
+      for (const g of this.guests) {
+        g.face = damp(g.face, watch, 1.5, rdt);
+        _v2.set(g.x, 0, g.z); const toYou = Math.atan2(Head.pos.x - g.x, Head.pos.z - g.z);
+        const yaw = lerp(g.yaw + Math.sin(t * 0.4 + g.ph) * 0.3, toYou, g.face);
+        _v1.set(g.x, Math.sin(t * 1.3 + g.ph) * 0.03, g.z); _q1.setFromAxisAngle(UP, yaw);
+        _m1.compose(_v1, _q1, _s1.set(1, 1, 1)); (g.lady ? this.ladies : this.gents).setMatrixAt(g.idx, _m1);
+      }
+      this.ladies.instanceMatrix.needsUpdate = true; this.gents.instanceMatrix.needsUpdate = true;
+    }
+    // portrait eyes: in the EAST WING they open, glow and watch you
+    const eyeK = (this.phase >= 1 ? (this.phase >= 2 ? 1 : 0.6) : 0) * dim * outK * (1 - this.dawnK);
+    if (eyeK > 0.02) for (const e of this.eyes) { const c = e.prop ? [1, 0.82, 0.3] : e.cat ? [0.8, 1, 0.3] : [1, 0.15, 0.2]; glow.add(e.p.x, e.p.y, e.p.z, 0.14, c[0] * eyeK, c[1] * eyeK, c[2] * eyeK, 0.9, 0); }
+    // phase III: tears in the paper, fragments drift up, the middle of the ceiling comes loose
+    const peel = clamp(l.peel + this.peelSpike, 0, 1) * (1 - this.dawnK);
+    this.tearU.uPeel.value = peel; this.tearU.uTime.value = t; this.tears.visible = peel > 0.01;
+    if (this.phase >= 2 && !this.outOn && !this.dawnOn && this.fragList.length < 40 && chance(rdt * 3)) {
+      const s = chance(0.5) ? -1 : 1, onFar = chance(0.3);
+      const p = onFar ? new THREE.Vector3(rand(-11, 11), rand(Mn.FLOOR + 3, Mn.CEIL - 2), Mn.FAR + 0.1) : new THREE.Vector3(s * (Mn.HW - 0.1), rand(Mn.FLOOR + 3, Mn.CEIL - 2), rand(Mn.FAR + 1, Mn.EDGE));
+      this.fragList.push({ p, v: new THREE.Vector3(onFar ? rand(-0.2, 0.2) : -s * rand(0.1, 0.4), rand(0.25, 0.6), onFar ? rand(0.1, 0.4) : rand(-0.2, 0.2)), q: new THREE.Quaternion().setFromEuler(_e1.set(0, onFar ? 0 : -s * Math.PI / 2, 0)), w: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize().multiplyScalar(rand(0.4, 1.4)), life: 0, max: rand(6, 11) });
+    }
+    let nf = 0;
+    for (let i = 0; i < this.fragList.length; i++) {
+      const f = this.fragList[i]; f.life += rdt;
+      if (f.life >= f.max) { this.fragList.splice(i, 1); i--; continue; }
+      f.p.addScaledVector(f.v, rdt); _q1.setFromAxisAngle(_v1.copy(f.w).normalize(), f.w.length() * rdt); f.q.premultiply(_q1);
+      const sc = Math.min(1, f.life * 2) * Math.min(1, (f.max - f.life) / 1.5);
+      _m1.compose(f.p, f.q, _s1.set(sc, sc, sc)); this.frags.setMatrixAt(nf++, _m1);
+    }
+    this.frags.count = nf; this.frags.visible = nf > 0; if (nf) this.frags.instanceMatrix.needsUpdate = true;
+    for (let i = 0; i < 9; i++) {
+      const h = this.tileHome[i];
+      const want = this.phase >= 2 && !this.dawnOn ? clamp((this.phaseT || 0) - h.delay, 0, 9) * 0.35 : 0;
+      h.lift = damp(h.lift, want, 0.6, rdt);
+      _v1.set(h.x, h.y + h.lift, h.z); _e1.set(h.tilt * h.lift * 0.2, h.spin * h.lift * 0.3, -h.tilt * h.lift * 0.15); _q1.setFromEuler(_e1);
+      _m1.compose(_v1, _q1, _s1.set(1, 1, 1)); this.tiles.setMatrixAt(i, _m1);
+    }
+    this.tiles.instanceMatrix.needsUpdate = true;
+    this.phaseT = this.phase >= 2 ? (this.phaseT || 0) + rdt : 0;
+    // motes in the candlelight (and in the moonbeams)
+    if (outK > 0.05) for (const m of this.motes) {
+      const y = m.y + Math.sin(t * m.sp + m.ph) * 0.4, x = m.x + Math.sin(t * m.sp * 0.7 + m.ph * 2) * 0.5;
+      const a = (0.25 + 0.2 * Math.sin(t * 2 + m.ph)) * dim * outK * this.ignite;
+      glow.add(x, y, m.z, 0.06, 1, 0.85, 0.6, a, 0);
+    }
+    this.applyLight(rdt, fl);
+  },
+  // the light block for this frame
+  applyLight(dt, fl) {
+    const U = CircusShade.uniforms(), l = this.look, dim = G.bg.dim, outK = 1 - this.out, ig = smooth01(this.ignite * 1.3), dawn = this.dawnK;
+    const kk = l.keyK * dim * outK * ig;
+    U.uKeyDir.value.set(0.25 - dawn * 0.1, 0.85 - dawn * 0.35, 0.45 - dawn * 0.9).normalize();
+    U.uKeyCol.value.set(l.key.x * kk * (1 - dawn) + dawn * 1.1, l.key.y * kk * (1 - dawn) + dawn * 0.72, l.key.z * kk * (1 - dawn) + dawn * 0.45).addScalar(fl * 0.35);
+    U.uSky.value.copy(l.sky).multiplyScalar((0.55 + 0.45 * ig) * dim * (0.15 + 0.85 * outK)).addScalar(fl * 0.25 + dawn * 0.12);
+    U.uGround.value.copy(l.ground).multiplyScalar(dim * (0.1 + 0.9 * outK) * (0.4 + 0.6 * ig));
+    U.uRimCol.value.copy(l.rim).multiplyScalar(dim * (0.3 + 0.7 * outK));
+    U.uHaze.value.set(0, 0, 0, 0); U.uHaze2.value.set(0, 0, 0, 0);
+    // points: flashes first, then his candle eyes, then the fire behind you
+    let n = 0;
+    for (let i = 0; i < this.pts().length; i++) {
+      const p = ManorLight.pts[i]; p.t += dt;
+      if (p.t >= p.life) { ManorLight.pts.splice(i, 1); i--; continue; }
+      const f = 1 - p.t / p.life;
+      U.uPtPos.value[n].set(p.pos.x, p.pos.y, p.pos.z, p.radius); U.uPtCol.value[n].set(p.c[0] * f, p.c[1] * f, p.c[2] * f); n++;
+    }
+    if (G.boss && G.boss.root.visible && G.boss.headWorldPos && n < 4) {
+      G.boss.headWorldPos(_v2); const f = (G.boss.eyeK !== undefined ? G.boss.eyeK : 1) * dim * (G.boss.fade !== undefined ? G.boss.fade : 1);
+      U.uPtPos.value[n].set(_v2.x, _v2.y + 0.4, _v2.z + 1.4, 8); U.uPtCol.value[n].set(l.eye.x * f * 0.9, l.eye.y * f * 0.9, l.eye.z * f * 0.9); n++;
+    }
+    if (n < 4) { const fk = this.fireU.uK.value * (0.85 + 0.15 * Math.sin(G.time * 9) * Math.sin(G.time * 5.7)); U.uPtPos.value[n].set(this.firePos.x, this.firePos.y, this.firePos.z, 8); U.uPtCol.value[n].set(1.0 * fk, 0.48 * fk, 0.18 * fk); n++; }
+    if (n < 4) { const ck = l.candle * dim * outK * ig; U.uPtPos.value[n].set(0, 1.6, -1.6, 5); U.uPtCol.value[n].set(0.45 * ck, 0.3 * ck, 0.14 * ck); n++; }
+    U.uPtN.value = n;
+    // spots: the candle pool on the ballroom floor around him, the pool on the gallery, the moonbeam, a stage light on him
+    let s = 0;
+    const spot = (px, py, pz, tx, ty, tz, outer, inner, r, g, b) => { _v3.set(tx - px, ty - py, tz - pz).normalize(); U.uSpPos.value[s].set(px, py, pz, Math.cos(outer)); U.uSpDir.value[s].set(_v3.x, _v3.y, _v3.z, Math.cos(inner)); U.uSpCol.value[s].set(r, g, b); s++; };
+    const ck = l.candle * dim * outK * ig;
+    spot(0, 10, -10, 0, MANOR.FLOOR, -9, 0.75, 0.3, 0.95 * ck * l.key.x, 0.75 * ck * l.key.y, 0.5 * ck * l.key.z);
+    spot(0, 8, 2.6, 0, 0, 0.4, 0.62, 0.25, 0.75 * ck, 0.55 * ck, 0.32 * ck);
+    const mk = (0.3 + l.storm * 0.3 + fl * 1.6) * dim * outK + dawn * 0.9;
+    spot(0, 5.5, MANOR.FAR + 0.5, 0, MANOR.FLOOR, -11, 0.42, 0.15, (0.45 + dawn * 0.6) * mk, (0.5 + dawn * 0.2) * mk, (0.95 - dawn * 0.5) * mk);
+    const bk = dim * outK * ig * (this.phase >= 2 ? 0.9 + 0.3 * G.fx.beatPulse : 0.6);
+    spot(0, MANOR.FLOOR + 0.3, -5.2, 0, 1.8, MANOR.BOSS_Z, 0.5, 0.2, l.rim.x * bk, l.rim.y * bk, l.rim.z * bk);
+    U.uSpN.value = s;
+  },
+  pts() { return ManorLight.pts; },
+};
+registerKit(HallKit, function () { this.portraits = []; this.flames = []; this.chands = []; this.fragList = []; this.eyes = []; ManorLight.clear(); });
+
+// ============================================================================
+//  THE PROPRIETOR, remastered: a butler built like a house. His head is a crystal chandelier whose two
+//  front candles are his eyes (gilt scrolls for brows, a jaw of crystal teeth); his torso is a house front
+//  in damask with lit windows, a fanlight and the double doors he opens on the void; mansard-roof shoulders
+//  with dormers and a smoking chimney; a tailcoat, wing collar and magenta bow tie; wrought-iron banister
+//  arms ending in white gloves; pinstriped trousers and spats. Lit by the hall. Same hooks as before.
+// ============================================================================
+const PROP_EYE = [[1, 0.78, 0.32], [1, 0.48, 0.12], [1, 0.16, 0.38]], PROP_EYE_SAD = [0.55, 0.65, 1];
+// a white glove: open (0), pointing (1) or a loose fist (2); wrist at the origin, fingers down -y
+function propGloveGeo(pose) {
+  const W = 0xf6f4ee, P = [], C = 0xc8a040;
+  P.push({ geo: roundedBoxGeo(0.34, 0.36, 0.16, 0.06, 2), matrix: M4(0, -0.24, 0), color: W });
+  P.push({ geo: new THREE.CylinderGeometry(0.17, 0.14, 0.16, 12), matrix: M4(0, -0.02, 0), color: W });
+  P.push({ geo: new THREE.TorusGeometry(0.165, 0.025, 6, 16), matrix: M4(0, 0.05, 0, Math.PI / 2, 0, 0), color: C });
+  for (let k = 0; k < 4; k++) {
+    const x = -0.12 + k * 0.08, len = [0.22, 0.26, 0.25, 0.2][k];
+    const curl = pose === 2 ? 1.5 : pose === 1 ? (k === 0 ? 0 : 1.6) : 0.15 + k * 0.04;
+    const seg = 3, sl = len / seg; let px = x, py = -0.42, pz = 0, ang = 0;
+    for (let s = 0; s < seg; s++) {
+      ang += curl / seg;
+      const cy = py - Math.cos(ang) * sl / 2, cz = pz + Math.sin(ang) * sl / 2;
+      P.push({ geo: new THREE.CapsuleGeometry(0.036 - s * 0.003, sl * 0.8, 3, 8), matrix: M4(px, cy, cz, ang, 0, 0), color: W });
+      py -= Math.cos(ang) * sl; pz += Math.sin(ang) * sl;
+    }
+    // stitching (three lines down the back of the glove)
+    if (k < 3) P.push({ geo: new THREE.BoxGeometry(0.008, 0.18, 0.004), matrix: M4(x + 0.04, -0.26, -0.082), color: 0xd8d0c4 });
+  }
+  const th = pose === 2 ? 0.9 : 0.35;
+  P.push({ geo: new THREE.CapsuleGeometry(0.042, 0.14, 3, 8), matrix: M4(0.2, -0.24, 0.05, th, 0, -0.7), color: W });
+  P.push({ geo: new THREE.CapsuleGeometry(0.036, 0.1, 3, 8), matrix: M4(0.27, -0.34, 0.1, th + 0.3, 0, -0.35), color: W });
+  return mergeGeos(P);
+}
+// one banister arm segment of length L: twin iron rails, twisted spindles, gilt finials (pivot at the top)
+function propBanisterGeo(L, elbow) {
+  const I = 0x2a2234, I2 = 0x3a3046, G = 0xc8a040, P = [];
+  for (const x of [-0.12, 0.12]) P.push({ geo: new THREE.BoxGeometry(0.07, L, 0.08), matrix: M4(x, -L / 2, 0), color: I });
+  P.push({ geo: new THREE.BoxGeometry(0.3, 0.06, 0.1), matrix: M4(0, -0.06, 0), color: I2 });
+  P.push({ geo: new THREE.BoxGeometry(0.3, 0.06, 0.1), matrix: M4(0, -L + 0.06, 0), color: I2 });
+  const n = Math.max(3, Math.round(L / 0.24));
+  for (let k = 1; k < n; k++) {
+    const y = -k * L / n;
+    P.push({ geo: new THREE.CylinderGeometry(0.022, 0.022, 0.18, 6), matrix: M4(0, y, 0, 0, 0, Math.PI / 2), color: I2 });
+    P.push({ geo: new THREE.TorusGeometry(0.035, 0.012, 4, 8), matrix: M4(0, y, 0, 0, Math.PI / 2, 0), color: I });
+    P.push({ geo: new THREE.SphereGeometry(0.03, 6, 4), matrix: M4(0, y, 0), color: G });
+  }
+  P.push({ geo: new THREE.SphereGeometry(elbow ? 0.11 : 0.13, 10, 8), matrix: M4(0, 0, 0), color: G });
+  if (elbow) P.push({ geo: new THREE.TorusGeometry(0.1, 0.025, 6, 12, Math.PI * 1.4), matrix: M4(0, -0.02, 0.0, 0, Math.PI / 2, 0.4), color: I });
+  return mergeGeos(P);
+}
+class ProprietorModel {
+  constructor() {
+    const lit = (o) => CircusShade.material(o);
+    this.root = new THREE.Group(); this.root.position.set(0, -1.9, MANOR.BOSS_Z); this.root.scale.setScalar(1.22);
+    scene.add(this.root);
+    this.body = new THREE.Group(); this.root.add(this.body);
+    this.mats = [];
+    const M = (o) => { const m = lit(o); this.mats.push(m); return m; };
+    this.bodyMat = M({ gloss: 0.7, shine: 50, rim: 0.55, emit: 0.16, tri: ManorTex.get('noise'), triST: [1.4, 1.4, 0.25, 0] });
+    this.ironMat = M({ gloss: 1.0, shine: 70, rim: 0.6, emit: 0.16 });
+    this.gloveMat = M({ gloss: 0.35, shine: 24, rim: 0.4, emit: 0.28 });
+    this.headMat = M({ gloss: 1.3, shine: 90, rim: 0.75, emit: 0.24 });
+    this.crystalMat = M({ color: 0xbfe0ff, gloss: 2.6, shine: 150, rim: 1.3, emit: 0.3, vertexColors: false });
+    const COAT = 0x1e1428, TROU = 0x241c30, SLATE = 0x2c2640, COPPER = 0xb0703a, GOLD = 0xc8a040, CREAM = 0xd8ccb6, WHITE = 0xf2f0ea;
+    // ---- legs, spats and shoes; the coat's tails; lapels, collar, bow tie, buttons, the watch chain; the roof shoulders
+    const P = [], box = (w, h, d, x, y, z, col, rx = 0, ry = 0, rz = 0) => P.push({ geo: new THREE.BoxGeometry(w, h, d), matrix: M4(x, y, z, rx, ry, rz), color: col });
+    for (const s of [-1, 1]) {
+      P.push({ geo: new THREE.CylinderGeometry(0.25, 0.2, 2.6, 12), matrix: M4(s * 0.38, -1.45, 0), color: TROU });
+      P.push({ geo: new THREE.BoxGeometry(0.035, 2.6, 0.04), matrix: M4(s * 0.6, -1.45, 0), color: 0x5a4a6a });
+      P.push({ geo: new THREE.CylinderGeometry(0.235, 0.25, 0.36, 12), matrix: M4(s * 0.38, -2.86, 0), color: 0xe8e4dc });
+      for (let k = 0; k < 3; k++) P.push({ geo: new THREE.SphereGeometry(0.03, 6, 4), matrix: M4(s * 0.38 + s * 0.2, -2.76 - k * 0.1, 0.1), color: 0x2a2a2a });
+      P.push({ geo: roundedBoxGeo(0.44, 0.22, 0.8, 0.1, 2), matrix: M4(s * 0.38, -3.08, 0.16), color: 0x0c0a10 });
+      P.push({ geo: new THREE.BoxGeometry(0.46, 0.06, 0.82), matrix: M4(s * 0.38, -3.18, 0.16), color: 0x1a1418 });
+      // swallowtails
+      P.push({ geo: new THREE.BoxGeometry(0.46, 1.9, 0.07), matrix: M4(s * 0.32, -0.85, -0.46, 0.18, 0, s * 0.06), color: COAT });
+      P.push({ geo: new THREE.BoxGeometry(0.3, 0.4, 0.08), matrix: M4(s * 0.38, -1.92, -0.66, 0.35, 0, s * 0.18), color: COAT });
+      // lapels (satin) sweeping from the shoulder to the doors
+      P.push({ geo: new THREE.BoxGeometry(0.28, 1.45, 0.06), matrix: M4(s * 0.72, 2.12, 0.455, 0, 0, s * 0.24), color: 0x120c1c });
+      P.push({ geo: new THREE.BoxGeometry(0.04, 1.45, 0.07), matrix: M4(s * 0.6, 2.12, 0.47, 0, 0, s * 0.24), color: 0x3a2a4a });
+      // mansard roof shoulders: a slate slope, a copper ridge, a lit dormer
+      P.push({ geo: new THREE.BoxGeometry(0.72, 0.5, 0.95), matrix: M4(s * 1.18, 2.92, 0, 0, 0, -s * 0.38), color: SLATE });
+      P.push({ geo: new THREE.BoxGeometry(0.62, 0.08, 1.0), matrix: M4(s * 1.08, 3.16, 0, 0, 0, -s * 0.38), color: COPPER });
+      P.push({ geo: new THREE.BoxGeometry(0.8, 0.08, 1.0), matrix: M4(s * 1.2, 2.66, 0), color: 0x4a3a4e });
+      P.push({ geo: new THREE.BoxGeometry(0.24, 0.3, 0.2), matrix: M4(s * 1.18, 2.98, 0.42), color: SLATE });
+      P.push({ geo: new THREE.ConeGeometry(0.2, 0.18, 4), matrix: M4(s * 1.18, 3.22, 0.42, 0, Math.PI / 4, 0), color: COPPER });
+    }
+    // the chimney on his right shoulder
+    box(0.26, 0.6, 0.26, 1.3, 3.3, -0.2, 0x5a2a20); box(0.32, 0.08, 0.32, 1.3, 3.62, -0.2, CREAM);
+    this.chimney = new THREE.Vector3(1.3, 3.7, -0.2);
+    // cornice (the eaves), collar and bow tie
+    box(2.0, 0.1, 0.92, 0, 2.95, 0, 0x4a3a4e); box(2.04, 0.04, 0.94, 0, 3.01, 0, GOLD);
+    for (let k = -8; k <= 8; k++) box(0.08, 0.08, 0.08, k * 0.12, 2.84, 0.47, GOLD);
+    for (const s of [-1, 1]) { box(0.36, 0.3, 0.12, s * 0.21, 3.05, 0.43, WHITE, 0, 0, -s * 0.5); P.push({ geo: new THREE.ConeGeometry(0.17, 0.34, 4), matrix: M4(s * 0.19, 2.95, 0.5, 0, 0, s * Math.PI / 2), color: CONFIG.COL.magenta }); }
+    P.push({ geo: new THREE.SphereGeometry(0.08, 8, 6), matrix: M4(0, 2.95, 0.52), color: 0x8a1aa8 });
+    // the door frame, the fanlight's surround, a pediment, buttons, a pocket square, the watch chain
+    box(1.3, 0.08, 0.06, 0, 2.55, 0.44, GOLD); box(1.3, 0.08, 0.06, 0, 1.15, 0.44, GOLD);
+    box(0.08, 1.48, 0.06, -0.62, 1.85, 0.44, GOLD); box(0.08, 1.48, 0.06, 0.62, 1.85, 0.44, GOLD);
+    box(1.16, 1.36, 0.08, 0, 1.85, 0.39, 0x000000);
+    P.push({ geo: new THREE.TorusGeometry(0.34, 0.05, 6, 16, Math.PI), matrix: M4(0, 2.6, 0.44), color: GOLD });
+    for (let i = 0; i < 3; i++) P.push({ geo: new THREE.CylinderGeometry(0.06, 0.06, 0.05, 10), matrix: M4(0, 0.9 - i * 0.28, 0.45, Math.PI / 2, 0, 0), color: GOLD });
+    box(0.22, 0.12, 0.04, -0.62, 2.5, 0.48, WHITE, 0, 0, 0.2);
+    for (let k = 0; k <= 10; k++) { const u = k / 10, x = lerp(-0.3, 0.75, u), y = 0.62 - Math.sin(u * Math.PI) * 0.18; P.push({ geo: new THREE.SphereGeometry(0.022, 6, 4), matrix: M4(x, y, 0.47), color: GOLD }); }
+    P.push({ geo: new THREE.CylinderGeometry(0.07, 0.07, 0.03, 12), matrix: M4(0.8, 0.6, 0.47, Math.PI / 2, 0, 0), color: 0xe8c870 });
+    this.bodyMesh = new THREE.Mesh(mergeGeos(P), this.bodyMat); this.body.add(this.bodyMesh);
+    // ---- the house's lit windows and fanlight (they burn on by themselves; some go out as he comes apart)
+    const WP = [];
+    for (const s of [-1, 1]) for (let r = 0; r < 3; r++) {
+      const sh = new THREE.Shape(); sh.moveTo(-0.09, 0); sh.lineTo(0.09, 0); sh.lineTo(0.09, 0.2); sh.absarc(0, 0.2, 0.09, 0, Math.PI, false); sh.lineTo(-0.09, 0);
+      WP.push({ geo: new THREE.ShapeGeometry(sh, 6), matrix: M4(s * 0.8, 0.5 + r * 0.72, 0.43), color: 0xffc860 });
+    }
+    { const fs = new THREE.Shape(); fs.absarc(0, 0, 0.3, 0, Math.PI, false); fs.lineTo(0.3, 0); WP.push({ geo: new THREE.ShapeGeometry(fs, 12), matrix: M4(0, 2.6, 0.445), color: 0xffd880 }); }
+    for (const s of [-1, 1]) WP.push({ geo: new THREE.PlaneGeometry(0.16, 0.18), matrix: M4(s * 1.18, 2.98, 0.525), color: 0xffc060 });
+    this.winMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true }); this.mats.push(this.winMat);
+    this.winMesh = new THREE.Mesh(mergeGeos(WP), this.winMat); this.body.add(this.winMesh);
+    // window mullions (dark crosses over the glow)
+    const MP = [];
+    for (const s of [-1, 1]) for (let r = 0; r < 3; r++) { MP.push({ geo: new THREE.BoxGeometry(0.018, 0.28, 0.02), matrix: M4(s * 0.8, 0.5 + r * 0.72 + 0.14, 0.445), color: 0x1a1020 }); MP.push({ geo: new THREE.BoxGeometry(0.18, 0.018, 0.02), matrix: M4(s * 0.8, 0.5 + r * 0.72 + 0.14, 0.445), color: 0x1a1020 }); }
+    for (let k = 0; k < 5; k++) { const a = k / 4 * Math.PI; MP.push({ geo: new THREE.BoxGeometry(0.015, 0.3, 0.02), matrix: M4(Math.cos(a) * 0.15, 2.6 + Math.sin(a) * 0.15, 0.45, 0, 0, a - Math.PI / 2), color: 0x3a2a10 }); }
+    this.body.add(new THREE.Mesh(mergeGeos(MP), this.bodyMat));
+    // ---- the torso: live damask (wallpaper patches go to static as he breaks)
+    this.wallTex = canvasTex(128, 192, (g, w, h) => this.paintWall(g, w, h), { repeat: true });
+    this.wallTex.magFilter = THREE.LinearFilter; this.wallTex.repeat.set(1.2, 1.6);
+    this.torsoMat = M({ map: this.wallTex, gloss: 0.3, shine: 20, rim: 0.5, emit: 0.14, vertexColors: false });
+    this.torsoGeo = new THREE.BoxGeometry(1.9, 2.9, 0.85, 3, 4, 1);
+    this.torsoBase = Float32Array.from(this.torsoGeo.attributes.position.array);
+    this.torso = new THREE.Mesh(this.torsoGeo, this.torsoMat); this.torso.position.set(0, 1.45, 0);
+    this.body.add(this.torso);
+    this.patches = [];
+    // ---- the void core behind the doors
+    this.coreU = { uTime: { value: 0 }, uOpen: { value: 0 } };
+    this.core = new THREE.Mesh(new THREE.CircleGeometry(0.56, 40), new THREE.ShaderMaterial({
+      uniforms: this.coreU,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `uniform float uTime; uniform float uOpen; varying vec2 vUv;
+        void main(){ vec2 p = vUv - 0.5; float r = length(p) * 2.0; float a = atan(p.y, p.x);
+          float s = sin(a * 5.0 + r * 13.0 - uTime * 4.0), s2 = sin(a * 3.0 - r * 9.0 + uTime * 2.6);
+          vec3 col = mix(vec3(0.76, 0.23, 1.0), vec3(0.16, 1.0, 0.84), 0.5 + 0.5 * s) * (1.0 - r) * 1.7;
+          col += vec3(1.0, 0.85, 0.5) * pow(max(s2, 0.0), 8.0) * (1.0 - r) * 0.8;
+          col += vec3(1.0) * smoothstep(0.28, 0.0, r) * 0.9;
+          gl_FragColor = vec4(col * (0.12 + 0.88 * uOpen), 1.0);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    this.core.position.set(0, 1.85, 0.43); this.body.add(this.core);
+    // ---- the chest doors (each on its hinge)
+    this.doorMat = M({ map: ManorTex.get('door'), mapST: [1, 0.62, 0, 0.19], gloss: 0.8, shine: 40, rim: 0.4, emit: 0.14, vertexColors: false });
+    const doorGeo = new THREE.BoxGeometry(0.56, 1.3, 0.06);
+    this.doors = [-1, 1].map((s) => {
+      const piv = new THREE.Group(); piv.position.set(s * 0.57, 1.85, 0.48);
+      const m = new THREE.Mesh(doorGeo, this.doorMat); m.position.x = -s * 0.28; piv.add(m);
+      this.body.add(piv); return { piv, s };
+    });
+    this.doorOpen = 0; this.doorTarget = 0; this.doorPulseT = 0; this.coreLevel = 0;
+    // ---- banister arms with gloved hands (three hand shapes swap with the pose)
+    const upperGeo = propBanisterGeo(1.5, false), foreGeo = propBanisterGeo(1.35, true);
+    this.handGeos = [propGloveGeo(0), propGloveGeo(1), propGloveGeo(2)];
+    this.arms = [-1, 1].map((s) => {
+      const sh = new THREE.Group(); sh.position.set(s * 1.3, 2.62, 0);
+      sh.add(new THREE.Mesh(upperGeo, this.ironMat));
+      const el = new THREE.Group(); el.position.y = -1.5; sh.add(el);
+      el.add(new THREE.Mesh(foreGeo, this.ironMat));
+      const wr = new THREE.Group(); wr.position.y = -1.35; el.add(wr);
+      const ha = new THREE.Mesh(this.handGeos[0], this.gloveMat); ha.scale.set(-s, 1, 1); wr.add(ha);
+      this.body.add(sh);
+      return { sh, el, wr, ha, s, pose: 0 };
+    });
+    // ---- the neck: a curved iron post with a hook, a short chain down to the chandelier
+    const NP = [];
+    const pts = [[0, 2.95, 0], [0, 3.5, 0.05], [0, 4.0, 0.15], [0, 4.45, 0.3], [0, 4.78, 0.5]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = new THREE.Vector3(...pts[i]), b = new THREE.Vector3(...pts[i + 1]);
+      const mid = a.clone().add(b).multiplyScalar(0.5), len = a.distanceTo(b);
+      const q = new THREE.Quaternion().setFromUnitVectors(UP, b.clone().sub(a).normalize());
+      NP.push({ geo: new THREE.CylinderGeometry(0.07, 0.085, len + 0.04, 8), matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), color: 0x2a2234 });
+    }
+    for (let k = 0; k < 4; k++) NP.push({ geo: new THREE.TorusGeometry(0.06, 0.016, 5, 10), matrix: M4(0, 3.2 + k * 0.38, 0.03 + k * 0.08, Math.PI / 2, 0, 0), color: GOLD });
+    NP.push({ geo: new THREE.TorusGeometry(0.1, 0.03, 6, 12), matrix: M4(0, 2.98, 0, Math.PI / 2, 0, 0), color: GOLD });
+    NP.push({ geo: new THREE.TorusGeometry(0.1, 0.028, 6, 10, Math.PI), matrix: M4(0, 4.78, 0.62, 0, Math.PI / 2, 0), color: 0x2a2234 });
+    this.neck = new THREE.Mesh(mergeGeos(NP), this.ironMat); this.body.add(this.neck);
+    // ---- the chandelier head (hangs from the hook and sways)
+    this.head = new THREE.Group(); this.head.position.set(0, 4.66, 0.68); this.body.add(this.head);
+    const H = [], hp = (geo, x, y, z, col, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => H.push({ geo, matrix: M4(x, y, z, rx, ry, rz, sx, sy, sz), color: col });
+    hp(new THREE.TorusGeometry(0.06, 0.018, 5, 10), 0, -0.08, 0, 0x2a2234, 0, Math.PI / 2, 0);
+    hp(new THREE.TorusGeometry(0.06, 0.018, 5, 10), 0, -0.18, 0, 0x2a2234);
+    hp(new THREE.LatheGeometry([[0, 0], [0.2, -0.04], [0.24, -0.12], [0.12, -0.22], [0.09, -0.3]].map(([x, y]) => new THREE.Vector2(x, y)), 14), 0, -0.24, 0, GOLD);
+    hp(new THREE.LatheGeometry([[0.07, 0], [0.11, -0.12], [0.06, -0.28], [0.14, -0.42], [0.06, -0.58], [0.1, -0.7], [0.18, -0.76], [0.12, -0.82]].map(([x, y]) => new THREE.Vector2(x, y)), 12), 0, -0.52, 0, GOLD);
+    hp(new THREE.SphereGeometry(0.16, 14, 10), 0, -1.0, 0, GOLD);
+    hp(new THREE.TorusGeometry(0.88, 0.055, 8, 48), 0, -1.0, 0, GOLD, Math.PI / 2, 0, 0);
+    hp(new THREE.TorusGeometry(0.82, 0.022, 6, 48), 0, -1.07, 0, 0xe8c870, Math.PI / 2, 0, 0);
+    hp(new THREE.OctahedronGeometry(0.15, 0), 0, -1.75, 0, 0xe8faff, 0, 0, 0, 1, 2.2, 1);
+    this.candleTips = [];
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * TAU + Math.PI / 8, ca = Math.sin(a), sa = Math.cos(a), x = ca * 0.88, z = sa * 0.88;
+      const eye = i === 0 || i === 7;
+      const curve = new THREE.CubicBezierCurve3(new THREE.Vector3(ca * 0.12, -0.78, sa * 0.12), new THREE.Vector3(ca * 0.3, -1.25, sa * 0.3), new THREE.Vector3(ca * 0.7, -1.12, sa * 0.7), new THREE.Vector3(x, -0.96, z));
+      H.push({ geo: new THREE.TubeGeometry(curve, 8, 0.026, 5, false), color: GOLD });
+      hp(new THREE.CylinderGeometry(0.085, 0.05, 0.07, 10), x, -0.94, z, GOLD);
+      hp(new THREE.CylinderGeometry(0.11, 0.11, 0.015, 12), x, -0.97, z, 0xe8c870);
+      const ch = eye ? 0.46 : 0.3, cr = eye ? 0.072 : 0.048;
+      hp(new THREE.CylinderGeometry(cr, cr * 1.05, ch, 10), x, -0.92 + ch / 2, z, 0xf4ecd8);
+      if (eye) hp(new THREE.SphereGeometry(cr * 1.05, 8, 4, 0, TAU, 0, Math.PI / 2), x, -0.92 + ch, z, 0xf8f0e0, 0, 0, 0, 1, 0.4, 1);
+      this.candleTips.push({ pos: new THREE.Vector3(x, -0.92 + ch + 0.07, z), eye });
+    }
+    // the upper teeth: a grin of crystal fangs under the crown
+    for (let i = 0; i < 9; i++) { const a = (i - 4) * 0.13; hp(new THREE.ConeGeometry(0.04, 0.13, 4), Math.sin(a) * 0.55, -1.18, Math.cos(a) * 0.55, 0xffffff, Math.PI, 0, 0); }
+    hp(new THREE.TorusGeometry(0.55, 0.03, 6, 32, Math.PI * 0.66), 0, -1.12, 0, GOLD, Math.PI / 2, 0, Math.PI * 0.17);
+    // swags of crystal beads between the arms
+    for (let i = 0; i < 8; i++) {
+      const a0 = i / 8 * TAU + Math.PI / 8, a1 = (i + 1) / 8 * TAU + Math.PI / 8;
+      for (let k = 1; k < 6; k++) { const u = k / 6, a = lerp(a0, a1, u), sag = Math.sin(u * Math.PI) * 0.16; hp(new THREE.SphereGeometry(0.022, 6, 4), Math.sin(a) * 0.9, -1.08 - sag, Math.cos(a) * 0.9, 0xe8faff); }
+    }
+    this.headMesh = new THREE.Mesh(mergeGeos(H), this.headMat); this.head.add(this.headMesh);
+    // brows: two gilt scrolls over the eye candles
+    const browGeo = mergeGeos([{ geo: new THREE.TorusGeometry(0.11, 0.022, 5, 12, Math.PI * 1.2), matrix: M4(0, 0, 0, 0, 0, -0.3), color: GOLD }, { geo: new THREE.SphereGeometry(0.035, 6, 4), matrix: M4(0.11, -0.02, 0), color: 0xe8c870 }]);
+    this.brows = [0, 7].map((i) => {
+      const c = this.candleTips[i].pos, g = new THREE.Group(); g.position.set(c.x, c.y + 0.2, c.z + 0.04); g.rotation.y = Math.atan2(c.x, c.z);
+      const m = new THREE.Mesh(browGeo, this.headMat); m.scale.x = c.x < 0 ? -1 : 1; g.add(m); this.head.add(g); return { g, m, side: c.x < 0 ? -1 : 1 };
+    });
+    // the jaw: a lower ring hung with crystal teeth (it drops when he talks)
+    this.jaw = new THREE.Group(); this.jaw.position.set(0, -1.34, 0); this.head.add(this.jaw);
+    const JP = [{ geo: new THREE.TorusGeometry(0.55, 0.035, 6, 32, Math.PI * 0.62), matrix: M4(0, 0, 0, Math.PI / 2, 0, Math.PI * 0.19), color: GOLD }];
+    for (let i = 0; i < 7; i++) { const a = (i - 3) * 0.15; JP.push({ geo: new THREE.ConeGeometry(0.036, 0.11, 4), matrix: M4(Math.sin(a) * 0.55, 0.07, Math.cos(a) * 0.55), color: 0xffffff }); }
+    this.jawMesh = new THREE.Mesh(mergeGeos(JP), this.headMat); this.jaw.add(this.jawMesh);
+    this.mouthOpen = 0;
+    // individually swaying crystal drops (two tiers)
+    this.crystals = new THREE.InstancedMesh(new THREE.OctahedronGeometry(1, 0), this.crystalMat, 32);
+    this.crystals.frustumCulled = false; this.crystals.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.head.add(this.crystals);
+    this.cryst = [];
+    for (let i = 0; i < 32; i++) {
+      const tier = i < 20 ? 0 : 1, n = tier ? 12 : 20, k = tier ? i - 20 : i;
+      const a = k / n * TAU, r = tier ? 0.46 : 0.86;
+      this.cryst.push({ x: Math.sin(a) * r, y: tier ? -1.48 : -1.1, z: Math.cos(a) * r, len: tier ? 0.11 : 0.15, ph: rand(0, TAU), sw: 0 });
+    }
+    // ---- RGB-split duplicates (phase III)
+    this.ghosts = [CONFIG.COL.magenta, CONFIG.COL.teal].map((c) => {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false });
+      const t = new THREE.Mesh(this.torsoGeo, mat); t.position.copy(this.torso.position);
+      const hm = new THREE.Mesh(this.headMesh.geometry, mat); hm.position.copy(this.head.position);
+      g.add(t, hm); g.visible = false; this.body.add(g);
+      return { g, hm };
+    });
+    // state
+    this.phase = 0; this.shakeT = 0; this.flashT = 0; this.jitterT = 0; this.talkT = 0; this.stunT = 0;
+    this.attack = false; this.tired = false; this.sad = false; this.bowT = 0; this.bowTarget = 0;
+    this.defeated = false; this.fall = null; this.fade = 1; this.patchT = 0; this.glints = 0; this.eyeK = 1;
+    this.brow = 0; this.browT = 0; this.smokeT = 0; this.winDark = 0; this.gestT = 0;
+    this.chest = new THREE.Vector3(); this.headWorld = new THREE.Vector3();
+    this.reset();
+  }
+  // the torso's damask (a small canvas: it redraws with static patches as he breaks)
+  paintWall(g, w, h) {
+    g.fillStyle = '#2c0a36'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 6) { g.fillStyle = 'rgba(255,210,255,0.03)'; g.fillRect(x, 0, 2, h); }
+    for (const [cx, cy] of [[32, 48], [96, 144]]) for (const ox of [-w, 0, w]) for (const oy of [-h, 0, h]) manorDamask(g, cx + ox, cy + oy, 30, 1);
+    for (const [cx, cy] of [[96, 48], [32, 144]]) for (const ox of [-w, 0, w]) for (const oy of [-h, 0, h]) manorDamask(g, cx + ox, cy + oy, 12, 0);
+  }
+  reset() {
+    this.phase = 0; this.tired = false; this.sad = false; this.defeated = false; this.fall = null; this.fade = 1;
+    this.doorTarget = 0; this.coreLevel = 0; this.bowTarget = 0; this.stunT = 0; this.attack = false; this.eyeK = 1; this.winDark = 0;
+    this.head.visible = true; this.root.visible = true;
+    if (this.head.parent !== this.body) this.body.add(this.head);
+    this.head.position.set(0, 4.66, 0.68); this.head.rotation.set(0, 0, 0);
+    for (const g of this.ghosts) g.g.visible = false;
+    this.patches.length = 0; this.redrawWall();
+    for (const m of this.mats) this.setMatFade(m, 1);
+  }
+  setMatFade(m, f) {
+    const tr = f < 0.999;
+    if (m.uniforms) { m.uniforms.uOpacity.value = f; } else { m.opacity = f; }
+    if (m.transparent !== tr && m !== this.winMat) { m.transparent = tr; m.needsUpdate = true; }
+  }
+  setPhase(p) {
+    this.phase = p;
+    const want = p === 0 ? 0 : p === 1 ? 6 : 14;
+    while (this.patches.length < want) this.patches.push({ x: randi(0, 120), y: randi(0, 184), w: randi(10, 34), h: randi(8, 26) });
+    this.redrawWall();
+  }
+  redrawWall() {
+    const g = this.wallTex.userData.ctx;
+    this.paintWall(g, 128, 192);
+    for (const p of this.patches) {
+      for (let y = 0; y < p.h; y += 2) for (let x = 0; x < p.w; x += 2) { const v = Math.random() * 200 | 0; g.fillStyle = `rgb(${v},${v * 0.9 | 0},${v})`; g.fillRect((p.x + x) % 128, (p.y + y) % 192, 2, 2); }
+      g.fillStyle = '#c23cff'; g.fillRect(p.x, p.y + p.h, p.w, 1); g.fillStyle = 'rgba(232,200,255,0.5)'; g.fillRect(p.x - 1, p.y - 1, p.w + 2, 1);
+    }
+    if (this.phase >= 2) for (let i = 0; i < 4; i++) { g.fillStyle = pick(['rgba(255,0,80,0.45)', 'rgba(42,255,213,0.45)']); g.fillRect(0, randi(0, 190), 128, randi(1, 3)); }
+    this.wallTex.needsUpdate = true;
+  }
+  dispose() {
+    if (this.head.parent && this.head.parent !== this.body) disposeObject(this.head);
+    disposeObject(this.root);
+    for (const g of this.handGeos) g.dispose();
+  }
+  setCore(v) { this.coreLevel = v; this.doorTarget = v ? 1.85 : 0; }
+  doorsPulse() { this.doorPulseT = 0.5; }
+  attackPose(on) { this.attack = on; if (on) this.smokeT = 1.2; }
+  setSad(on) { this.sad = on; }
+  bow(on) { this.bowTarget = on ? 0.32 : 0; }
+  stun() { this.stunT = 1; }
+  talkBlip() { this.mouthOpen = 1; this.talkT = 0.25; }
+  onBeat(b) {
+    if (((b % 4) + 4) % 4 === 0 && this.phase >= 1) this.jitterT = 0.1;
+    for (const c of this.cryst) c.sw += (Math.random() - 0.5) * 0.12;
+    this.glints = 2 + (G.audio.treble > 0.3 ? 2 : 0);
+    if (this.attack && ((b % 2) + 2) % 2 === 0) this.smokeT = Math.max(this.smokeT, 0.4);
+  }
+  glitchBurst() { this.jitterT = 0.6; this.flashT = 0.3; }
+  hurt() {
+    this.shakeT = 0.6; this.flashT = 1; this.browT = 0.8;
+    G.audio.sfx.clink();
+    for (const c of this.cryst) c.sw += (Math.random() - 0.5) * 0.6;
+    this.headWorldPos(_v1); G.fx.shards(_v1, 12, 0.85, 0.97, 1, 1.4);
+  }
+  chestPos(out) { this.body.updateMatrixWorld(true); return out.set(0, 1.85, 0.5).applyMatrix4(this.body.matrixWorld); }
+  headWorldPos(out) { this.head.updateMatrixWorld(true); return out.set(0, -1.0, 0).applyMatrix4(this.head.matrixWorld); }
+  // fight ending: the chandelier snaps off its hook and falls to the ballroom floor
+  defeat() {
+    this.defeated = true;
+    this.head.updateMatrixWorld(true);
+    scene.attach(this.head);
+    this.fall = { vel: new THREE.Vector3(0, 0.5, 0.6), spin: new THREE.Vector3(rand(-1, 1), rand(-0.5, 0.5), rand(1, 2)), done: false };
+    G.audio.sfx.crack();
+  }
+  // the hand shape for each arm (0 open, 1 pointing, 2 fist)
+  setHand(a, pose) { if (a.pose !== pose) { a.pose = pose; a.ha.geometry = this.handGeos[pose]; } }
+  update(dt, rdt) {
+    const t = G.time, fx = G.fx, bass = G.audio.bass, red = Flash.reduced, amp = red ? 0.6 : 1;
+    const bob = -0.07 * fx.beatPulse * amp + Math.sin(t * 1.6) * 0.035;
+    this.shakeT = Math.max(0, this.shakeT - dt); this.flashT = Math.max(0, this.flashT - dt * 2.5);
+    this.jitterT = Math.max(0, this.jitterT - dt); this.stunT = Math.max(0, this.stunT - dt * 0.12);
+    this.talkT = Math.max(0, this.talkT - dt); this.mouthOpen = Math.max(0, this.mouthOpen - dt * 6);
+    this.doorPulseT = Math.max(0, this.doorPulseT - dt); this.browT = Math.max(0, this.browT - dt);
+    const sh = this.shakeT * 0.25;
+    this.body.position.set(sh ? rand(-sh, sh) : 0, bob + (sh ? rand(-sh, sh) * 0.5 : 0), 0);
+    this.body.scale.setScalar(1 + 0.014 * bass * amp);
+    // posture: a butler's bow, the slump of a tired host, a stunned wobble
+    this.bowT = damp(this.bowT, this.bowTarget + (this.tired ? 0.14 : 0), 2.5, dt);
+    this.body.rotation.x = this.bowT;
+    this.body.rotation.z = this.stunT > 0 ? Math.sin(t * 3) * 0.08 * this.stunT : 0;
+    // arms: idle swing with the beat; each attack has its own gesture; he talks with his right hand
+    const B = G.battle, atk = this.attack && B ? B.attackName : null, beat = G.clock.beat, beatSw = Math.sin(beat * Math.PI) * 0.06 * amp;
+    for (const a of this.arms) {
+      let z = a.s * (0.28 + beatSw * a.s), x = 0.1, el = -0.35, wz = 0, wx = 0, hand = 0;
+      if (atk) {
+        const s = a.s, cond = Math.sin(beat * Math.PI) * 0.18;
+        if (atk === 'chandelier' || atk === 'final') { z = s * (2.3 + cond * 0.5); x = -0.2; el = -0.3; wz = -s * 0.4; }           // arms raised: bringing the house down
+        else if (atk === 'portrait') { if (s > 0) { z = 0.9; x = -1.05; el = -0.1; hand = 1; } else { z = -0.4; x = 0.2; el = -0.9; } }   // pointing at you
+        else if (atk === 'doors' || atk === 'guests') { z = s * (1.2 + cond * 0.4); x = -0.55; el = -0.55; wz = -s * 0.6; }        // presenting: welcome, welcome
+        else if (atk === 'ballroom') { const d = Math.sin(beat * Math.PI * 0.5); z = s * (1.0 + d * 0.3 * s); x = -0.5 + d * 0.2; el = -1.2; hand = s > 0 ? 0 : 2; }   // a waltz hold
+        else if (atk === 'corridor') { z = s * (0.7 + Math.abs(Math.sin(beat * Math.PI)) * 0.6); x = -0.3; el = -1.0 - cond; hand = 1; }   // conducting the clockwork
+        else if (atk === 'staircase') { z = s * (s > 0 ? 1.5 : 0.4); x = s > 0 ? -0.7 : 0.1; el = s > 0 ? -0.2 : -0.6; }               // a sweep: the grand staircase
+        else { z = s * (1.15 + Math.sin(t * 3 + s) * 0.1); x = -0.3; el = -0.9; }
+      }
+      if (this.talkT > 0 && a.s > 0 && !atk) { z = 0.9 + Math.sin(t * 7) * 0.08; el = -1.25; x = -0.45; wz = -0.4 + Math.sin(t * 9) * 0.25; }
+      if (this.bowTarget > 0 && !atk) { if (a.s > 0) { z = 0.25; x = -1.1; el = -1.5; wx = 0.3; } else { z = -0.9; x = 0.5; el = -0.2; } }   // one hand to his chest, the other out
+      if ((this.tired || this.sad) && !atk) { z = a.s * 0.12; el = -0.1; x = 0.15; hand = 2; }
+      a.sh.rotation.z = damp(a.sh.rotation.z, z, 5, dt); a.sh.rotation.x = damp(a.sh.rotation.x, x, 5, dt);
+      a.el.rotation.x = damp(a.el.rotation.x, el, 5, dt);
+      a.wr.rotation.z = damp(a.wr.rotation.z, wz, 6, dt); a.wr.rotation.x = damp(a.wr.rotation.x, wx, 6, dt);
+      this.setHand(a, hand);
+    }
+    // chest doors / core
+    const dt2 = Math.max(this.doorTarget, this.doorPulseT > 0 ? 1.1 : 0, this.attack ? 0.35 : 0);
+    this.doorOpen = damp(this.doorOpen, dt2, 6, dt);
+    for (const d of this.doors) d.piv.rotation.y = d.s * this.doorOpen;
+    this.coreU.uTime.value = t; this.coreU.uOpen.value = clamp(this.doorOpen / 1.6, 0, 1);
+    // the head: sway, a tilt for his mood, brows and jaw
+    if (!this.defeated) {
+      const sway = this.sad ? 0.5 : 1;
+      this.head.rotation.z = (0.07 * Math.sin(t * 1.25) + 0.035 * fx.beatPulse * (G.clock.beatIndex % 2 ? 1 : -1) * amp) * sway + (this.stunT > 0 ? Math.sin(t * 4) * 0.15 * this.stunT : 0);
+      this.head.rotation.x = 0.04 * Math.sin(t * 0.9) - (this.tired ? 0.25 : 0) - this.mouthOpen * 0.05 + (this.sad ? 0.12 : 0);
+    } else if (this.fall && !this.fall.done) {
+      const f = this.fall;
+      f.vel.y -= 9.8 * dt * 0.8;
+      this.head.position.addScaledVector(f.vel, dt);
+      this.head.rotation.x += f.spin.x * dt; this.head.rotation.z += f.spin.z * dt;
+      if (this.head.position.y < MANOR.FLOOR + 2.1) {
+        f.done = true; this.head.visible = false;
+        _v1.copy(this.head.position).setY(MANOR.FLOOR + 0.3);
+        G.audio.sfx.crash(); G.fx.shards(_v1, 46, 0.9, 0.97, 1, 4.5); G.fx.burst(_v1, 26, 1, 0.8, 0.4, 3, 0.12);
+        if (OFX.ready) { OFX.spark(_v1, 26, 1, 0.85, 0.5, 4, { up: 1.5, life: 0.9, grav: 6 }); OFX.dust(_v1, 10, 0.9, 2.2, [0.6, 0.55, 0.6], { speed: 1.2, rise: 0.2 }); OFX.flare(_v1, 2.2, 0.5, 1, 0.85, 0.6, { spikes: 8 }); }
+        ManorLight.flash(_v1, 1, 0.8, 0.5, 12, 0.8);
+      }
+    }
+    const angry = this.attack || this.browT > 0, browTo = this.sad || this.tired ? -0.45 : angry ? 0.5 : 0;
+    this.brow = damp(this.brow, browTo + (this.talkT > 0 ? Math.sin(t * 13) * 0.08 : 0), 8, dt);
+    for (const b of this.brows) b.m.rotation.z = b.side * this.brow * 0.7 + (this.mouthOpen > 0.5 ? 0.15 * b.side : 0);
+    this.jaw.position.y = -1.34 - this.mouthOpen * 0.14; this.jaw.rotation.x = this.mouthOpen * 0.12;
+    // crystals
+    for (let i = 0; i < this.cryst.length; i++) {
+      const c = this.cryst[i];
+      c.sw *= Math.exp(-dt * 1.5);
+      const ang = Math.sin(t * (2 + (i % 3)) + c.ph) * 0.12 + c.sw;
+      _v1.set(c.x, c.y - c.len, c.z); _e1.set(ang * 0.6, 0, ang); _q1.setFromEuler(_e1);
+      _s1.set(0.035, c.len, 0.035); _m1.compose(_v1, _q1, _s1); this.crystals.setMatrixAt(i, _m1);
+    }
+    this.crystals.instanceMatrix.needsUpdate = true;
+    if (this.glints > 0 && this.head.visible && OFX.ready) {
+      this.head.updateMatrixWorld(true);
+      for (; this.glints > 0; this.glints--) { const c = this.cryst[(Math.random() * this.cryst.length) | 0]; _v1.set(c.x, c.y - c.len * 1.4, c.z).applyMatrix4(this.head.matrixWorld); OFX.flare(_v1, 0.32, 0.35, 0.9, 0.95, 1, { glint: true, spikes: 4 }); }
+    } else this.glints = 0;
+    // the chimney puffs while he attacks
+    this.smokeT = Math.max(0, this.smokeT - dt);
+    if (this.smokeT > 0 && OFX.ready && chance(dt * 10)) { this.body.updateMatrixWorld(true); _v1.copy(this.chimney).applyMatrix4(this.body.matrixWorld); OFX.dust(_v1, 1, 0.35, 2.4, [0.45, 0.4, 0.5], { speed: 0.15, vy: 0.5, rise: 0.25, alpha: 0.4, drag: 0.8 }); }
+    // the house's windows: lit, flickering; some go dark (and red) as he comes apart
+    this.winDark = damp(this.winDark, this.phase >= 2 ? 0.5 : this.phase === 1 ? 0.15 : 0, 1, dt);
+    const wf = (0.8 + 0.2 * Math.sin(t * 7) * Math.sin(t * 3.1)) * (1 - this.winDark * (Math.sin(t * 13) > 0.6 ? 1 : 0.3)) * (this.defeated ? 0.2 : 1);
+    this.winMat.color.setRGB(wf * (this.phase >= 2 ? 1.2 : 1), wf * (this.phase >= 2 ? 0.55 : 0.92), wf * (this.phase >= 2 ? 0.6 : 0.8));
+    // fade and hurt-flash (a white glow over every lit part)
+    if (this.defeated) this.fade = Math.max(0.2, this.fade - dt * 0.22);
+    const fl = this.flashT * 1.4;
+    for (const m of this.mats) {
+      if (m.uniforms) { m.uniforms.uGlow.value.setRGB(fl, fl, fl); }
+      this.setMatFade(m, this.fade);
+    }
+    // corruption: vertex jitter on downbeats, static patches, RGB split
+    const gm = (fx.glitch + (this.phase >= 2 ? 0.3 : 0)) * Flash.glitchMul;
+    const pos = this.torsoGeo.attributes.position;
+    if (this.jitterT > 0 && gm > 0.05) {
+      for (let i = 0; i < pos.array.length; i++) pos.array[i] = this.torsoBase[i] + (Math.random() - 0.5) * 0.12 * gm;
+      pos.needsUpdate = true; this._jittered = true;
+    } else if (this._jittered) { pos.array.set(this.torsoBase); pos.needsUpdate = true; this._jittered = false; }
+    this.patchT -= dt;
+    if (this.patches.length && this.patchT <= 0) { this.patchT = red ? 0.35 : 0.12; this.redrawWall(); }
+    this.wallTex.offset.y = (t * 0.03 + (this.phase >= 1 && Math.random() < 0.05 * gm ? rand(-0.2, 0.2) : 0)) % 1;
+    for (let i = 0; i < this.ghosts.length; i++) {
+      const g = this.ghosts[i];
+      g.g.visible = this.phase >= 2 && !this.defeated && this.fade > 0.5;
+      if (g.g.visible) {
+        const j = 0.1 + gm * 0.12;
+        g.g.position.set((i ? 1 : -1) * j + (Math.random() < 0.2 * gm ? rand(-0.1, 0.1) : 0), Math.random() < 0.1 * gm ? rand(-0.05, 0.05) : 0, -0.02);
+        g.hm.rotation.copy(this.head.rotation);
+      }
+    }
+    // candle eyes + flames (eyeK: how brightly they burn, for the hall's light too)
+    this.eyeK = this.defeated ? 0 : (this.sad ? 0.6 : this.tired ? 0.7 : 1) * (this.stunT > 0.3 ? 0.4 : 1) * this.fade;
+    if (this.head.visible) {
+      this.head.updateMatrixWorld(true);
+      const eyeCol = this.sad ? PROP_EYE_SAD : PROP_EYE[this.phase];
+      const tr = G.audio.treble;
+      for (const c of this.candleTips) {
+        _v1.copy(c.pos).applyMatrix4(this.head.matrixWorld);
+        const fl2 = (0.8 + 0.2 * Math.sin(t * 13 + c.pos.x * 7)) * this.fade * (this.stunT > 0.3 ? 0.4 : 1);
+        if (c.eye) {
+          const s = (0.55 + tr * 0.5 + (this.attack ? 0.15 : 0)) * this.root.scale.x;
+          G.fx.glow.add(_v1.x, _v1.y, _v1.z, s * 1.7, eyeCol[0] * fl2, eyeCol[1] * fl2, eyeCol[2] * fl2, 0.75, 0);
+          G.fx.glow.add(_v1.x, _v1.y + 0.05, _v1.z, s * 0.5, 1, 1, 0.92, fl2, 0);
+        } else {
+          G.fx.glow.add(_v1.x, _v1.y, _v1.z, 0.38, 1 * fl2, 0.66 * fl2, 0.28 * fl2, 0.65, 0);
+          G.fx.glow.add(_v1.x, _v1.y + 0.03, _v1.z, 0.1, 1, 0.94, 0.75, fl2, 0);
+        }
+      }
+    }
+    if (this.coreU.uOpen.value > 0.1) { this.chestPos(_v2); G.fx.glow.add(_v2.x, _v2.y, _v2.z + 0.1, 2.2 * this.coreU.uOpen.value, 0.7, 0.3, 1, 0.45, 0); }
+  }
+}
+// @@/MANOR
+
 // free every geometry / material / texture under root (shared resources are skipped)
 function disposeObject(root) {
   const geos = new Set(), mats = new Set(), inst = [];
@@ -6937,355 +8561,6 @@ function disposeObject(root) {
     m.dispose();
   }
   if (root.parent) root.parent.remove(root);
-}
-
-// ============================================================================
-//  Boss - THE PROPRIETOR: a butler-shaped mansion with a chandelier head,
-//  double-door chest, wrought-iron banister arms and glitching wallpaper skin
-// ============================================================================
-function drawDamask(g, w, h) {
-  g.fillStyle = '#2a0838'; g.fillRect(0, 0, w, h);
-  for (let x = 0; x < w; x += 16) { g.fillStyle = '#3a0d4e'; g.fillRect(x, 0, 6, h); g.fillStyle = '#c23cff'; g.fillRect(x + 7, 0, 1, h); }
-  const dia = (cx, cy, r, col) => { g.fillStyle = col; for (let dy = -r; dy <= r; dy++) { const ww = r - Math.abs(dy); g.fillRect(cx - ww, cy + dy, ww * 2 + 1, 1); } };
-  for (let y = 0; y < h; y += 32) for (let x = 0; x < w; x += 32) {
-    const ox = (y / 32) % 2 ? 16 : 0;
-    dia(x + 8 + ox, y + 16, 7, '#7a1fa0'); dia(x + 8 + ox, y + 16, 4, '#c23cff'); dia(x + 8 + ox, y + 16, 1, '#ffd23c');
-  }
-}
-const EYE_COLS = [[1, 0.75, 0.25], [1, 0.45, 0.1], [1, 0.12, 0.35]], EYE_SAD = [0.5, 0.6, 1];
-class Boss {
-  constructor() {
-    const C = CONFIG.COL;
-    this.root = new THREE.Group(); this.root.position.set(0, -1.9, -8.8); this.root.scale.setScalar(1.22);
-    scene.add(this.root);
-    this.body = new THREE.Group(); this.root.add(this.body);
-    this.flashMats = [];
-    const IRON = 0x2a1c3a, GOLD = 0xc8a040, COAT = 0x2c1d44, TROU = 0x241a38;
-    // --- static coat / legs / collar (one merged mesh)
-    const P = [];
-    const box = (w, h, d, x, y, z, col, rx = 0, ry = 0, rz = 0) => P.push({ geo: new THREE.BoxGeometry(w, h, d), matrix: M4(x, y, z, rx, ry, rz), color: col });
-    for (const s of [-1, 1]) {
-      box(0.42, 3.0, 0.42, s * 0.36, -1.5, 0, TROU); box(0.05, 3.0, 0.43, s * 0.22, -1.5, 0, 0x4a3a66);
-      box(0.5, 0.22, 0.78, s * 0.36, -3.08, 0.14, 0x0a0a0a); box(0.44, 0.1, 0.5, s * 0.36, -2.93, 0.12, 0xe8e8e8);
-      box(0.46, 1.8, 0.07, s * 0.34, -0.75, -0.47, COAT, 0.16, 0, s * 0.05);
-      box(0.2, 1.5, 0.05, s * 0.66, 2.0, 0.455, COAT, 0, 0, s * 0.22);
-      box(0.58, 0.36, 0.72, s * 1.16, 2.74, 0, COAT);
-      box(0.3, 0.25, 0.1, s * 0.2, 3.0, 0.42, 0xf0f0f0, 0, 0, -s * 0.55);
-      P.push({ geo: new THREE.ConeGeometry(0.16, 0.3, 4), matrix: M4(s * 0.17, 2.86, 0.48, 0, 0, s * Math.PI / 2), color: C.magenta });
-    }
-    box(0.1, 0.1, 0.08, 0, 2.86, 0.49, 0x7a1fa0);
-    // chest door frame + recess
-    box(1.28, 0.08, 0.06, 0, 2.55, 0.44, GOLD); box(1.28, 0.08, 0.06, 0, 1.15, 0.44, GOLD);
-    box(0.08, 1.48, 0.06, -0.62, 1.85, 0.44, GOLD); box(0.08, 1.48, 0.06, 0.62, 1.85, 0.44, GOLD);
-    box(1.16, 1.36, 0.08, 0, 1.85, 0.39, 0x000000);
-    for (let i = 0; i < 3; i++) box(0.08, 0.08, 0.05, 0, 0.9 - i * 0.28, 0.44, GOLD);
-    this.bodyMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true });
-    this.bodyMesh = new THREE.Mesh(mergeGeos(P), this.bodyMat);
-    this.body.add(this.bodyMesh); this.flashMats.push(this.bodyMat);
-    // --- torso with live (glitching) wallpaper
-    this.wallTex = canvasTex(64, 96, (g, w, h) => drawDamask(g, w, h), { repeat: true });
-    this.wallTex.repeat.set(1.6, 2.2);
-    this.torsoMat = new THREE.MeshBasicMaterial({ map: this.wallTex, transparent: true });
-    this.torsoGeo = new THREE.BoxGeometry(1.9, 2.9, 0.85, 3, 4, 1);
-    this.torsoBase = Float32Array.from(this.torsoGeo.attributes.position.array);
-    this.torso = new THREE.Mesh(this.torsoGeo, this.torsoMat); this.torso.position.set(0, 1.45, 0);
-    this.body.add(this.torso); this.flashMats.push(this.torsoMat);
-    this.patches = [];
-    // --- swirling void core behind the doors
-    this.coreU = { uTime: { value: 0 }, uOpen: { value: 0 } };
-    this.core = new THREE.Mesh(new THREE.CircleGeometry(0.52, 32), new THREE.ShaderMaterial({
-      uniforms: this.coreU,
-      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform float uTime; uniform float uOpen; varying vec2 vUv;
-        void main(){ vec2 p = vUv - 0.5; float r = length(p) * 2.0; float a = atan(p.y, p.x);
-          float s = sin(a * 5.0 + r * 13.0 - uTime * 4.0);
-          vec3 col = mix(vec3(0.76, 0.23, 1.0), vec3(0.16, 1.0, 0.84), 0.5 + 0.5 * s) * (1.0 - r) * 1.7;
-          col += vec3(1.0) * smoothstep(0.28, 0.0, r) * 0.9;
-          gl_FragColor = vec4(col * (0.15 + 0.85 * uOpen), 1.0);
-          #include <colorspace_fragment>
-        }`,
-    }));
-    this.core.position.set(0, 1.85, 0.44); this.body.add(this.core);
-    // --- chest double doors
-    const doorGeo = new THREE.BoxGeometry(0.56, 1.3, 0.06);
-    this.doorMat = new THREE.MeshBasicMaterial({ map: Tex.door(), transparent: true }); this.flashMats.push(this.doorMat);
-    this.doors = [-1, 1].map((s) => {
-      const piv = new THREE.Group(); piv.position.set(s * 0.57, 1.85, 0.48);
-      const m = new THREE.Mesh(doorGeo, this.doorMat); m.position.x = -s * 0.28; piv.add(m);
-      this.body.add(piv); return { piv, s };
-    });
-    this.doorOpen = 0; this.doorTarget = 0; this.doorPulseT = 0; this.coreLevel = 0;
-    // --- banister arms
-    const seg = (L) => {
-      const parts = [
-        { geo: new THREE.BoxGeometry(0.07, L, 0.07), matrix: M4(-0.11, -L / 2, 0), color: IRON },
-        { geo: new THREE.BoxGeometry(0.07, L, 0.07), matrix: M4(0.11, -L / 2, 0), color: IRON },
-        { geo: new THREE.SphereGeometry(0.085, 8, 6), matrix: M4(0, 0, 0), color: GOLD },
-        { geo: new THREE.SphereGeometry(0.07, 8, 6), matrix: M4(0, -L, 0), color: GOLD },
-      ];
-      for (let k = 1; k <= 5; k++) parts.push({ geo: new THREE.CylinderGeometry(0.022, 0.022, 0.22, 6), matrix: M4(0, -k * L / 6, 0, 0, 0, Math.PI / 2), color: IRON });
-      for (let k = 1; k <= 5; k++) parts.push({ geo: new THREE.SphereGeometry(0.03, 6, 4), matrix: M4(0, -k * L / 6, 0), color: GOLD });
-      return mergeGeos(parts);
-    };
-    const upperGeo = seg(1.5), foreGeo = seg(1.35);
-    const handGeo = mergeGeos([
-      { geo: new THREE.BoxGeometry(0.3, 0.32, 0.12), matrix: M4(0, -0.2, 0), color: 0xf4f4f4 },
-      ...[0, 1, 2, 3].map((k) => ({ geo: new THREE.BoxGeometry(0.06, 0.22, 0.07), matrix: M4(-0.11 + k * 0.073, -0.47, 0), color: 0xf4f4f4 })),
-      { geo: new THREE.BoxGeometry(0.07, 0.16, 0.07), matrix: M4(0.19, -0.22, 0.04, 0, 0, -0.5), color: 0xf4f4f4 },
-      { geo: new THREE.BoxGeometry(0.32, 0.06, 0.13), matrix: M4(0, -0.03, 0), color: GOLD },
-    ]);
-    this.armMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true }); this.flashMats.push(this.armMat);
-    this.arms = [-1, 1].map((s) => {
-      const sh = new THREE.Group(); sh.position.set(s * 1.3, 2.62, 0);
-      const up = new THREE.Mesh(upperGeo, this.armMat); sh.add(up);
-      const el = new THREE.Group(); el.position.y = -1.5; sh.add(el);
-      const fo = new THREE.Mesh(foreGeo, this.armMat); el.add(fo);
-      const ha = new THREE.Mesh(handGeo, this.armMat); ha.position.y = -1.35; el.add(ha);
-      this.body.add(sh);
-      return { sh, el, ha, s };
-    });
-    // --- neck post with hook
-    const NP = [];
-    const pts = [[0, 2.95, 0], [0, 3.5, 0.05], [0, 4.0, 0.15], [0, 4.45, 0.3], [0, 4.75, 0.5]];
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = new THREE.Vector3(...pts[i]), b = new THREE.Vector3(...pts[i + 1]);
-      const mid = a.clone().add(b).multiplyScalar(0.5), len = a.distanceTo(b);
-      const q = new THREE.Quaternion().setFromUnitVectors(UP, b.clone().sub(a).normalize());
-      NP.push({ geo: new THREE.CylinderGeometry(0.07, 0.08, len + 0.04, 8), matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), color: IRON });
-    }
-    NP.push({ geo: new THREE.TorusGeometry(0.1, 0.03, 6, 12), matrix: M4(0, 2.98, 0, Math.PI / 2, 0, 0), color: GOLD });
-    NP.push({ geo: new THREE.TorusGeometry(0.09, 0.025, 6, 10, Math.PI), matrix: M4(0, 4.72, 0.6, 0, Math.PI / 2, 0), color: IRON });
-    this.neck = new THREE.Mesh(mergeGeos(NP), this.armMat); this.body.add(this.neck);
-    // --- chandelier head (hangs from the hook and sways)
-    this.head = new THREE.Group(); this.head.position.set(0, 4.66, 0.68); this.body.add(this.head);
-    const H = [];
-    const hp = (geo, x, y, z, col, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => H.push({ geo, matrix: M4(x, y, z, rx, ry, rz, sx, sy, sz), color: col });
-    hp(new THREE.TorusGeometry(0.06, 0.018, 5, 10), 0, -0.1, 0, IRON, 0, Math.PI / 2, 0);
-    hp(new THREE.TorusGeometry(0.06, 0.018, 5, 10), 0, -0.2, 0, IRON);
-    hp(new THREE.CylinderGeometry(0.09, 0.17, 0.18, 10), 0, -0.36, 0, GOLD);
-    hp(new THREE.CylinderGeometry(0.055, 0.055, 0.9, 8), 0, -0.85, 0, GOLD);
-    hp(new THREE.SphereGeometry(0.15, 12, 8), 0, -0.98, 0, GOLD);
-    hp(new THREE.TorusGeometry(0.85, 0.05, 6, 36), 0, -1.0, 0, GOLD, Math.PI / 2, 0, 0);
-    hp(new THREE.TorusGeometry(0.46, 0.035, 6, 24), 0, -1.36, 0, GOLD, Math.PI / 2, 0, 0);
-    hp(new THREE.OctahedronGeometry(0.13, 0), 0, -1.68, 0, 0xe8faff, 0, 0, 0, 1, 2.0, 1);
-    this.candleTips = [];
-    for (let i = 0; i < 8; i++) {
-      const a = i / 8 * TAU + Math.PI / 8, x = Math.sin(a) * 0.85, z = Math.cos(a) * 0.85;
-      const eye = i === 0 || i === 7;
-      hp(new THREE.CylinderGeometry(0.02, 0.02, 0.8, 5), Math.sin(a) * 0.42, -1.04, Math.cos(a) * 0.42, GOLD, 0, a, Math.PI / 2);
-      hp(new THREE.CylinderGeometry(0.075, 0.05, 0.07, 8), x, -0.95, z, GOLD);
-      const ch = eye ? 0.4 : 0.28, cr = eye ? 0.07 : 0.045;
-      hp(new THREE.CylinderGeometry(cr, cr, ch, 8), x, -0.92 + ch / 2, z, 0xf4ecd8);
-      this.candleTips.push({ pos: new THREE.Vector3(x, -0.92 + ch + 0.06, z), eye });
-    }
-    this.headMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true }); this.flashMats.push(this.headMat);
-    this.headMesh = new THREE.Mesh(mergeGeos(H), this.headMat); this.head.add(this.headMesh);
-    // grin of crystal teeth (opens when he talks)
-    const MP = [];
-    for (let i = 0; i < 7; i++) {
-      const a = (i - 3) * 0.17, r = 0.62;
-      MP.push({ geo: new THREE.ConeGeometry(0.035, 0.1, 4), matrix: M4(Math.sin(a) * r, -1.18 - Math.cos((i - 3) * 0.5) * 0.04 + 0.04, Math.cos(a) * r, Math.PI, 0, 0), color: 0xffffff });
-    }
-    this.mouth = new THREE.Mesh(mergeGeos(MP), new THREE.MeshBasicMaterial({ vertexColors: true }));
-    this.head.add(this.mouth); this.mouthOpen = 0;
-    // individually swaying crystal drops
-    this.crystals = new THREE.InstancedMesh(new THREE.OctahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: 0xdff8ff }), 24);
-    this.crystals.frustumCulled = false; this.head.add(this.crystals);
-    this.cryst = [];
-    for (let i = 0; i < 24; i++) {
-      const tier = i < 16 ? 0 : 1, n = tier ? 8 : 16, k = tier ? i - 16 : i;
-      const a = k / n * TAU, r = tier ? 0.46 : 0.85;
-      this.cryst.push({ x: Math.sin(a) * r, y: tier ? -1.42 : -1.08, z: Math.cos(a) * r, len: tier ? 0.14 : 0.2, ph: rand(0, TAU), sw: 0 });
-    }
-    // RGB-split duplicates (phase III)
-    this.ghosts = [CONFIG.COL.magenta, CONFIG.COL.teal].map((c) => {
-      const g = new THREE.Group();
-      const mat = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
-      const t = new THREE.Mesh(this.torsoGeo, mat); t.position.copy(this.torso.position);
-      const hm = new THREE.Mesh(this.headMesh.geometry, mat); hm.position.copy(this.head.position);
-      g.add(t, hm); g.visible = false; this.body.add(g);
-      return { g, hm };
-    });
-    // state
-    this.phase = 0; this.shakeT = 0; this.flashT = 0; this.jitterT = 0; this.talkT = 0; this.stunT = 0;
-    this.attack = false; this.tired = false; this.sad = false; this.bowT = 0; this.bowTarget = 0;
-    this.defeated = false; this.fall = null; this.fade = 1; this.patchT = 0; this.eyeGlow = 1; this.glints = 0;
-    this.chest = new THREE.Vector3(); this.headWorld = new THREE.Vector3();
-    this.reset();
-  }
-  reset() {
-    this.phase = 0; this.tired = false; this.sad = false; this.defeated = false; this.fall = null; this.fade = 1;
-    this.doorTarget = 0; this.coreLevel = 0; this.bowTarget = 0; this.stunT = 0; this.attack = false;
-    this.head.visible = true; this.root.visible = true;
-    if (this.head.parent !== this.body) { this.body.add(this.head); }
-    this.head.position.set(0, 4.66, 0.68); this.head.rotation.set(0, 0, 0);
-    for (const g of this.ghosts) g.g.visible = false;
-    this.patches.length = 0; this.redrawWall();
-    for (const m of this.flashMats) m.opacity = 1;
-  }
-  setPhase(p) {
-    this.phase = p;
-    const want = p === 0 ? 0 : p === 1 ? 6 : 14;
-    while (this.patches.length < want) this.patches.push({ x: randi(0, 56), y: randi(0, 88), w: randi(6, 18), h: randi(4, 14) });
-    this.redrawWall();
-  }
-  redrawWall() {
-    const g = this.wallTex.userData.ctx;
-    drawDamask(g, 64, 96);
-    for (const p of this.patches) {
-      for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
-        const v = Math.random() * 255 | 0;
-        g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect((p.x + x) % 64, (p.y + y) % 96, 1, 1);
-      }
-      g.fillStyle = '#c23cff'; g.fillRect(p.x, p.y + p.h, p.w, 1);
-    }
-    if (this.phase >= 2) for (let i = 0; i < 4; i++) { g.fillStyle = pick(['rgba(255,0,80,0.5)', 'rgba(42,255,213,0.5)']); g.fillRect(0, randi(0, 95), 64, randi(1, 3)); }
-    this.wallTex.needsUpdate = true;
-  }
-  // leaving the fight: destroy the model and free its GPU resources
-  dispose() {
-    if (this.head.parent && this.head.parent !== this.body) disposeObject(this.head);
-    disposeObject(this.root);
-  }
-  setCore(v) { this.coreLevel = v; this.doorTarget = v ? 1.85 : 0; }
-  doorsPulse() { this.doorPulseT = 0.5; }
-  attackPose(on) { this.attack = on; }
-  setSad(on) { this.sad = on; }
-  bow(on) { this.bowTarget = on ? 0.32 : 0; }
-  stun() { this.stunT = 1; }
-  talkBlip() { this.mouthOpen = 1; this.talkT = 0.25; }
-  onBeat(b) {
-    if (((b % 4) + 4) % 4 === 0 && this.phase >= 1) this.jitterT = 0.1;
-    for (const c of this.cryst) c.sw += (Math.random() - 0.5) * 0.12;
-    this.glints = 2 + (G.audio.treble > 0.3 ? 2 : 0);
-  }
-  glitchBurst() { this.jitterT = 0.6; this.flashT = 0.3; }
-  hurt() {
-    this.shakeT = 0.6; this.flashT = 1;
-    G.audio.sfx.clink();
-    for (const c of this.cryst) c.sw += (Math.random() - 0.5) * 0.6;
-    this.headWorldPos(_v1); G.fx.shards(_v1, 10, 0.85, 0.97, 1, 1.4);
-  }
-  chestPos(out) { this.body.updateMatrixWorld(true); return out.set(0, 1.85, 0.5).applyMatrix4(this.body.matrixWorld); }
-  headWorldPos(out) { this.head.updateMatrixWorld(true); return out.set(0, -1.0, 0).applyMatrix4(this.head.matrixWorld); }
-  // fight ending: the chandelier snaps off and falls into the void
-  defeat() {
-    this.defeated = true;
-    this.head.updateMatrixWorld(true);
-    const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
-    this.head.matrixWorld.decompose(wp, wq, ws);
-    scene.attach(this.head);
-    this.fall = { vel: new THREE.Vector3(0, 0.5, 0.6), spin: new THREE.Vector3(rand(-1, 1), rand(-0.5, 0.5), rand(1, 2)), done: false };
-    G.audio.sfx.crack();
-  }
-  update(dt, rdt) {
-    const t = G.time, fx = G.fx, bass = G.audio.bass;
-    const amp = Flash.reduced ? 0.6 : 1;
-    // body bob on the beat + bass bounce
-    const bob = -0.07 * fx.beatPulse * amp + Math.sin(t * 1.6) * 0.035;
-    this.shakeT = Math.max(0, this.shakeT - dt);
-    this.flashT = Math.max(0, this.flashT - dt * 2.5);
-    this.jitterT = Math.max(0, this.jitterT - dt);
-    this.stunT = Math.max(0, this.stunT - dt * 0.12);
-    this.talkT = Math.max(0, this.talkT - dt);
-    this.mouthOpen = Math.max(0, this.mouthOpen - dt * 6);
-    this.doorPulseT = Math.max(0, this.doorPulseT - dt);
-    const sh = this.shakeT * 0.25;
-    this.body.position.set(sh ? rand(-sh, sh) : 0, bob + (sh ? rand(-sh, sh) * 0.5 : 0), 0);
-    this.body.scale.setScalar(1 + 0.014 * bass * amp);
-    // posture
-    this.bowT = damp(this.bowT, this.bowTarget + (this.tired ? 0.14 : 0), 2.5, dt);
-    this.body.rotation.x = this.bowT;
-    this.body.rotation.z = this.stunT > 0 ? Math.sin(t * 3) * 0.08 * this.stunT : 0;
-    // arms
-    const beatSw = Math.sin(G.clock.beat * Math.PI) * 0.06 * amp;
-    for (const a of this.arms) {
-      let z = a.s * (0.28 + beatSw * a.s), x = 0.1, el = -0.35;
-      if (this.attack) { z = a.s * (1.15 + Math.sin(t * 3 + a.s) * 0.1); x = -0.3; el = -0.9; }
-      if (this.talkT > 0 && a.s > 0) { z = 0.9 + Math.sin(t * 7) * 0.08; el = -1.2; x = -0.4; }
-      if (this.tired || this.sad) { z = a.s * 0.12; el = -0.1; x = 0.15; }
-      a.sh.rotation.z = damp(a.sh.rotation.z, z, 5, dt);
-      a.sh.rotation.x = damp(a.sh.rotation.x, x, 5, dt);
-      a.el.rotation.x = damp(a.el.rotation.x, el, 5, dt);
-    }
-    // chest doors / core
-    const dt2 = Math.max(this.doorTarget, this.doorPulseT > 0 ? 1.1 : 0, this.attack ? 0.35 : 0);
-    this.doorOpen = damp(this.doorOpen, dt2, 6, dt);
-    for (const d of this.doors) d.piv.rotation.y = d.s * this.doorOpen;
-    this.coreU.uTime.value = t; this.coreU.uOpen.value = clamp(this.doorOpen / 1.6, 0, 1);
-    // chandelier sway + crystals
-    if (!this.defeated) {
-      const sway = this.sad ? 0.5 : 1;
-      this.head.rotation.z = (0.07 * Math.sin(t * 1.25) + 0.035 * fx.beatPulse * (G.clock.beatIndex % 2 ? 1 : -1) * amp) * sway + (this.stunT > 0 ? Math.sin(t * 4) * 0.15 * this.stunT : 0);
-      this.head.rotation.x = 0.04 * Math.sin(t * 0.9) - (this.tired ? 0.25 : 0) - this.mouthOpen * 0.05;
-    } else if (this.fall && !this.fall.done) {
-      const f = this.fall;
-      f.vel.y -= 9.8 * dt * 0.8;
-      this.head.position.addScaledVector(f.vel, dt);
-      this.head.rotation.x += f.spin.x * dt; this.head.rotation.z += f.spin.z * dt;
-      if (this.head.position.y < -5.5) {
-        f.done = true; this.head.visible = false;
-        G.audio.sfx.crash(); G.fx.shards(this.head.position, 40, 0.9, 0.97, 1, 4); G.fx.burst(this.head.position, 24, 1, 0.8, 0.4, 3, 0.12);
-      }
-    }
-    for (let i = 0; i < this.cryst.length; i++) {
-      const c = this.cryst[i];
-      c.sw *= Math.exp(-dt * 1.5);
-      const ang = Math.sin(t * (2 + (i % 3)) + c.ph) * 0.12 + c.sw;
-      _v1.set(c.x, c.y - c.len, c.z); _e1.set(ang * 0.6, 0, ang); _q1.setFromEuler(_e1);
-      _s1.set(0.045, c.len, 0.045); _m1.compose(_v1, _q1, _s1); this.crystals.setMatrixAt(i, _m1);
-    }
-    this.crystals.instanceMatrix.needsUpdate = true;
-    // crystals catch the light: a few glints per beat
-    if (this.glints > 0 && this.head.visible) {
-      this.head.updateMatrixWorld(true);
-      for (; this.glints > 0; this.glints--) {
-        const c = this.cryst[(Math.random() * this.cryst.length) | 0];
-        _v1.set(c.x, c.y - c.len * 1.4, c.z).applyMatrix4(this.head.matrixWorld);
-        G.fx.parts.emit(_v1.x, _v1.y, _v1.z, 0, 0, 0, 0.35, 0.14, 1, 1, 1, 0, 0, 1);
-      }
-    }
-    this.mouth.scale.y = 1 + this.mouthOpen * 0.8;
-    if (this.defeated) this.fade = Math.max(0.2, this.fade - dt * 0.22);
-    // flash white on hurt (HDR multiplier saturates to white)
-    const fl = 1 + this.flashT * 2.5;
-    for (const m of this.flashMats) { m.color.setScalar(fl); m.opacity = this.fade; }
-    // corruption: vertex jitter on downbeats, static patches, RGB split
-    const gm = (fx.glitch + (this.phase >= 2 ? 0.3 : 0)) * Flash.glitchMul;
-    const pos = this.torsoGeo.attributes.position;
-    if (this.jitterT > 0 && gm > 0.05) {
-      for (let i = 0; i < pos.array.length; i++) pos.array[i] = this.torsoBase[i] + (Math.random() - 0.5) * 0.12 * gm;
-      pos.needsUpdate = true; this._jittered = true;
-    } else if (this._jittered) { pos.array.set(this.torsoBase); pos.needsUpdate = true; this._jittered = false; }
-    this.patchT -= dt;
-    if (this.patches.length && this.patchT <= 0) { this.patchT = Flash.reduced ? 0.35 : 0.12; this.redrawWall(); }
-    this.wallTex.offset.y = (t * 0.03 + (this.phase >= 1 && Math.random() < 0.05 * gm ? rand(-0.2, 0.2) : 0)) % 1;
-    for (let i = 0; i < this.ghosts.length; i++) {
-      const g = this.ghosts[i];
-      g.g.visible = this.phase >= 2 && !this.defeated && this.fade > 0.5;
-      if (g.g.visible) {
-        const j = 0.1 + gm * 0.12;
-        g.g.position.set((i ? 1 : -1) * j + (Math.random() < 0.2 * gm ? rand(-0.1, 0.1) : 0), Math.random() < 0.1 * gm ? rand(-0.05, 0.05) : 0, -0.02);
-        g.hm.rotation.copy(this.head.rotation);
-      }
-    }
-    // candle eyes + flames
-    if (this.head.visible) {
-      this.head.updateMatrixWorld(true);
-      const eyeCol = this.sad ? EYE_SAD : EYE_COLS[this.phase];
-      const tr = G.audio.treble;
-      for (const c of this.candleTips) {
-        _v1.copy(c.pos).applyMatrix4(this.head.matrixWorld);
-        const fl2 = (0.8 + 0.2 * Math.sin(t * 13 + c.pos.x * 7)) * this.fade * (this.stunT > 0.3 ? 0.4 : 1);
-        if (c.eye) {
-          const s = (0.55 + tr * 0.5) * this.root.scale.x;
-          G.fx.glow.add(_v1.x, _v1.y, _v1.z, s * 1.6, eyeCol[0] * fl2, eyeCol[1] * fl2, eyeCol[2] * fl2, 0.75, 0);
-          G.fx.glow.add(_v1.x, _v1.y, _v1.z, s * 0.4, 1, 1, 0.9, fl2, 0);
-        } else G.fx.glow.add(_v1.x, _v1.y, _v1.z, 0.35, 1 * fl2, 0.7 * fl2, 0.3 * fl2, 0.7, 0);
-      }
-    }
-    if (this.coreU.uOpen.value > 0.1) { this.chestPos(_v2); G.fx.glow.add(_v2.x, _v2.y, _v2.z + 0.1, 2.2 * this.coreU.uOpen.value, 0.7, 0.3, 1, 0.45, 0); }
-  }
 }
 
 // exit door for the SPARE ending (warm light in the void)
@@ -7536,7 +8811,7 @@ class Battle {
     if (G.boss) { G.boss.dispose(); G.boss = null; G.bossId = null; }
     if (this.def && this.def.onUnload) this.def.onUnload(this);
     if (this.def) G.ui.disposeBossMenus(this.def.id);
-    disposeKits();
+    disposeKits(); ManorTex.dispose();
   }
   // leaving the fight: free everything the boss built, back to the manor look
   unloadBoss() {
@@ -8059,6 +9334,7 @@ class Battle {
     G.arena.visible = true; G.arena.opacity = 1; G.arena.resetBox(0.01); G.bg.dim = 1;
     if (G.boss) { G.boss.root.visible = true; G.boss.setPhase(this.phase); G.boss.tired = this.tired; }
     G.fx.glitchBase = this.phaseGlitch();
+    if (this.def.onRetry) this.def.onRetry(this);
     if (this.def.applyPhaseLook) this.def.applyPhaseLook(this, this.phase);
     this.calibrate(); U.refreshHUD(); U.setBattleHUD(true);
     G.clock.play(this.def.phaseRules[this.phase].section);
@@ -8398,11 +9674,11 @@ BOSSES.proprietor = {
   hp: 2200, stats: { atk: 12, def: 6 }, bulletDmg: [3, 4, 5], phaseGlitch: [0, 0.15, 0.35],
   transition: 'tapeStop',
   beatsPerBar: 4,
-  kits: [WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit],   // attack kits, built at fight start
+  get kits() { return [OFX, HallKit, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit]; },   // effects, the hall + attack kits, built at fight start (a getter: OFX is defined further down)
   musicSlot: 'MUSIC_PROPRIETOR', dataUri: MUSIC_DATA_URI_PROPRIETOR, musicUrl: MUSIC_URL_PROPRIETOR,
   fallbackMusic() { return synthFallbackTrack(this.music.bpm); },
   palette: { name: '#ffffff', spareName: '#ffe600', hp: '#3dff5a', hpBack: '#c80024', accent: '#c23cff', pelletGlow: 0xffffff, glyph: 0xffffff },
-  arenaTheme: 'manor', bgTheme: 'manor',
+  arenaTheme: 'manor', bgTheme: 'hall',
   dialogue: LINES, flavorText: FLAVOR, dialogueStyle: 'bubble',
   attacks: PATTERNS,
   acts: [
@@ -8413,8 +9689,18 @@ BOSSES.proprietor = {
   fightType: 'slash',
   glitchWords: ['ST4Y', 'THE PARTY NEVER ENDS', 'RSVP: ATTENDING', 'N0 EXIT', 'M4N1C M4N0R'],
   shatterStyle: 'heart',
-  buildModel() { return new Boss(); },
-  updateModel(dt, clock, energy) { if (G.boss) G.boss.update(dt, G.rdt); },
+  buildModel() { return new ProprietorModel(); },
+  updateModel(dt, clock, energy) {
+    if (G.boss) G.boss.update(dt, G.rdt);
+    if (!HallKit.ready) return;
+    const B = G.battle;
+    HallKit.tired = !!(B && B.tired);
+    const bi = G.clock.beatIndex; if (bi !== this.lastBeat) { this.lastBeat = bi; HallKit.onBeat(bi); }
+    HallKit.update(dt, G.rdt); OFX.update(dt);
+  },
+  onLoad(B) { HallKit.resetLook(0); ManorLight.clear(); },
+  applyPhaseLook(B, p, instant) { HallKit.setPhase(p, instant); },
+  onRetry(B) { HallKit.resetLook(B.phase); ManorLight.clear(); },
   newState() { return { items: { mint: 3, canape: 2, towel: 1, key: 1 }, windowStun: false, towelSlow: false, compliments: 0, rsvp: false, rsvpTrigger: false }; },
   snapshot(B) { return { items: Object.assign({}, B.items), compliments: B.compliments, rsvp: B.rsvp }; },
   restore(B, s) { B.items = Object.assign({}, s.items); B.compliments = s.compliments; B.rsvp = s.rsvp; B.rsvpTrigger = false; B.windowStun = false; B.towelSlow = false; },
@@ -8552,8 +9838,7 @@ BOSSES.proprietor = {
       B.after(1.7, () => G.clock.stop(0.8));
       G.boss.defeat();
       G.fx.glitchBase = 0; G.fx.glitchSpike = 0.6;
-      const n = G.bg.winCount;
-      for (let i = 0; i <= n; i++) B.after(1.0 + i * 0.09, () => G.bg.setWindowsLit(n - i));
+      B.after(1.0, () => HallKit.lightsOut());
       B.after(1.2, () => { G.bg.dim = 0.55; });
       B.after(2.8, () => { G.bg.dim = 0.25; G.arena.opacity = 0.35; });
       B.afterIn('VICTORY_FIGHT', 3.4, () => B.talk([{ text: LINES.fightEnd, speed: 15 }], () => B.results('YOU WON!\n\nYou earned {EXP} EXP and {GOLD} GOLD.', true)));
@@ -8561,6 +9846,7 @@ BOSSES.proprietor = {
     spare(B) {
       G.audio.setLowpass(900, 2.5); G.clock.setRate(0.85, 2.0);
       G.fx.glitchBase = 0; G.boss.setCore(0); G.boss.bow(true); G.boss.tired = false;
+      HallKit.dawn();
       G.audio.sfx.chimes();
       B.narrate('* You spared THE PROPRIETOR.', () => B.talk(LINES.spare.map((t) => ({ text: t, speed: 22 })), () => B.openExit()));
     },
@@ -10617,7 +11903,7 @@ BOSSES.kiddie = {
   snapshot(B) { return { items: Object.assign({}, B.items), rates: B.rates, teachDone: B.teachDone, gg: B.gg }; },
   restore(B, s) { B.items = Object.assign({}, s.items); B.rates = s.rates; B.teachDone = s.teachDone; B.gg = s.gg; B.boost = false; B.antivirus = false; B.stunned = false; B.bugged = false; B.hpLost = 0; },
   hudName(B) { return B && B.phase >= 2 ? (B.tired ? 'ADM1N_K1DD1E (LAGGING)' : 'ADM1N_K1DD1E') : 'SCR1PT_K1DD1E'; },
-  onLoad() { const C = G.ui.chat; C.name = 'SCR1PT_K1DD1E'; C.status = 'busy'; },
+  onLoad() { ManorLight.forKiddie(); const C = G.ui.chat; C.name = 'SCR1PT_K1DD1E'; C.status = 'busy'; },
   intro(B) {
     const how = Save.beaten('proprietor');
     const L = (how === 'fight' ? KLINES.intro.fight : how === 'spare' ? KLINES.intro.spare : KLINES.intro.none).concat(KLINES.intro.tail);
@@ -17253,6 +18539,7 @@ const OFX = {
   },
   floorAt(x, z) {
     const A = G.arena;
+    if (HallKit.ready) { if (A.visible && x > A.min.x - 0.02 && x < A.max.x + 0.02 && z > A.min.z - 0.02 && z < A.max.z + 0.02) return A.min.y; return z > MANOR.EDGE && Math.abs(x) < MANOR.HW ? 0 : MANOR.FLOOR; }
     if (A.visible && x > A.min.x - 0.02 && x < A.max.x + 0.02 && z > A.min.z - 0.02 && z < A.max.z + 0.02) return A.min.y;
     if (DesertKit.ready && DesertKit.street.visible) return DesertKit.street.position.y;
     if (TrainKit.ready && TrainKit.root.visible) return -1.0;
