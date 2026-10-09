@@ -70,6 +70,16 @@ bonus for a plain run.
 
 ## KNOBS' SHOP
 
+The shop stands on a floating island of dark rock in a violet void: a nebula and a far
+galaxy overhead, the horizon one long glowing waveform that dances to the music, records,
+tapes and old speakers drifting past. Its walls are stacked speaker cabinets (the cones pump
+with the bass, and the big one on the roof sends a ring out on every bar); there are display
+windows, a striped awning, the neon in a ring of chasing bulbs and a street lamp with a
+gramophone horn. Inside: lamplight pooling under the pendants, fairy lights, shelves of
+real records, a bubble-tube jukebox, a reel-to-reel, a brass cash register. KNOBS' face is
+a glowing screen in his speaker head; he waves you in, points at prices, gives a thumbs-up
+when the till rings, shrugs, and taps the counter with you when you haggle.
+
 Walk in (room-scale or the left stick, snap turn on the right; no flying), pick an item
 off the shelf with grip, set it on the glowing pad on the counter and poke **BUY**. Tapes
 are permanent upgrades with tiers (BASS BOOST, SHARP EDIT, PADDED MIX, GRAZE MAGNET,
