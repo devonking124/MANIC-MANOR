@@ -23242,7 +23242,8 @@ function shopBuildPanels(K, root) {
   // his words come up on a teal VFD strip, like his face
   K.talk = new TextPanel({ w: 1.15, h: 0.33, cw: 552, ch: 158, bg: 'rgba(3,12,14,0.95)', border: '#2affd5', borderPx: 5, color: '#d8fff6', scale: 3, pad: 16, renderOrder: 7,
     after: (g) => { g.fillStyle = '#030c0e'; g.fillRect(16, 0, 74, 5); PixelFont.draw(g, 'KNOBS', 20, -1, 2, '#2affd5'); g.fillStyle = 'rgba(42,255,213,0.06)'; for (let y = 8; y < 150; y += 4) g.fillRect(6, y, 540, 1); } });
-  K.talk.mesh.position.set(0.66, 1.9, -1.08); root.add(K.talk.mesh); K.talk.mesh.visible = false;
+  // off his left shoulder and a little forward: his head and headphones never hide it, from anywhere along the counter
+  K.talk.mesh.position.set(0.88, 1.9, -0.74); root.add(K.talk.mesh); K.talk.mesh.visible = false;
   K.talkTW = new Typewriter(K.talk);
   K.tag = new TextPanel({ w: 0.34, h: 0.19, cw: 272, ch: 152, bg: 'rgba(8,4,2,0.94)', border: '#ffb347', borderPx: 3, color: '#ffffff', scale: 2, pad: 10, renderOrder: 20, depthTest: false });
   root.add(K.tag.mesh); K.tag.mesh.visible = false; K.tagItem = null;
