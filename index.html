@@ -17467,279 +17467,467 @@ class SignBox {
   dispose() { disposeObject(this.mesh); }
 }
 
+// @@MODEL (SUNDOWN)
 // ----------------------------------------------------------------------------
-//  SundownModel - about 6 m tall on his mesa past the far wall. A sun-disc face (two
-//  slit eyes, a heat-shimmer halo) under a huge battered hat with a rattlesnake band; a
-//  long duster, a poncho patterned like the sky that shifts with the time of day, its
-//  edge a little verlet cloth that flutters; silver revolvers, a gunbelt of glowing
-//  shells, spurs that jingle on the beat, a red bandana whipping in the wind.
-//  Phase looks: HIGH NOON (white-gold sun), GOLDEN HOUR (deep orange), MIDNIGHT (a pale
-//  crescent moon; the hat flies off at sunset).
+//  SundownModel - the Last Outlaw, about 6 m tall on his mesa across the canyon.
+//  His head is the sun: a burning disc ringed with flames, with a face - a gunslinger's
+//  squint, heavy brows, a handlebar moustache, a mouth that talks, smirks and laughs - that
+//  turns into a cratered crescent moon at midnight. A creased cattleman hat with a snakeskin
+//  band, silver conchos and a hawk feather; a long duster with a shoulder cape and tails that
+//  billow in the wind; a striped serape over his left shoulder; crossed gunbelts of glowing
+//  shells and two pearl-gripped six-shooters; fringed chaps and boots with star spurs.
+//  The rig: hips, spine, chest, neck, head; shoulders, elbows, wrists; hips, knees. Poses blend;
+//  breathing, weight shifts, a twitchy trigger hand, head tracking and cloth ride on top.
+//  Phase looks: HIGH NOON (white-gold sun), GOLDEN HOUR (deep orange, longer flames),
+//  MIDNIGHT (a pale crescent moon; the hat flies off at sunset), DAWN (the SPARE ending).
 // ----------------------------------------------------------------------------
+// poses: arm [forward, out, twist], elbow bend, wrist [bend, side]; spine [x, y, z]; legs [forward, out], knee bend; drop (m)
 const SUNDOWN_POSES = {
-  //            right arm: shoulder x/z, elbow x      left arm: shoulder x/z, elbow x
-  idle:   [0.15, 0.25, -0.35, 0.15, -0.25, -0.35],
-  draw:   [-1.35, 0.1, -0.15, 0.25, -0.3, -0.5],     // right hand out, aiming at you
-  fan:    [-1.35, 0.1, -0.15, -1.1, -0.2, -0.75],    // left hand fanning the hammer
-  tip:    [-2.5, 0.35, -1.65, 0.15, -0.25, -0.35],   // right hand to the brim
-  spin:   [-0.55, 0.45, -1.25, 0.15, -0.25, -0.35],  // spinning a revolver by his hip
-  throw:  [-2.6, 0.2, -0.4, 0.15, -0.25, -0.35],     // lobbing dynamite
-  sit:    [-0.5, 0.35, -1.1, -0.5, -0.35, -1.1],     // forearms on his knees
-  holster: [0.05, 0.3, -0.25, 0.05, -0.3, -0.25],    // hands hanging by the holsters (the duel)
+  idle:    { R: [0.12, 0.2, 0], eR: 0.35, wR: [0.15, 0], L: [0.08, 0.2, 0], eL: 0.3, wL: [0.1, 0], sp: [0.04, 0, 0] },
+  draw:    { aimR: 1, eR: 0.08, wR: [0, 0], L: [0.25, 0.3, 0], eL: 0.55, wL: [0.2, 0], sp: [0.08, -0.22, 0], legs: [[0.08, 0.06], [-0.12, 0.1]], kn: [0.12, 0.05] },
+  fan:     { aimR: 1, eR: 0.08, wR: [0, 0], ikL: 'hammer', wL: [0.5, 0.4], sp: [0.1, -0.18, 0], fan: 1, legs: [[0.08, 0.08], [-0.15, 0.12]], kn: [0.15, 0.08] },
+  tip:     { ikR: 'brim', wR: [0.6, 0], L: [0.1, 0.2, 0], eL: 0.3, wL: [0.1, 0], sp: [0.12, 0, 0] },
+  spin:    { R: [0.55, 0.45, 0], eR: 1.35, wR: [0.2, 0], L: [0.1, 0.2, 0], eL: 0.3, wL: [0.1, 0], sp: [0.04, 0.1, 0] },
+  throw:   { R: [2.9, 0.15, 0], eR: 0.6, wR: [0.6, 0], L: [0.9, 0.35, 0], eL: 0.4, wL: [0, 0], sp: [-0.14, 0.25, 0], legs: [[0.2, 0.06], [-0.25, 0.1]], kn: [0.2, 0.05] },
+  lasso:   { R: [3.0, 0.25, 0], eR: 0.35, wR: [0.3, 0], L: [0.35, 0.35, 0], eL: 0.6, wL: [0.2, 0], sp: [-0.04, 0.12, 0], legs: [[0.06, 0.1], [-0.08, 0.12]], kn: [0.08, 0.08], twirl: 1 },
+  point:   { R: [0.12, 0.2, 0], eR: 0.35, wR: [0.15, 0], aimL: 1, eL: 0.05, wL: [0, 0], sp: [0.02, 0.15, 0] },
+  sit:     { R: [1.05, -0.1, 0], eR: 0.75, wR: [0.3, 0], L: [1.05, -0.1, 0], eL: 0.75, wL: [0.3, 0], sp: [0.26, 0, 0], legs: [[2.5, 0.2], [2.5, 0.2]], kn: [2.5, 2.5], drop: 1 },
+  holster: { R: [0.06, 0.32, 0], eR: 0.45, wR: [0.35, 0.3], L: [0.06, 0.32, 0], eL: 0.45, wL: [0.35, 0.3], sp: [0.07, 0, 0], legs: [[0.02, 0.14], [0.02, 0.14]], kn: [0.1, 0.1] },
+  hurt:    { R: [0.4, 0.55, 0], eR: 0.7, wR: [0, 0], L: [0.4, 0.55, 0], eL: 0.7, wL: [0, 0], sp: [-0.2, 0, 0.06], legs: [[-0.1, 0.1], [0.12, 0.1]], kn: [0.2, 0.1] },
+  taunt:   { R: [0.5, -0.42, 0], eR: 1.95, wR: [0.2, 0], L: [0.5, -0.42, 0], eL: 1.95, wL: [0.2, 0], sp: [-0.06, 0, 0] },   // arms crossed
 };
-// HIGH NOON (white-gold sun) / GOLDEN HOUR (deep orange) / MIDNIGHT (a pale crescent moon)
+// expressions: eyes [open, brow (-1 angry .. 1 worried), squint], mouth [smile, open, smirk]
+const SUNDOWN_FACES = {
+  calm:    { e: [0.62, -0.1, 0.45], m: [0.25, 0.0, 0.35] },
+  focus:   { e: [0.5, -0.75, 0.75], m: [-0.1, 0.0, 0.55] },
+  smirk:   { e: [0.6, -0.25, 0.5], m: [0.45, 0.0, 0.95] },
+  uneasy:  { e: [0.7, 0.45, 0.25], m: [-0.15, 0.05, 0.1] },
+  sad:     { e: [0.52, 0.8, 0.2], m: [-0.3, 0.0, 0.0] },
+  hurt:    { e: [1.15, 0.85, 0.0], m: [-0.2, 0.7, 0.0] },
+  laugh:   { e: [0.0, 0.3, 0.0], m: [1.0, 0.9, 0.0], laugh: 1 },
+  stare:   { e: [0.26, -0.85, 1.0], m: [-0.05, 0.0, 0.25] },
+  tired:   { e: [0.42, 0.6, 0.1], m: [-0.2, 0.25, 0.0] },
+  soft:    { e: [0.6, 0.35, 0.2], m: [0.5, 0.0, 0.0] },
+};
+// HIGH NOON / GOLDEN HOUR / MIDNIGHT / DAWN
 const SUNDOWN_LOOKS = [
-  { sun: 0xfff3c4, rim: 0xffd27a, halo: 0xffe8a0, top: 0xfff3c4, bot: 0x5f9fd8, band: 0xc4532e, glow: 0.2, shell: 0xffc86a, haloK: 1 },
-  { sun: 0xff9a3a, rim: 0xff5a1a, halo: 0xff7a2a, top: 0xffb060, bot: 0xd94f6a, band: 0x6a2a5a, glow: 0.8, shell: 0xffa040, haloK: 1 },
-  { sun: 0xcfd8ff, rim: 0x9aa8e0, halo: 0x8a9ae8, top: 0xcfd8ff, bot: 0x1b1840, band: 0x4a4a8a, glow: 0.25, shell: 0xa8b8ff, haloK: 0.45 },
-  // the SPARE ending's dawn: a soft new sun
-  { sun: 0xffe2b0, rim: 0xffa070, halo: 0xffc890, top: 0xffd0a0, bot: 0x4a6aa8, band: 0xc4532e, glow: 0.55, shell: 0xffc86a, haloK: 0.75 },
+  { core: 0xfffbe6, rim: 0xffc24a, corona: 0xffd56a, coronaK: 1.0, flame: 1.0, halo: 0xffe8a0, moon: 0, shell: 0xffc86a, face: 'calm', blush: 0.15 },
+  { core: 0xffd27a, rim: 0xff5a14, corona: 0xff6a1a, coronaK: 1.25, flame: 1.35, halo: 0xff7a2a, moon: 0, shell: 0xffa040, face: 'uneasy', blush: 0.45 },
+  { core: 0xe8eeff, rim: 0xa8b4e8, corona: 0x8a9ae8, coronaK: 0.55, flame: 0.0, halo: 0x8a9ae8, moon: 1, shell: 0xa8b8ff, face: 'sad', blush: 0.0 },
+  { core: 0xfff0d0, rim: 0xffa070, corona: 0xffc890, coronaK: 0.8, flame: 0.55, halo: 0xffc890, moon: 0, shell: 0xffc86a, face: 'soft', blush: 0.35 },
 ];
+// ---- his textures: the serape's weave, a cloth weave, the snakeskin band
+function drawSerape(g, w, h) {
+  // stripes run across the blanket (along u): a wide band pattern repeating
+  const bands = [['#7a1414', 18], ['#e8c070', 4], ['#c8361e', 22], ['#1a1210', 3], ['#f0e2c0', 6], ['#2a8a8a', 10], ['#f0e2c0', 4], ['#e88a2a', 16], ['#1a1210', 3], ['#ffd25a', 8], ['#c8361e', 12], ['#3a1a40', 6]];
+  let x = 0, i = 0;
+  while (x < w) { const [c, bw] = bands[i % bands.length]; g.fillStyle = c; g.fillRect(x, 0, bw, h); x += bw; i++; }
+  // a zigzag diamond motif in the wide red bands
+  g.fillStyle = '#ffd25a';
+  for (let k = 0; k < 4; k++) { const cx = 30 + k * 64; for (let y = 6; y < h; y += 22) { g.beginPath(); g.moveTo(cx, y); g.lineTo(cx + 7, y + 9); g.lineTo(cx, y + 18); g.lineTo(cx - 7, y + 9); g.closePath(); g.fill(); } }
+  // the weave: fine threads
+  for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(0,0,0,${y % 4 ? 0.08 : 0.15})`; g.fillRect(0, y, w, 1); }
+  for (let k = 0; k < 900; k++) { g.fillStyle = `rgba(255,240,210,${(Math.random() * 0.12).toFixed(2)})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 1); }
+}
+function drawWeave(g, w, h) {
+  pixelFill(g, w, h, (x, y) => {
+    const tw = ((x + y) % 4 < 2 ? 0.04 : -0.04) + ((x - y + 64) % 6 < 3 ? 0.02 : -0.02);
+    const k = 0.9 + tw + (ONoise.n2(x / w * 16, y / h * 16, 16) - 0.5) * 0.12 + (ONoise.n2(x / w * 64, y / h * 64, 64) - 0.5) * 0.06;
+    const c = clamp(k, 0, 1) * 255; return [c, c, c];
+  });
+}
+// a revolver (barrel along +z, the grip down): 0.78 m long at his scale
+function sixShooterGeo(s) {
+  const flute = new THREE.CylinderGeometry(0.075, 0.075, 0.16, 18).rotateX(Math.PI / 2), FP = flute.attributes.position;
+  for (let i = 0; i < FP.count; i++) { const x = FP.getX(i), y = FP.getY(i), a = Math.atan2(y, x), k = 1 - 0.13 * Math.pow(Math.max(0, Math.cos(a * 6)), 4); FP.setX(i, x * k); FP.setY(i, y * k); }
+  flute.computeVertexNormals();
+  const grip = new THREE.CylinderGeometry(0.045, 0.055, 0.24, 10).translate(0, -0.12, 0);
+  const parts = [
+    { geo: new THREE.CylinderGeometry(0.03, 0.033, 0.5, 12).rotateX(Math.PI / 2), matrix: M4(0, 0.05, 0.36), color: 0xdfe4ee },             // barrel
+    { geo: new THREE.CylinderGeometry(0.018, 0.018, 0.4, 8).rotateX(Math.PI / 2), matrix: M4(0, 0.0, 0.33), color: 0xc8ccd8 },             // ejector rod
+    { geo: new THREE.BoxGeometry(0.012, 0.03, 0.03), matrix: M4(0, 0.09, 0.58), color: 0xdfe4ee },                                       // front sight
+    { geo: flute, matrix: M4(0, 0.02, 0.06), color: 0xd8b04a },                                                                         // the cylinder (gold)
+    { geo: new THREE.BoxGeometry(0.07, 0.13, 0.2), matrix: M4(0, 0.01, 0.0), color: 0xc8ccd8 },                                          // frame
+    { geo: new THREE.BoxGeometry(0.03, 0.07, 0.07), matrix: M4(0, 0.1, -0.11, -0.5, 0, 0), color: 0x9aa0ac },                            // hammer
+    { geo: new THREE.TorusGeometry(0.045, 0.01, 5, 12, Math.PI * 1.2), matrix: M4(0, -0.07, 0.04, 0, Math.PI / 2, 0), color: 0xc8ccd8 },  // trigger guard
+    { geo: new THREE.BoxGeometry(0.012, 0.05, 0.015), matrix: M4(0, -0.07, 0.03, 0.4, 0, 0), color: 0x9aa0ac },                          // trigger
+    { geo: grip, matrix: M4(0, -0.02, -0.1, 0.42, 0, 0, 1, 1, 0.75), color: 0xf2ead8 },                                                 // pearl grip
+  ];
+  const g = mergeGeos(parts); g.scale(s, s, s);
+  return g;
+}
+// a loose verlet cloth: rows hang from a pinned top row (points in the parent's space); each point
+// springs back toward its rest shape, wind and gravity push it, neighbours keep their distance
+class ClothFlap {
+  constructor(rest, cols, rows, mat, o = {}) {
+    // rest: Float32Array of cols*rows xyz (row-major, row 0 = pinned)
+    this.cols = cols; this.rows = rows; this.n = cols * rows;
+    this.rest = rest; this.p = Float32Array.from(rest); this.q = Float32Array.from(rest);
+    this.k = o.k !== undefined ? o.k : 6; this.windK = o.wind !== undefined ? o.wind : 1; this.grav = o.grav !== undefined ? o.grav : 2.5; this.loop = !!o.loop;
+    const geo = new THREE.BufferGeometry(), idx = [];
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - (this.loop ? 0 : 1); i++) {
+      const i1 = (i + 1) % cols, a = j * cols + i, b = j * cols + i1, c = (j + 1) * cols + i, d = (j + 1) * cols + i1;
+      idx.push(a, c, b, b, c, d);
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(this.p, 3));
+    const uv = new Float32Array(this.n * 2); for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) { uv[(j * cols + i) * 2] = i / Math.max(1, cols - 1); uv[(j * cols + i) * 2 + 1] = 1 - j / Math.max(1, rows - 1); }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    if (o.colors) geo.setAttribute('color', new THREE.BufferAttribute(o.colors, 3));
+    geo.setIndex(idx); geo.computeVertexNormals();
+    this.mesh = new THREE.Mesh(geo, mat); this.mesh.frustumCulled = false;
+    // neighbour rest lengths
+    this.links = [];
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const a = j * cols + i;
+      if (i < cols - 1 || this.loop) this.links.push(a, j * cols + (i + 1) % cols);
+      if (j < rows - 1) this.links.push(a, a + cols);
+    }
+    this.len = new Float32Array(this.links.length / 2);
+    for (let l = 0; l < this.links.length; l += 2) { const a = this.links[l] * 3, b = this.links[l + 1] * 3; this.len[l / 2] = Math.hypot(rest[a] - rest[b], rest[a + 1] - rest[b + 1], rest[a + 2] - rest[b + 2]); }
+  }
+  // wind: a local-space vector (m/s^2 scale); t: time; floor: the lowest y (local) a point may reach
+  step(dt, wind, t, floor = -1e9) {
+    const P = this.p, Q = this.q, R = this.rest, c = this.cols, dt2 = dt * dt;
+    for (let i = c; i < this.n; i++) {
+      const k = i * 3, row = Math.floor(i / c) / (this.rows - 1), gust = 0.65 + 0.35 * Math.sin(t * 2.7 + i * 0.37) * Math.sin(t * 1.3 + i * 0.11);
+      for (let a = 0; a < 3; a++) {
+        const v = (P[k + a] - Q[k + a]) * 0.93;
+        Q[k + a] = P[k + a];
+        let f = (R[k + a] - P[k + a]) * this.k + wind[a] * gust * this.windK * row;
+        if (a === 1) f -= this.grav * row * 0.2;
+        P[k + a] += v + f * dt2;
+      }
+    }
+    for (let it = 0; it < 2; it++) for (let l = 0; l < this.links.length; l += 2) {
+      const ia = this.links[l], ib = this.links[l + 1], a = ia * 3, b = ib * 3, L = this.len[l / 2];
+      const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], dz = P[b + 2] - P[a + 2], d = Math.hypot(dx, dy, dz) || 1e-6, e = (d - L) / d * 0.5;
+      const pa = ia >= c, pb = ib >= c;
+      if (pa && pb) { P[a] += dx * e; P[a + 1] += dy * e; P[a + 2] += dz * e; P[b] -= dx * e; P[b + 1] -= dy * e; P[b + 2] -= dz * e; }
+      else if (pb) { P[b] -= dx * e * 2; P[b + 1] -= dy * e * 2; P[b + 2] -= dz * e * 2; }
+      else if (pa) { P[a] += dx * e * 2; P[a + 1] += dy * e * 2; P[a + 2] += dz * e * 2; }
+    }
+    if (floor > -1e8) for (let i = c; i < this.n; i++) if (P[i * 3 + 1] < floor) { P[i * 3 + 1] = floor; Q[i * 3 + 1] = floor; }
+    this.mesh.geometry.attributes.position.needsUpdate = true;
+    this.mesh.geometry.computeVertexNormals();
+  }
+  reset() { this.p.set(this.rest); this.q.set(this.rest); this.mesh.geometry.attributes.position.needsUpdate = true; }
+}
+
 class SundownModel {
   constructor() {
     const root = this.root = new THREE.Group();
     this.home = FRONTIER.HOME.clone();
     root.position.copy(this.home); scene.add(root);
     const mats = this.mats = [];
-    const lit = (o) => { const m = CircusShade.material(Object.assign({ gloss: 0.25, shine: 26, rim: 0.55, emit: 0.16, wrap: 0.5 }, o)); mats.push(m); return m; };
-    this.mat = lit({});
-    const silver = lit({ color: 0xdfe4ee, gloss: 1.6, shine: 90, rim: 0.9, emit: 0.3 });
-    this.silver = silver;
-    const DENIM = 0x3a4656, BOOT = 0x4a2a16, DUSTER = 0x7a5638, DUSTER_D = 0x5a3e28, SHIRT = 0x8a3a2a, LEATHER = 0x5a3418;
-    // ---- legs + boots + spurs
+    const lit = (o) => { const m = CircusShade.material(Object.assign({ gloss: 0.2, shine: 24, rim: 0.6, emit: 0.14, wrap: 0.5 }, o)); mats.push(m); return m; };
+    this.weaveTex = softTex(64, 64, drawWeave, { repeat: true, linear: true });
+    this.serapeTex = softTex(256, 128, drawSerape, { repeat: true, mipmaps: true });
+    this.snakeTex = rattlesnakeTex(); this.snakeTex.repeat.set(6, 1);
+    const cloth = this.clothMat = lit({ map: this.weaveTex, mapST: [3, 3, 0, 0], gloss: 0.06, shine: 10, rim: 0.65 });
+    const leather = this.leatherMat = lit({ gloss: 0.35, shine: 30, rim: 0.55 });
+    const silver = this.silver = lit({ color: 0xffffff, gloss: 1.8, shine: 96, rim: 0.95, emit: 0.3 });
+    const clothDS = lit({ map: this.weaveTex, mapST: [3, 3, 0, 0], gloss: 0.06, shine: 10, rim: 0.6, side: THREE.DoubleSide });
+    const serape = lit({ map: this.serapeTex, gloss: 0.05, shine: 10, rim: 0.55, emit: 0.18, side: THREE.DoubleSide });
+    this.mat = cloth;
+    const DUSTER = 0x4a3428, DUSTER_E = 0x6e5440, SHIRT = 0x8c2a22, VEST = 0x2e2018, DENIM = 0x34465e, CHAPS = 0xa8743e, BOOT = 0x4a2a18, GLOVE = 0x5a3820, BELT = 0x3a2416, HAT = 0x3e2a1e;
+    // ---------------------------------------------------------------- legs (hip joint -> knee -> boot)
+    this.hips = new THREE.Group(); this.hips.position.y = 2.75; root.add(this.hips);
     this.legs = [];
     for (const s of [-1, 1]) {
-      const pv = new THREE.Group(); pv.position.set(s * 0.3, 2.9, 0); root.add(pv);
-      pv.add(new THREE.Mesh(mergeGeos([
-        { geo: new THREE.CylinderGeometry(0.2, 0.17, 1.5, 9), matrix: M4(0, -0.75, 0), color: DENIM },
-        { geo: new THREE.CylinderGeometry(0.17, 0.15, 1.3, 9), matrix: M4(0, -2.05, 0), color: DENIM },
-        { geo: new THREE.CylinderGeometry(0.19, 0.2, 0.62, 9), matrix: M4(0, -2.45, 0), color: BOOT },
-        { geo: new THREE.BoxGeometry(0.3, 0.16, 0.56), matrix: M4(0, -2.83, 0.1), color: BOOT },
-        { geo: new THREE.BoxGeometry(0.31, 0.06, 0.2), matrix: M4(0, -2.9, -0.12), color: 0x2a1408 },
-      ]), this.mat));
-      // the spur: a little silver star on the heel (it jingles on the beat)
-      const spur = new THREE.Mesh(mergeGeos([
-        { geo: new THREE.CylinderGeometry(0.11, 0.11, 0.02, 8).rotateX(Math.PI / 2) },
-        { geo: new THREE.BoxGeometry(0.03, 0.03, 0.14), matrix: M4(0, 0, 0.08) },
-      ]), silver);
-      spur.position.set(0, -2.82, -0.22); pv.add(spur);
-      this.legs.push({ pv, spur, s });
+      const hip = new THREE.Group(); hip.position.set(s * 0.3, -0.05, 0); this.hips.add(hip);
+      hip.add(new THREE.Mesh(mergeGeos([
+        { geo: new THREE.CylinderGeometry(0.24, 0.19, 1.3, 12), matrix: M4(0, -0.65, 0), color: DENIM },
+      ]), cloth));
+      // chaps over the thigh: leather on the front and outside, fringe down the outer seam
+      const ch = [{ geo: new THREE.CylinderGeometry(0.265, 0.215, 1.25, 12, 1, true, -Math.PI * 0.15 + (s < 0 ? Math.PI : 0), Math.PI * 1.25), matrix: M4(0, -0.66, 0), color: CHAPS }];
+      for (let k = 0; k < 9; k++) ch.push({ geo: new THREE.BoxGeometry(0.02, 0.18, 0.06), matrix: M4(s * 0.27, -0.15 - k * 0.12, 0, 0, 0, s * 0.22), color: 0xc89058 });
+      ch.push({ geo: new THREE.TorusGeometry(0.245, 0.024, 4, 16), matrix: M4(0, -0.06, 0, Math.PI / 2, 0, 0), color: BELT });
+      hip.add(new THREE.Mesh(mergeGeos(ch), leather));
+      const knee = new THREE.Group(); knee.position.y = -1.3; hip.add(knee);
+      knee.add(new THREE.Mesh(mergeGeos([{ geo: new THREE.CylinderGeometry(0.195, 0.165, 0.75, 12), matrix: M4(0, -0.37, 0), color: DENIM }]), cloth));
+      // the boot: a tall shaft with stitching, a pointed toe, a stacked heel
+      const toe = new THREE.SphereGeometry(0.17, 12, 8); toe.scale(0.95, 0.62, 2.1); toe.translate(0, 0, 0.18);
+      const bootParts = [
+        { geo: new THREE.CylinderGeometry(0.235, 0.19, 0.64, 14), matrix: M4(0, -0.92, 0), color: BOOT },
+        { geo: new THREE.TorusGeometry(0.235, 0.018, 4, 14), matrix: M4(0, -0.6, 0, Math.PI / 2, 0, 0), color: 0x2a160c },
+        { geo: toe, matrix: M4(0, -1.27, 0.06), color: BOOT },
+        { geo: new THREE.BoxGeometry(0.17, 0.14, 0.16), matrix: M4(0, -1.36, -0.12, 0.1, 0, 0), color: 0x2a160c },
+        { geo: new THREE.BoxGeometry(0.26, 0.035, 0.58), matrix: M4(0, -1.43, 0.12), color: 0x1e0e06 },
+        { geo: new THREE.BoxGeometry(0.02, 0.4, 0.21), matrix: M4(s * 0.17, -0.94, 0.02), color: 0x8a5a32 },
+      ];
+      knee.add(new THREE.Mesh(mergeGeos(bootParts), leather));
+      // the spur: a strap, a shank and a big star rowel that spins (and jingles on the beat)
+      knee.add(new THREE.Mesh(mergeGeos([{ geo: new THREE.TorusGeometry(0.19, 0.014, 4, 16, Math.PI), matrix: M4(0, -1.3, -0.02, Math.PI / 2, 0, Math.PI), color: 0xc8ccd8 }, { geo: new THREE.BoxGeometry(0.025, 0.025, 0.16), matrix: M4(0, -1.3, -0.25), color: 0xc8ccd8 }]), silver));
+      const sh = new THREE.Shape(); for (let i = 0; i < 16; i++) { const a = i / 16 * TAU, r = i % 2 ? 0.035 : 0.11; if (i) sh.lineTo(Math.cos(a) * r, Math.sin(a) * r); else sh.moveTo(r, 0); } sh.closePath();
+      const rowel = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.012, bevelEnabled: false }).translate(0, 0, -0.006).rotateY(Math.PI / 2), silver);
+      rowel.position.set(0, -1.3, -0.34); knee.add(rowel);
+      this.legs.push({ s, pv: hip, hip, knee, spur: rowel, kick: 0 });
     }
-    // ---- body (pivot at the hips): shirt, duster, gunbelt with glowing shells, holsters
-    const body = this.body = new THREE.Group(); body.position.y = 2.9; root.add(body);
-    body.add(new THREE.Mesh(mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.46, 0.4, 1.55, 10), matrix: M4(0, 0.78, 0, 0, 0, 0, 1, 1, 0.72), color: SHIRT },
-      { geo: new THREE.CylinderGeometry(0.66, 0.92, 2.7, 12, 1, true, 0.42, TAU - 0.84), matrix: M4(0, 0.15, 0, 0, Math.PI, 0, 1, 1, 0.78), color: DUSTER },
-      { geo: new THREE.CylinderGeometry(0.5, 0.66, 0.5, 12, 1, true), matrix: M4(0, 1.4, 0, 0, 0, 0, 1, 1, 0.78), color: DUSTER_D },
-      { geo: new THREE.TorusGeometry(0.47, 0.065, 6, 20), matrix: M4(0, 0.05, 0, Math.PI / 2, 0, 0, 1, 0.75, 1), color: LEATHER },
-      { geo: new THREE.BoxGeometry(0.16, 0.13, 0.04), matrix: M4(0, 0.05, 0.36), color: 0xd8b04a },   // the buckle
-      { geo: new THREE.BoxGeometry(0.2, 0.5, 0.14), matrix: M4(0.5, -0.25, 0.08, 0, 0, 0.12), color: LEATHER },   // holsters
-      { geo: new THREE.BoxGeometry(0.2, 0.5, 0.14), matrix: M4(-0.5, -0.25, 0.08, 0, 0, -0.12), color: LEATHER },
-    ]), lit({ side: THREE.DoubleSide })));
+    // ---------------------------------------------------------------- pelvis: gunbelts, holsters, the buckle, the coat skirt
+    const pel = [];
+    for (const s of [-1, 1]) {
+      // two belts slung low, crossing at the front
+      pel.push({ geo: new THREE.TorusGeometry(0.54, 0.055, 5, 26), matrix: M4(0, 0.02 - 0.06 * s, 0, Math.PI / 2 + 0.12 * s, 0, 0.16 * s, 1, 0.78, 1), color: BELT });
+      // holsters (on the thighs, tied down)
+      pel.push({ geo: new THREE.BoxGeometry(0.18, 0.54, 0.22), matrix: M4(s * 0.52, -0.42, 0.06, 0.05, 0, s * 0.16), color: 0x5a3418 });
+      pel.push({ geo: new THREE.BoxGeometry(0.19, 0.08, 0.23), matrix: M4(s * 0.52, -0.2, 0.06, 0.05, 0, s * 0.16), color: 0x3a2010 });
+      pel.push({ geo: new THREE.BoxGeometry(0.03, 0.02, 0.22), matrix: M4(s * 0.49, -0.62, 0.06, 0, 0, s * 0.16), color: 0x2a1408 });
+    }
+    pel.push({ geo: new THREE.CylinderGeometry(0.47, 0.48, 0.3, 14), matrix: M4(0, 0.1, 0, 0, 0, 0, 1, 1, 0.78), color: DENIM });
+    this.hips.add(new THREE.Mesh(mergeGeos(pel), leather));
+    // the buckle: a silver plate with a sun on it
+    const bk = new THREE.Group(); bk.position.set(0, 0.0, 0.36); this.hips.add(bk);
+    bk.add(new THREE.Mesh(mergeGeos([{ geo: new THREE.BoxGeometry(0.22, 0.16, 0.03), color: 0xdfe4ee }, { geo: new THREE.CylinderGeometry(0.045, 0.045, 0.02, 12).rotateX(Math.PI / 2), matrix: M4(0, 0, 0.02), color: 0xffc84a },
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ geo: new THREE.BoxGeometry(0.012, 0.035, 0.012), matrix: M4(Math.cos(i / 8 * TAU) * 0.07, Math.sin(i / 8 * TAU) * 0.07, 0.022, 0, 0, i / 8 * TAU - Math.PI / 2), color: 0xffc84a }))]), silver));
+    // the shells in the belts (they glow with the time of day)
     this.shellMat = new THREE.MeshBasicMaterial({ color: 0xffc86a });
     const SH = [];
-    for (let i = 0; i < 14; i++) { const a = -1.15 + i * (2.3 / 13); SH.push({ geo: new THREE.CylinderGeometry(0.022, 0.022, 0.1, 6), matrix: M4(Math.sin(a) * 0.5, 0.05, Math.cos(a) * 0.37) }); }
-    body.add(new THREE.Mesh(mergeGeos(SH), this.shellMat));
-    // ---- the poncho: a sky-gradient cone over the shoulders (a shader that follows the time of day)
-    this.ponchoU = { uTop: { value: new THREE.Color(0xfff3c4) }, uBot: { value: new THREE.Color(0x5f9fd8) }, uBand: { value: new THREE.Color(0xc4532e) }, uGlow: { value: 0 }, uDim: { value: 1 } };
-    const ponchoMat = new THREE.ShaderMaterial({
-      uniforms: this.ponchoU, side: THREE.DoubleSide,
-      vertexShader: `varying vec2 vUv; varying float vY; void main(){ vUv = uv; vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform vec3 uTop; uniform vec3 uBot; uniform vec3 uBand; uniform float uGlow; uniform float uDim; varying vec2 vUv;
-        void main(){
-          float h = vUv.y; vec3 c = mix(uBot, uTop, h);
-          float zig = abs(fract(vUv.x * 18.0) - 0.5) * 0.08;
-          float band = step(abs(h - 0.32 - zig), 0.035) + step(abs(h - 0.62 + zig), 0.025);
-          c = mix(c, uBand, clamp(band, 0.0, 1.0) * 0.85);
-          gl_FragColor = vec4(c * (0.62 + 0.55 * uGlow) * uDim, uDim);
-          #include <colorspace_fragment>
-        }`,
-    });
-    this.ponchoMat = ponchoMat;
-    const poncho = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 1.1, 1.05, 16, 1, true), ponchoMat);
-    poncho.position.y = 1.32; poncho.scale.z = 0.8; body.add(poncho);
-    // its front edge: a verlet strip (10 points) that flutters in the wind
-    this.cloth = this.makeCloth(10, ponchoMat);
-    body.add(this.cloth.mesh);
-    // ---- the bandana (a red triangle + a tail that whips)
-    body.add(new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.42, 3).rotateX(Math.PI).translate(0, 1.82, 0.26), lit({ color: 0xc81e28, emit: 0.3 })));
-    this.tail = this.makeCloth(5, lit({ color: 0xc81e28, emit: 0.3, side: THREE.DoubleSide }), true);
-    body.add(this.tail.mesh);
-    // ---- arms (FK poses) with the revolvers
-    this.arms = [];
-    for (const s of [-1, 1]) {
-      const sh = new THREE.Group(); sh.position.set(s * 0.62, 1.78, 0); body.add(sh);
-      sh.add(new THREE.Mesh(mergeGeos([
-        { geo: new THREE.CylinderGeometry(0.17, 0.15, 1.05, 8), matrix: M4(0, -0.52, 0), color: DUSTER },
-        { geo: new THREE.SphereGeometry(0.2, 8, 6), color: DUSTER_D },
-      ]), this.mat));
-      const el = new THREE.Group(); el.position.y = -1.05; sh.add(el);
-      el.add(new THREE.Mesh(mergeGeos([
-        { geo: new THREE.CylinderGeometry(0.14, 0.12, 0.95, 8), matrix: M4(0, -0.47, 0), color: DUSTER },
-        { geo: new THREE.BoxGeometry(0.2, 0.24, 0.12), matrix: M4(0, -1.02, 0.02), color: 0x3a2412 },   // glove
-      ]), this.mat));
-      const hand = new THREE.Group(); hand.position.y = -1.04; el.add(hand);
-      this.arms.push({ s, sh, el, hand, cur: [0, 0, 0] });
+    for (const s of [-1, 1]) for (let i = 0; i < 12; i++) {
+      const a = (s < 0 ? Math.PI * 0.2 : -Math.PI * 1.2) + i * 0.13;
+      SH.push({ geo: new THREE.CylinderGeometry(0.022, 0.022, 0.09, 6), matrix: M4(Math.cos(a) * 0.575, 0.06 - 0.06 * s + Math.sin(a) * 0.08 * s, Math.sin(a) * 0.45, 0, 0, 0.16 * s) });
     }
-    // revolvers: each lives in a holster until he draws
+    this.hips.add(new THREE.Mesh(mergeGeos(SH), this.shellMat));
+    // the duster's skirt: cloth hung from the waist, open at the front, billowing back in the wind
+    this.skirt = this.makeSkirt(clothDS); this.hips.add(this.skirt.mesh);
+    // ---------------------------------------------------------------- the spine and chest
+    this.spine = new THREE.Group(); this.spine.position.y = 0.12; this.hips.add(this.spine);
+    const tor = [];
+    const torso = new THREE.LatheGeometry([[0.0, 0], [0.45, 0], [0.48, 0.25], [0.55, 0.65], [0.68, 1.05], [0.7, 1.3], [0.56, 1.45], [0.24, 1.52], [0, 1.53]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
+    tor.push({ geo: torso, matrix: M4(0, 0, 0, 0, 0, 0, 1, 1, 0.66), color: SHIRT });
+    // the vest (open, with pockets and buttons) over the shirt
+    tor.push({ geo: new THREE.LatheGeometry([[0.5, 0.05], [0.56, 0.5], [0.7, 0.95], [0.72, 1.22]].map(([r, y]) => new THREE.Vector2(r, y)), 16, 0.32, TAU - 0.64), matrix: M4(0, 0, 0, 0, 0, 0, 1, 1, 0.68), color: VEST });
+    for (let i = 0; i < 4; i++) tor.push({ geo: new THREE.SphereGeometry(0.022, 6, 4), matrix: M4(0.13, 0.2 + i * 0.2, 0.37 + i * 0.012), color: 0xd8b04a });
+    // the duster's body: open down the front, a wide collar
+    tor.push({ geo: new THREE.LatheGeometry([[0.53, -0.05], [0.57, 0.3], [0.65, 0.7], [0.76, 1.08], [0.78, 1.3], [0.62, 1.46], [0.38, 1.55]].map(([r, y]) => new THREE.Vector2(r, y)), 18, 0.55, TAU - 1.1), matrix: M4(0, 0, 0, 0, 0, 0, 1, 1, 0.72), color: DUSTER });
+    tor.push({ geo: new THREE.CylinderGeometry(0.34, 0.42, 0.26, 14, 1, true, 0.7, TAU - 1.4), matrix: M4(0, 1.58, -0.02, 0.18, 0, 0, 1, 1, 0.8), color: DUSTER_E });
+    this.spine.add(new THREE.Mesh(mergeGeos(tor), clothDS));
+    this.chest = new THREE.Group(); this.chest.position.y = 0.95; this.spine.add(this.chest);
+    // the shoulder cape (it rides the chest), a little flutter at its hem
+    this.cape = this.makeCape(clothDS); this.chest.add(this.cape.mesh);
+    // the serape over his left shoulder: across the chest to the right hip, down the back
+    this.serape = this.makeSerape(serape); this.spine.add(this.serape.mesh);
+    this.serapeTail = this.makeSerapeTail(serape); this.spine.add(this.serapeTail.mesh);
+    // the bandana: a red triangle at the throat, two tails whipping in the wind
+    this.chest.add(new THREE.Mesh(mergeGeos([
+      { geo: new THREE.ConeGeometry(0.3, 0.5, 3).rotateX(Math.PI).rotateY(Math.PI / 3), matrix: M4(0, 0.42, 0.3, 0.22, 0, 0, 1, 1, 0.3), color: 0xc8161e },
+      { geo: new THREE.TorusGeometry(0.27, 0.06, 6, 16), matrix: M4(0, 0.58, 0.0, Math.PI / 2 + 0.12, 0, 0, 1, 0.82, 1), color: 0xb81018 },
+    ]), lit({ gloss: 0.1, rim: 0.5, emit: 0.24 })));
+    this.bandana = this.makeTail(lit({ color: 0xc8161e, gloss: 0.1, rim: 0.5, emit: 0.24, side: THREE.DoubleSide }));
+    this.chest.add(this.bandana.mesh);
+    // ---------------------------------------------------------------- arms (shoulder -> elbow -> wrist -> hand)
+    this.arms = [];
+    for (const s of [-1, 1]) {   // s = -1: his right (the gun hand), +1: his left
+      const sh = new THREE.Group(); sh.position.set(s * 0.76, 0.36, -0.02); this.chest.add(sh);
+      sh.add(new THREE.Mesh(mergeGeos([
+        { geo: new THREE.SphereGeometry(0.27, 12, 8), color: DUSTER },
+        { geo: new THREE.CylinderGeometry(0.235, 0.2, 1.0, 12), matrix: M4(0, -0.5, 0), color: DUSTER },
+      ]), cloth));
+      const el = new THREE.Group(); el.position.y = -1.0; sh.add(el);
+      el.add(new THREE.Mesh(mergeGeos([
+        { geo: new THREE.SphereGeometry(0.2, 10, 8), color: DUSTER },
+        { geo: new THREE.CylinderGeometry(0.2, 0.22, 0.82, 12, 1, true), matrix: M4(0, -0.42, 0), color: DUSTER },   // the duster's cuff
+        { geo: new THREE.TorusGeometry(0.215, 0.03, 4, 14), matrix: M4(0, -0.83, 0, Math.PI / 2, 0, 0), color: DUSTER_E },
+        { geo: new THREE.CylinderGeometry(0.155, 0.135, 0.72, 10), matrix: M4(0, -0.5, 0), color: GLOVE },   // the glove's gauntlet
+      ]), clothDS));
+      const wr = new THREE.Group(); wr.position.y = -0.88; el.add(wr);
+      // a gloved hand: palm, fingers (curled a little), a thumb
+      const hand = new THREE.Group(); hand.scale.setScalar(1.35); wr.add(hand);
+      hand.add(new THREE.Mesh(mergeGeos([
+        { geo: new THREE.BoxGeometry(0.2, 0.22, 0.11), matrix: M4(0, -0.1, 0.0), color: GLOVE },
+        { geo: new THREE.BoxGeometry(0.19, 0.17, 0.1), matrix: M4(0, -0.27, 0.035, 0.45, 0, 0), color: GLOVE },
+        { geo: new THREE.CylinderGeometry(0.035, 0.03, 0.16, 6), matrix: M4(-s * 0.11, -0.12, 0.07, 0.5, 0, s * 0.6), color: GLOVE },
+        { geo: new THREE.TorusGeometry(0.08, 0.012, 4, 12), matrix: M4(0, 0.02, 0, Math.PI / 2, 0, 0), color: 0x2a1a0e },
+      ]), leather));
+      const grip = new THREE.Group(); grip.position.set(0, -0.2, 0.06); hand.add(grip);
+      this.arms.push({ s, sh, el, wr, hand, grip, q: new THREE.Quaternion(), bend: 0.3, wx: 0, wz: 0 });
+    }
+    // revolvers: each in its holster until he draws
     this.guns = [-1, 1].map((s) => {
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(mergeGeos([
-        { geo: new THREE.BoxGeometry(0.07, 0.07, 0.62), matrix: M4(0, 0.03, 0.25) },
-        { geo: new THREE.CylinderGeometry(0.075, 0.075, 0.16, 8).rotateX(Math.PI / 2), matrix: M4(0, 0.0, 0.02) },
-        { geo: new THREE.BoxGeometry(0.06, 0.22, 0.1), matrix: M4(0, -0.12, -0.08, -0.35, 0, 0) },
-      ]), silver));
-      body.add(g);
+      g.add(new THREE.Mesh(sixShooterGeo(1), silver));
+      this.hips.add(g);
       return { g, s, inHand: false };
     });
     this.holsterGun(0); this.holsterGun(1);
-    // ---- head: the sun face (a shader disc), a heat-shimmer halo, the hat
-    const head = this.head = new THREE.Group(); head.position.y = 2.25; body.add(head);
-    this.faceU = { uTime: { value: 0 }, uSun: { value: new THREE.Color(0xfff3c4) }, uRim: { value: new THREE.Color(0xffd27a) }, uMoon: { value: 0 }, uEye: { value: 1 }, uFlash: { value: 0 }, uDim: { value: 1 } };
-    this.face = new THREE.Mesh(new THREE.CircleGeometry(0.64, 40), new THREE.ShaderMaterial({
-      uniforms: this.faceU, transparent: true, depthWrite: true,
+    // ---------------------------------------------------------------- the head: the sun (a face), its flames, the hat
+    this.neck = new THREE.Group(); this.neck.position.y = 0.6; this.chest.add(this.neck);
+    this.neck.add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.3, 10), lit({ color: 0xc8582a, emit: 0.5, gloss: 0.1 })));
+    const head = this.head = new THREE.Group(); head.position.y = 0.66; head.scale.setScalar(1.16); this.neck.add(head);
+    const L0 = SUNDOWN_LOOKS[0], C = (h) => new THREE.Color(h);
+    this.faceU = {
+      uTime: { value: 0 }, uCore: { value: C(L0.core) }, uRim: { value: C(L0.rim) }, uMoon: { value: 0 }, uFlash: { value: 0 }, uDim: { value: 1 },
+      uEye: { value: new THREE.Vector4(0.6, 0, 0.4, 1) }, uMouth: { value: new THREE.Vector4(0.2, 0, 0.3, 0) }, uLook: { value: new THREE.Vector2() }, uBlush: { value: 0.15 }, uTalk: { value: 0 },
+    };
+    this.face = new THREE.Mesh(new THREE.CircleGeometry(0.66, 48), new THREE.ShaderMaterial({
+      uniforms: this.faceU, transparent: true,
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform float uTime; uniform vec3 uSun; uniform vec3 uRim; uniform float uMoon; uniform float uEye; uniform float uFlash; uniform float uDim; varying vec2 vUv;
-        void main(){
-          vec2 p = vUv * 2.0 - 1.0; float r = length(p);
-          if (r > 1.0) discard;
-          // sun: a hot core fading to a ring; the moon: the same disc with a bite out of it
-          vec3 sun = mix(uSun * 1.25, uRim, smoothstep(0.2, 1.0, r));
-          sun += uRim * 0.25 * sin(atan(p.y, p.x) * 12.0 + uTime * 1.5) * smoothstep(0.7, 1.0, r);
-          float bite = length(p - vec2(0.42, 0.18)) - 0.86;
-          float a = 1.0;
-          if (uMoon > 0.0) { a = mix(1.0, smoothstep(0.0, 0.03, bite), uMoon); }
-          vec3 col = mix(sun, vec3(0.81, 0.85, 1.0) * (0.9 + 0.1 * (1.0 - r)), uMoon);
-          // two slit eyes (they narrow when he's rattled; uEye = 0: shut)
-          vec2 e1 = vec2(p.x + 0.3 - uMoon * 0.12, (p.y - 0.12) * (3.2 / max(0.08, uEye)));
-          vec2 e2 = vec2(p.x - 0.3 - uMoon * 0.12, (p.y - 0.12) * (3.2 / max(0.08, uEye)));
-          float eye = step(length(vec2(e1.x * 3.0, e1.y)), 0.55) + step(length(vec2(e2.x * 3.0, e2.y)), 0.55);
-          col = mix(col, vec3(0.12, 0.05, 0.02) * (1.0 - uMoon) + vec3(0.1, 0.12, 0.25) * uMoon, clamp(eye, 0.0, 1.0));
-          col += vec3(1.0, 0.95, 0.8) * uFlash;
-          if (a < 0.5) discard;
-          gl_FragColor = vec4(col * uDim, uDim);
-          #include <colorspace_fragment>
-        }`,
+      fragmentShader: SUNDOWN_FACE_FS,
     }));
-    this.face.position.set(0, 0, 0.12); head.add(this.face);
-    this.haloU = { uTime: { value: 0 }, uCol: { value: new THREE.Color(0xffd27a) }, uK: { value: 1 } };
-    this.halo = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8), new THREE.ShaderMaterial({
-      uniforms: this.haloU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    this.face.position.set(0, 0, 0.16); head.add(this.face);
+    // the back of the head: a dimmer disc so he reads from the side
+    head.add(new THREE.Mesh(new THREE.SphereGeometry(0.64, 20, 12).scale(1, 1, 0.38).translate(0, 0, -0.12), lit({ color: 0xffb040, emit: 0.85, gloss: 0.2, rim: 1.0 })));
+    this.headBackMat = mats[mats.length - 1];
+    // flames: a ring of tongues licking out round the disc (additive), and a soft halo behind
+    this.coronaU = { uTime: { value: 0 }, uCol: { value: C(L0.corona) }, uK: { value: 1 }, uFlame: { value: 1 }, uBeat: { value: 0 }, uMoon: { value: 0 } };
+    this.corona = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.6), new THREE.ShaderMaterial({
+      uniforms: this.coronaU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform float uTime; uniform vec3 uCol; uniform float uK; varying vec2 vUv;
-        void main(){ vec2 p = vUv * 2.0 - 1.0; float r = length(p), a = atan(p.y, p.x);
-          float wob = sin(a * 9.0 + uTime * 2.3) * 0.025 + sin(a * 23.0 - uTime * 3.7) * 0.012 + sin(r * 30.0 - uTime * 4.0) * 0.01;
-          float ring = smoothstep(0.62, 0.48, abs(r - 0.6 + wob) * 2.4) * smoothstep(1.0, 0.7, r);
-          gl_FragColor = vec4(uCol * ring * 0.55 * uK, 1.0); }`,
+      fragmentShader: SUNDOWN_CORONA_FS,
     }));
-    this.halo.position.z = 0.05; head.add(this.halo);
-    // the hat: a battered wide brim with a curl, a dented crown, a rattlesnake band
-    const hat = this.hat = new THREE.Group(); hat.position.set(0, 0.52, 0); head.add(hat);
-    const brim = new THREE.CylinderGeometry(1.3, 1.3, 0.06, 26, 1);
-    const bp = brim.attributes.position;
-    for (let i = 0; i < bp.count; i++) { const x = bp.getX(i), z = bp.getZ(i), r = Math.hypot(x, z); bp.setY(i, bp.getY(i) + Math.pow(Math.abs(x) / 1.3, 3) * 0.32 * (r / 1.3) - (z > 0 ? z * 0.08 : 0)); }
+    this.corona.position.z = 0.02; this.corona.renderOrder = 3; head.add(this.corona);
+    this.halo = this.corona;
+    this.haloU = this.coronaU;
+    // the hat: a creased crown, a brim curled up at the sides, a snakeskin band with conchos, a feather
+    const hat = this.hat = new THREE.Group(); hat.position.set(0, 0.5, -0.02); hat.rotation.x = -0.12; head.add(hat);
+    const brim = new THREE.CylinderGeometry(1.42, 1.42, 0.05, 40, 3), bp = brim.attributes.position;
+    for (let i = 0; i < bp.count; i++) {
+      const x = bp.getX(i), z = bp.getZ(i), r = Math.hypot(x, z), u = r / 1.42;
+      const curl = Math.pow(Math.abs(x) / 1.42, 2.6) * 0.42 * u, dip = (z > 0 ? 0.16 : 0.1) * Math.pow(Math.abs(z) / 1.42, 2) * u;
+      bp.setY(i, bp.getY(i) + curl - dip);
+    }
     brim.computeVertexNormals();
-    const crown = new THREE.CylinderGeometry(0.5, 0.62, 0.78, 14, 2);
-    const cp = crown.attributes.position;
-    for (let i = 0; i < cp.count; i++) { const y = cp.getY(i), x = cp.getX(i); if (y > 0.3) cp.setY(i, y - 0.12 * Math.max(0, 1 - Math.abs(x) * 2.2)); }
+    const crown = new THREE.LatheGeometry([[0.0, 0.86], [0.42, 0.84], [0.56, 0.6], [0.6, 0.3], [0.62, 0.0]].map(([r, y]) => new THREE.Vector2(r, y)), 28), cp = crown.attributes.position;
+    for (let i = 0; i < cp.count; i++) {
+      const x = cp.getX(i), y = cp.getY(i), z = cp.getZ(i);
+      // the cattleman crease down the middle, pinched at the front
+      const crease = Math.max(0, 1 - Math.abs(x) / 0.22) * Math.max(0, (y - 0.45) / 0.41) * 0.24, pinch = Math.max(0, z / 0.6) * Math.max(0, (y - 0.3) / 0.56) * 0.16;
+      cp.setY(i, y - crease); cp.setX(i, x * (1 - pinch * (z > 0 ? 1.2 : 0)));
+    }
     crown.computeVertexNormals();
-    hat.add(new THREE.Mesh(mergeGeos([{ geo: brim, color: 0x5a3a22 }, { geo: crown, matrix: M4(0, 0.42, 0), color: 0x60402a }]), lit({ gloss: 0.08, rim: 0.4 })));
-    this.snakeTex = rattlesnakeTex(); this.snakeTex.repeat.set(4, 1);
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.625, 0.14, 18, 1, true), lit({ map: this.snakeTex, gloss: 0.6, rim: 0.4 }));
-    band.position.y = 0.12; hat.add(band);
+    hat.add(new THREE.Mesh(mergeGeos([{ geo: brim, color: HAT }, { geo: crown, matrix: M4(0, 0.02, 0), color: 0x46301f }, { geo: new THREE.SphereGeometry(0.035, 6, 4), matrix: M4(0.3, 0.62, 0.42), color: 0x0e0804 }]), lit({ map: this.weaveTex, mapST: [4, 4, 0, 0], gloss: 0.1, rim: 0.7, side: THREE.DoubleSide })));
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.615, 0.625, 0.13, 28, 1, true), lit({ map: this.snakeTex, gloss: 0.6, rim: 0.5 }));
+    band.position.y = 0.1; hat.add(band);
+    hat.add(new THREE.Mesh(mergeGeos([
+      ...[-0.9, -0.45, 0, 0.45, 0.9].map((a) => ({ geo: new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12).rotateX(Math.PI / 2), matrix: M4(Math.sin(a) * 0.63, 0.1, Math.cos(a) * 0.63, 0, a, 0), color: 0xdfe4ee })),
+    ]), silver));
+    const fth = new THREE.Shape(); fth.moveTo(0, 0); fth.quadraticCurveTo(0.09, 0.3, 0.02, 0.7); fth.quadraticCurveTo(-0.07, 0.32, 0, 0);
+    hat.add(new THREE.Mesh(mergeGeos([{ geo: new THREE.ShapeGeometry(fth), matrix: M4(0.6, 0.12, 0.2, -0.2, 1.3, -0.5), color: 0xe8d8c0 }, { geo: new THREE.ShapeGeometry(fth), matrix: M4(0.6, 0.12, 0.2, -0.2, 1.3, -0.5, 0.6, 0.55, 1), color: 0x6a3a1a }]), lit({ gloss: 0.1, rim: 0.6, emit: 0.2, side: THREE.DoubleSide })));
     this.hatState = 'on'; this.hatV = new THREE.Vector3(); this.hatSpin = 0; this.askew = 0;
-    // ---- his shadow on the ground (it stretches with the time of day)
-    this.shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false });
-    this.shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 20).translate(0, 0.35, 0), this.shadowMat);
+    // ---------------------------------------------------------------- his long shadow across the mesa
+    this.shadowTex = softTex(64, 256, (g, w, h) => {
+      g.filter = 'blur(3px)';
+      const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(0,0,0,0.95)'); gr.addColorStop(1, 'rgba(0,0,0,0.45)'); g.fillStyle = gr;
+      g.beginPath(); g.moveTo(w * 0.36, 4); g.lineTo(w * 0.64, 4); g.lineTo(w * 0.7, h * 0.42); g.lineTo(w * 0.86, h * 0.62); g.lineTo(w * 0.7, h * 0.7); g.lineTo(w * 0.3, h * 0.7); g.lineTo(w * 0.14, h * 0.62); g.lineTo(w * 0.3, h * 0.42); g.closePath(); g.fill();
+      g.beginPath(); g.ellipse(w / 2, h * 0.8, w * 0.17, h * 0.07, 0, 0, TAU); g.fill();
+      g.beginPath(); g.ellipse(w / 2, h * 0.79, w * 0.42, h * 0.025, 0, 0, TAU); g.fill();   // the hat brim
+    }, { mipmaps: true });
+    this.shadowMat = new THREE.MeshBasicMaterial({ map: this.shadowTex, color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false });
+    this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, 0.5), this.shadowMat);
     this.shadow.renderOrder = 1; root.add(this.shadow);
-    // ---- animation state
+    // ---------------------------------------------------------------- animation state
     this.basePos = this.home.clone();
     this.pose = 'idle'; this.poseT = 0; this.spinGun = 0; this.flashT = 0; this.nodT = 0; this.tired = false;
-    this.phase = 0; this.blinkT = 2; this.rattled = 0; this.fade = 1; this.fading = false; this.sitK = 0; this.sitT = 0; this.edge = 0; this.edgeK = 0;
+    this.phase = 0; this.blinkT = 2; this.blink = 1; this.rattled = 0; this.fade = 1; this.fading = false; this.sitK = 0; this.sitT = 0; this.edge = 0; this.edgeK = 0;
     this.lean = 0; this.duel = 0; this.laughT = 0; this.stare = 0; this.lookSun = 0; this.hesitate = 0; this.smirkT = 0; this.dodgeT = 0; this.dodgeDir = 1;
+    this.hurtT = 0; this.talkT = 0; this.recoil = [0, 0]; this.twirl = 0; this.beatK = 0; this.weight = 0; this.twitchT = 1; this.twitch = 0;
+    this.J = {};   // blended joint values
+    this.expr = { e: [0.62, -0.1, 0.45], m: [0.25, 0, 0.35], laugh: 0 };
     this.lookK = 1; this.lookDur = 1.2; this.lookFrom = null; this.lookTo = SUNDOWN_LOOKS[0]; this.moonTo = 0;
+    this.aimT = new THREE.Vector3(); this.headYaw = 0; this.headPitch = 0; this.coronaBase = 1;
     this.applyPhaseLook(0, true);
   }
-  // a verlet strip: top points pinned to the poncho's front edge (or the bandana knot), bottom points hang
-  makeCloth(n, mat, isTail) {
-    const geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 2 * 3), idx = [];
-    for (let i = 0; i < n - 1; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, d, a, d, c); }
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setIndex(idx);
-    const uv = new Float32Array(n * 2 * 2); for (let i = 0; i < n; i++) { uv[i * 4] = i / (n - 1); uv[i * 4 + 1] = 0.02; uv[i * 4 + 2] = i / (n - 1); uv[i * 4 + 3] = 0.12; }
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false;
-    const pts = [];
-    for (let i = 0; i < n; i++) {
-      let top, hang;
-      if (isTail) { top = new THREE.Vector3(0.12, 1.82, 0.22); hang = new THREE.Vector3(0.12 + i * 0.09, 1.82 - i * 0.02, 0.26 - i * 0.05); }
-      else { const a = (i / (n - 1) - 0.5) * 1.9; top = new THREE.Vector3(Math.sin(a) * 1.05, 0.82, Math.cos(a) * 0.84); hang = top.clone(); hang.y -= 0.32; }
-      pts.push({ top, p: hang.clone(), prev: hang.clone(), rest: top.distanceTo(hang) });
+  // ---- cloth builders (rest shapes in the parent's space)
+  makeSkirt(mat) {
+    const cols = 15, rows = 6, rest = new Float32Array(cols * rows * 3), col = new Float32Array(cols * rows * 3);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const u = i / (cols - 1), a = 0.62 + u * (TAU - 1.24), v = j / (rows - 1);   // open at the front (a = 0 is +z)
+      const r = 0.55 + v * 0.5 + Math.pow(v, 2) * 0.12, y = 0.1 - v * 1.75, k = (j * cols + i) * 3;
+      rest[k] = Math.sin(a) * r; rest[k + 1] = y; rest[k + 2] = Math.cos(a) * r * 0.86;
+      _c1.setHex(0x4a3428).lerp(_c2.setHex(0x8a6a4e), Math.pow(v, 3) * 0.6);   // dust on the hem
+      col[k] = _c1.r; col[k + 1] = _c1.g; col[k + 2] = _c1.b;
     }
-    return { mesh, pts, n, tail: !!isTail };
+    return new ClothFlap(rest, cols, rows, mat, { k: 9, wind: 1, colors: col });
   }
-  stepCloth(C, dt, wind) {
-    const g = -4.5 * dt * dt, A = C.mesh.geometry.attributes.position, t = G.time;
-    for (let i = 0; i < C.n; i++) {
-      const P = C.pts[i];
-      const vx = (P.p.x - P.prev.x) * 0.96, vy = (P.p.y - P.prev.y) * 0.96, vz = (P.p.z - P.prev.z) * 0.96;
-      P.prev.copy(P.p);
-      const gust = wind * (0.6 + 0.4 * Math.sin(t * 3.1 + i * 0.7)) * dt * dt;
-      P.p.x += vx + (C.tail ? gust * 3.5 : gust * Math.sin(i)); P.p.y += vy + g; P.p.z += vz + gust * (C.tail ? -1.5 : 2.2);
-      // the constraint to its pinned top point
-      _v1.subVectors(P.p, P.top); const d = _v1.length(); if (d > 1e-5) P.p.copy(P.top).addScaledVector(_v1, P.rest / d);
-      if (C.tail && i > 0) { const Q = C.pts[i - 1]; _v1.subVectors(P.p, Q.p); const dd = _v1.length(); if (dd > 0.11) P.p.copy(Q.p).addScaledVector(_v1, 0.11 / dd); }
-      A.setXYZ(i * 2, P.top.x, P.top.y, P.top.z); A.setXYZ(i * 2 + 1, P.p.x, P.p.y, P.p.z);
+  makeCape(mat) {
+    const cols = 18, rows = 3, rest = new Float32Array(cols * rows * 3), col = new Float32Array(cols * rows * 3);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const u = i / (cols - 1), a = 0.42 + u * (TAU - 0.84), v = j / (rows - 1);
+      const r = 0.84 + v * 0.52, y = 0.66 - v * 0.68, k = (j * cols + i) * 3;
+      rest[k] = Math.sin(a) * r; rest[k + 1] = y; rest[k + 2] = Math.cos(a) * r * 0.8 - 0.02;
+      _c1.setHex(0x4e382a).lerp(_c2.setHex(0x6e5440), v * 0.5); col[k] = _c1.r; col[k + 1] = _c1.g; col[k + 2] = _c1.b;
     }
-    A.needsUpdate = true; C.mesh.geometry.computeBoundingSphere();
+    return new ClothFlap(rest, cols, rows, mat, { k: 26, wind: 0.35, colors: col });
+  }
+  // the serape: a band from the left shoulder across the chest to the right hip and back over the left shoulder
+  makeSerape(mat) {
+    const path = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.45, -0.25, -0.45), new THREE.Vector3(0.62, 0.6, -0.42), new THREE.Vector3(0.6, 1.42, -0.18), new THREE.Vector3(0.44, 1.52, 0.18),
+      new THREE.Vector3(0.12, 1.1, 0.44), new THREE.Vector3(-0.28, 0.55, 0.44), new THREE.Vector3(-0.52, 0.12, 0.3),
+    ]);
+    const N = 40, W = 0.46, pos = [], uv = [], idx = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, p = path.getPointAt(t), tg = path.getTangentAt(t);
+      const out = new THREE.Vector3(p.x, 0, p.z).normalize(), side = new THREE.Vector3().crossVectors(tg, out).normalize();
+      const w = W * (0.85 + 0.15 * Math.sin(t * Math.PI));
+      for (const k of [-1, 1]) { const q = p.clone().addScaledVector(side, k * w * 0.5).addScaledVector(out, 0.035 + 0.02 * k * k); pos.push(q.x, q.y, q.z); uv.push(t * 3.2, k < 0 ? 0 : 1); }
+      if (i < N) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    return { mesh: new THREE.Mesh(g, mat) };
+  }
+  makeSerapeTail(mat) {
+    const cols = 5, rows = 6, rest = new Float32Array(cols * rows * 3);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const u = i / (cols - 1) - 0.5, v = j / (rows - 1), k = (j * cols + i) * 3;
+      rest[k] = -0.52 + u * 0.4; rest[k + 1] = 0.14 - v * 0.95; rest[k + 2] = 0.34 + v * 0.06;
+    }
+    return new ClothFlap(rest, cols, rows, mat, { k: 7, wind: 1.3 });
+  }
+  makeTail(mat) {
+    const cols = 3, rows = 6, rest = new Float32Array(cols * rows * 3);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const u = i / (cols - 1) - 0.5, v = j / (rows - 1), k = (j * cols + i) * 3;
+      rest[k] = 0.18 + v * 0.36 + u * 0.06; rest[k + 1] = 0.6 - v * 0.08 + u * 0.12; rest[k + 2] = -0.2 - v * 0.26;
+    }
+    return new ClothFlap(rest, cols, rows, mat, { k: 3, wind: 2.2, grav: 1 });
   }
   holsterGun(i) {
     const G2 = this.guns[i]; G2.inHand = false;
-    G2.g.parent && G2.g.parent.remove(G2.g); this.body.add(G2.g);
-    G2.g.position.set(G2.s * 0.5, -0.12, 0.16); G2.g.rotation.set(Math.PI / 2 - 0.15, 0, 0);
+    G2.g.parent && G2.g.parent.remove(G2.g); this.hips.add(G2.g);
+    G2.g.position.set(G2.s * 0.52, -0.18, 0.14); G2.g.rotation.set(Math.PI / 2 + 0.05, 0, G2.s * 0.16);
   }
   drawGun(i) {
     const G2 = this.guns[i]; if (G2.inHand) return; G2.inHand = true;
-    G2.g.parent && G2.g.parent.remove(G2.g); this.arms[i === 0 ? 0 : 1].hand.add(G2.g);
-    G2.g.position.set(0, -0.08, 0.05); G2.g.rotation.set(-Math.PI / 2, 0, 0);
+    G2.g.parent && G2.g.parent.remove(G2.g); this.arms[i === 0 ? 0 : 1].grip.add(G2.g);
+    G2.g.position.set(0, 0.0, 0.04); G2.g.rotation.set(Math.PI / 2, 0, 0);
   }
   setPose(name) { if (this.pose !== name) { this.pose = name; this.poseT = 0; } }
-  // phase look: noon / golden / midnight, blended over dur seconds (instant on reset / retry)
+  // phase look: noon / golden / midnight / dawn, blended over dur seconds (instant on reset / retry)
   applyPhaseLook(p, instant, dur = 1.2) {
     this.phase = p;
     const P = SUNDOWN_LOOKS[p];
-    this.lookTo = P; this.lookDur = Math.max(0.05, dur); this.moonTo = p === 2 ? 1 : 0;
-    if (instant) { this.lookFrom = null; this.lookK = 1; this.blendLook(1); this.faceU.uMoon.value = this.moonTo; if (p >= 2) this.hatGone(); else this.hatOn(); }
+    this.lookTo = P; this.lookDur = Math.max(0.05, dur); this.moonTo = P.moon;
+    if (instant) { this.lookFrom = null; this.lookK = 1; this.blendLook(1); this.faceU.uMoon.value = this.moonTo; this.coronaU.uMoon.value = this.moonTo; if (p >= 2) this.hatGone(); else this.hatOn(); }
     else {
-      const f = this.faceU, po = this.ponchoU;
-      this.lookFrom = { sun: f.uSun.value.clone(), rim: f.uRim.value.clone(), halo: this.haloU.uCol.value.clone(), top: po.uTop.value.clone(), bot: po.uBot.value.clone(),
-        band: po.uBand.value.clone(), glow: po.uGlow.value, shell: this.shellMat.color.clone(), haloK: this.haloU.uK.value };
+      const f = this.faceU, c = this.coronaU;
+      this.lookFrom = { core: f.uCore.value.clone(), rim: f.uRim.value.clone(), corona: c.uCol.value.clone(), coronaK: this.coronaBase, flame: c.uFlame.value, shell: this.shellMat.color.clone(), blush: f.uBlush.value, back: this.headBackMat.uniforms.uColor.value.clone() };
       this.lookK = 0;
     }
   }
   blendLook(k) {
-    const T = this.lookTo, F = this.lookFrom, f = this.faceU, po = this.ponchoU;
+    const T = this.lookTo, F = this.lookFrom, f = this.faceU, c = this.coronaU;
     const mix = (out, from, hex) => { if (from) out.copy(from).lerp(_c1.setHex(hex), k); else out.setHex(hex); };
-    mix(f.uSun.value, F && F.sun, T.sun); mix(f.uRim.value, F && F.rim, T.rim); mix(this.haloU.uCol.value, F && F.halo, T.halo);
-    mix(po.uTop.value, F && F.top, T.top); mix(po.uBot.value, F && F.bot, T.bot); mix(po.uBand.value, F && F.band, T.band); mix(this.shellMat.color, F && F.shell, T.shell);
-    po.uGlow.value = F ? lerp(F.glow, T.glow, k) : T.glow;
-    this.haloU.uK.value = F ? lerp(F.haloK, T.haloK, k) : T.haloK;
+    mix(f.uCore.value, F && F.core, T.core); mix(f.uRim.value, F && F.rim, T.rim); mix(c.uCol.value, F && F.corona, T.corona); mix(this.shellMat.color, F && F.shell, T.shell);
+    mix(this.headBackMat.uniforms.uColor.value, F && F.back, T.moon ? 0x9aa6d8 : T.rim);
+    this.coronaBase = F ? lerp(F.coronaK, T.coronaK, k) : T.coronaK; c.uFlame.value = F ? lerp(F.flame, T.flame, k) : T.flame;
+    f.uBlush.value = F ? lerp(F.blush, T.blush, k) : T.blush;
   }
   setPhase(p) { this.applyPhaseLook(p, false); }
-  hatOn() { this.hatState = 'on'; this.hat.visible = true; if (this.hat.parent !== this.head) { this.hat.parent && this.hat.parent.remove(this.hat); this.head.add(this.hat); } this.hat.position.set(0, 0.52, 0); this.hat.rotation.set(0, 0, 0); this.askew = 0; }
+  hatOn() { this.hatState = 'on'; this.hat.visible = true; if (this.hat.parent !== this.head) { this.hat.parent && this.hat.parent.remove(this.hat); this.head.add(this.hat); } this.hat.position.set(0, 0.5, -0.02); this.hat.rotation.set(-0.12, 0, 0); this.hat.scale.setScalar(1); this.askew = 0; }
   hatGone() { this.hatState = 'gone'; this.hat.visible = false; }
   // sunset: the hat flies off and spins away into the dark
   hatFly() {
     if (this.hatState !== 'on') return;
-    this.hat.getWorldPosition(_v1); this.head.remove(this.hat); scene.add(this.hat); this.hat.position.copy(_v1);
+    this.hat.getWorldPosition(_v1); this.hat.getWorldQuaternion(_q1); this.head.remove(this.hat); scene.add(this.hat); this.hat.position.copy(_v1); this.hat.quaternion.copy(_q1);
     this.hat.scale.setScalar(this.root.scale.x);
     this.hatState = 'flying'; this.hatV.set(rand(1.5, 3), 4.5, -1.5); this.hatSpin = rand(5, 8);
   }
   // a dynamite stick thrown back knocks it askew
-  knockHat() { if (this.hatState === 'on') this.askew = chance(0.5) ? 0.45 : -0.45; this.flashT = 0.6; }
+  knockHat() { if (this.hatState === 'on') this.askew = chance(0.5) ? 0.45 : -0.45; this.flashT = 0.6; this.hurtT = 0.9; }
   // where he stands: down the street for the duel / back on his mesa (optionally sitting on its front edge)
   duelAt(pos, yaw, scale) { this.basePos.copy(pos); this.root.position.copy(pos); this.root.rotation.set(0, yaw, 0); this.root.scale.setScalar(scale); this.sitT = 0; this.edge = 0; }
   atHome(scale = 1, edge = false) {
-    this.basePos.copy(this.home); if (edge) this.basePos.z += 2.2;
+    this.basePos.copy(this.home); if (edge) this.basePos.z += FRONTIER.HOME_R - 0.75;
     this.root.position.copy(this.basePos); this.root.rotation.set(0, 0, 0); this.root.scale.setScalar(scale);
     this.edge = edge ? 1 : 0;
   }
@@ -17750,9 +17938,10 @@ class SundownModel {
     this.atHome(1, false); this.root.visible = true;
     this.holsterGun(0); this.holsterGun(1); this.setPose('idle');
     this.tired = false; this.rattled = 0; this.lean = 0; this.spinGun = 0; this.duel = 0;
-    this.sitT = 0; this.sitK = 0; this.edge = 0; this.edgeK = 0; this.laughT = 0; this.stare = 0; this.lookSun = 0; this.hesitate = 0; this.smirkT = 0; this.dodgeT = 0;
+    this.sitT = 0; this.sitK = 0; this.edge = 0; this.edgeK = 0; this.laughT = 0; this.stare = 0; this.lookSun = 0; this.hesitate = 0; this.smirkT = 0; this.dodgeT = 0; this.hurtT = 0;
     this.setFade(1);
     if (this.hatState === 'flying') { this.hat.parent && this.hat.parent.remove(this.hat); this.head.add(this.hat); this.hat.scale.setScalar(1); }
+    for (const c of [this.skirt, this.cape, this.serapeTail, this.bandana]) c.reset();
     this.applyPhaseLook(this.phase, true);
   }
   // fading out (into fireflies): every material goes see-through together
@@ -17761,66 +17950,169 @@ class SundownModel {
     const on = k < 0.999;
     if (on !== this.fading) {
       this.fading = on;
-      for (const m of this.mats) { m.transparent = on; m.needsUpdate = true; }
-      for (const m of [this.face.material, this.ponchoMat]) { m.transparent = on; m.needsUpdate = true; }
+      for (const m of this.mats) { m.transparent = on; m.depthWrite = !on; m.needsUpdate = true; }
     }
     for (const m of this.mats) m.uniforms.uOpacity.value = k;
   }
   facePos(out) { return this.face.getWorldPosition(out); }
   headWorldPos(out) { return this.face.getWorldPosition(out); }
-  chestPos(out) { this.body.localToWorld(out.set(0, 1.0, 0.3)); return out; }
-  gunPos(i, out) { this.guns[i].g.localToWorld(out.set(0, 0.03, 0.58)); return out; }
-  hurt() { this.flashT = 0.5; this.lean = 1; G.audio.sfx.ricochet(undefined, this.root.position); }
+  chestPos(out) { this.chest.localToWorld(out.set(0, 0.1, 0.45)); return out; }
+  gunPos(i, out) { this.guns[i].g.localToWorld(out.set(0, 0.05, 0.62)); return out; }
+  handPos(i, out) { this.arms[i].grip.localToWorld(out.set(0, 0, 0)); return out; }
+  // the direction his gun points (world)
+  gunDir(i, out) { this.guns[i].g.getWorldQuaternion(_q2); return out.set(0, 0, 1).applyQuaternion(_q2); }
+  // aim the gun arm at a world point (the soul, by default) while drawn
+  aimAt(p) { this.aimT.copy(p); this.aimSet = true; }
+  hurt() { this.flashT = 0.5; this.lean = 1; this.hurtT = 0.7; G.audio.sfx.ricochet(undefined, this.root.position); }
   attackPose(on) { if (on) { this.drawGun(0); this.setPose('draw'); } else { this.holsterGun(0); this.holsterGun(1); this.setPose(this.tired ? 'holster' : 'idle'); } }
   doorsPulse() { this.nodT = 1; for (const L of this.legs) L.kick = 1; }
   glitchBurst() {}
-  talkBlip() { this.faceU.uFlash.value = Math.max(this.faceU.uFlash.value, 0.12); }
+  // a shot from gun i: a kick up the arm (the patterns call it as they fire)
+  fired(i = 0) { this.recoil[i] = 1; }
+  talkBlip() { this.talkT = 0.16; this.faceU.uFlash.value = Math.max(this.faceU.uFlash.value, 0.05); }
   onBeat(b) {
     FenceKit.onBeat(b); if (((b % 4) + 4) % 4 === 0) FenceKit.onBar();
+    this.beatK = 1;
     // spurs jingle on every beat (a little heel tap)
     const L = this.legs[b & 1]; L.kick = 1;
     if (G.battle && ['BOSS_ATTACK', 'ATTACK_WAIT'].includes(G.battle.state) && this.root.visible) G.audio.sfx.spurJingle(this.root.position);
   }
+  // two-bone IK: the shoulder quaternion and elbow bend that put arm A's grip on world point T
+  ik(A, T, outQ) {
+    const a = 1.0, b = 0.88 + 0.27 * 1.35;   // upper arm; forearm + hand to the grip
+    this.chest.updateMatrixWorld(); const Tc = this.chest.worldToLocal(_v2.copy(T));
+    const d = Tc.sub(A.sh.position); let L = d.length(); if (L < 1e-4) return 0.3;
+    d.divideScalar(L); L = clamp(L, Math.abs(a - b) + 0.05, a + b - 0.02);
+    const cosE = clamp((a * a + b * b - L * L) / (2 * a * b), -1, 1), bend = Math.PI - Math.acos(cosE);
+    const alpha = Math.acos(clamp((a * a + L * L - b * b) / (2 * a * L), -1, 1));
+    const pole = _v3.set(A.s * 0.7, -1, -0.35).normalize(), pp = pole.addScaledVector(d, -pole.dot(d)).normalize();
+    const u = _v4.copy(d).multiplyScalar(Math.cos(alpha)).addScaledVector(pp, Math.sin(alpha)).normalize();
+    const zl = _v5.copy(d).addScaledVector(u, -u.dot(d)).normalize(), yl = _v6.copy(u).negate(), xl = _v7.crossVectors(yl, zl);
+    _m1.makeBasis(xl, yl, zl); outQ.setFromRotationMatrix(_m1);
+    return bend;
+  }
+  // world points the IK reaches for
+  ikPoint(name, out) {
+    if (name === 'hammer') { const g = this.guns[0]; if (g.inHand) return g.g.localToWorld(out.set(0, 0.16, -0.06)); return this.chest.localToWorld(out.set(-0.3, -0.4, 0.8)); }
+    if (name === 'brim') return this.hat.parent === this.head ? this.hat.localToWorld(out.set(0.1, 0.0, 1.3)) : this.head.localToWorld(out.set(0.2, 0.5, 0.9));
+    return out.set(0, 0, 0);
+  }
+  // the current expression target from what he's doing
+  faceTarget() {
+    if (this.laughT > 0) return SUNDOWN_FACES.laugh;
+    if (this.hurtT > 0) return SUNDOWN_FACES.hurt;
+    if (this.stare) return SUNDOWN_FACES.stare;
+    if (this.smirkT > 0) return SUNDOWN_FACES.smirk;
+    if (this.tired) return SUNDOWN_FACES.tired;
+    if (this.lookSun) return SUNDOWN_FACES.uneasy;
+    if (['draw', 'fan', 'throw', 'lasso'].includes(this.pose) && this.phase < 2) return SUNDOWN_FACES.focus;
+    if (this.sitT && this.phase >= 3) return SUNDOWN_FACES.soft;
+    return SUNDOWN_FACES[SUNDOWN_LOOKS[this.phase].face] || SUNDOWN_FACES.calm;
+  }
   update(dt) {
-    const t = G.time;
-    this.faceU.uTime.value = t; this.haloU.uTime.value = t;
+    const t = G.time, f = this.faceU;
+    f.uTime.value = t; this.coronaU.uTime.value = t;
     this.flashT = Math.max(0, this.flashT - dt); this.nodT = Math.max(0, this.nodT - dt * 2.5); this.lean = Math.max(0, this.lean - dt * 2);
-    this.laughT = Math.max(0, this.laughT - dt); this.smirkT = Math.max(0, this.smirkT - dt);
-    this.faceU.uFlash.value = Math.max(this.flashT * 0.8, this.faceU.uFlash.value - dt * 3, this.stare > 0 ? 0.1 + 0.08 * Math.sin(t * 5) : 0);
+    this.laughT = Math.max(0, this.laughT - dt); this.smirkT = Math.max(0, this.smirkT - dt); this.hurtT = Math.max(0, this.hurtT - dt); this.talkT = Math.max(0, this.talkT - dt);
+    this.beatK = Math.max(0, this.beatK - dt * 4);
+    f.uFlash.value = Math.max(this.flashT * 0.8, f.uFlash.value - dt * 3, this.stare ? 0.08 + 0.06 * Math.sin(t * 5) : 0);
+    this.coronaU.uBeat.value = this.beatK * (Flash.reduced ? 0.4 : 1) + G.audio.bass * 0.5;
     // the phase look blends; the sun turns into the moon
     if (this.lookK < 1) { this.lookK = Math.min(1, this.lookK + dt / this.lookDur); this.blendLook(easeInOut(this.lookK)); }
-    const mu = this.faceU.uMoon;
+    const mu = f.uMoon;
     if (mu.value !== this.moonTo) mu.value = this.moonTo > mu.value ? Math.min(this.moonTo, mu.value + dt / this.lookDur) : Math.max(this.moonTo, mu.value - dt / this.lookDur);
-    // blink, and narrower eyes when rattled / staring you down / smirking
-    this.blinkT -= dt; if (this.blinkT <= 0) this.blinkT = rand(2.5, 5);
-    const blink = this.blinkT < 0.12 && !this.stare ? 0.1 : 1;
-    this.faceU.uEye.value = blink * (this.rattled > 0.5 ? 0.6 : 1) * (this.tired ? 0.7 : 1) * (this.stare ? 0.42 : 1) * (this.smirkT > 0 ? 0.55 : 1) * (this.laughT > 0 ? 0.3 : 1);
-    // pose (FK, eased)
+    this.coronaU.uMoon.value = mu.value;
+    // ---- the face: blink, expressions (blended), talking, eyes on you
+    this.blinkT -= dt; if (this.blinkT <= 0) this.blinkT = rand(2.2, 5);
+    this.blink = this.blinkT < 0.13 && !this.stare ? 0.08 : 1;
+    const FT = this.faceTarget(), E = this.expr, ke = 1 - Math.exp(-dt * 8);
+    for (let i = 0; i < 3; i++) { E.e[i] += (FT.e[i] - E.e[i]) * ke; E.m[i] += (FT.m[i] - E.m[i]) * ke; }
+    E.laugh += ((FT.laugh || 0) - E.laugh) * ke;
+    const jit = this.rattled > 0.5 ? Math.sin(t * 23) * 0.06 : 0;
+    f.uEye.value.set(E.e[0] * this.blink * (this.tired ? 0.85 : 1), E.e[1] + jit, E.e[2], 1);
+    const talk = this.talkT > 0 ? 0.35 + 0.3 * Math.sin(t * 38) : 0;
+    f.uTalk.value = damp(f.uTalk.value, talk, 18, dt);
+    f.uMouth.value.set(E.m[0], Math.max(E.m[1], f.uTalk.value), E.m[2], E.laugh + (this.laughT > 0 ? 0.25 * Math.abs(Math.sin(t * 19)) : 0));
+    // ---- pose (eased per joint)
     this.poseT += dt;
-    const P = SUNDOWN_POSES[this.pose] || SUNDOWN_POSES.idle;
-    const fan = this.pose === 'fan' ? Math.sin(t * 28) * 0.35 : 0, shake = this.hesitate ? Math.sin(t * 31) * 0.035 * this.hesitate : 0;
+    const P = SUNDOWN_POSES[this.pose] || SUNDOWN_POSES.idle, J = this.J, kj = 1 - Math.exp(-dt * 7);
+    const want = (k, v) => { if (J[k] === undefined) J[k] = v; else J[k] += (v - J[k]) * kj; return J[k]; };
+    // the sitting blend (sitT: on the ground by the fire / on the front edge of his mesa)
+    this.sitK = damp(this.sitK, this.sitT ? 1 : 0, 3, dt); this.edgeK = damp(this.edgeK, this.edge ? 1 : 0, 3, dt);
+    const S = this.pose === 'sit' ? P : null;
+    // spine
+    const hurtK = this.hurtT > 0 ? Math.sin(Math.min(1, (0.7 - this.hurtT) / 0.18) * Math.PI * 0.5) * Math.min(1, this.hurtT / 0.3) : 0;
+    const breath = Math.sin(t * 1.3) * 0.5 + 0.5, sway = Math.sin(t * 0.7) * 0.025, laugh = this.laughT > 0 ? Math.abs(Math.sin(t * 19)) * 0.05 * Math.min(1, this.laughT) : 0;
+    const sp = P.sp || [0, 0, 0];
+    this.spine.rotation.set(want('spx', sp[0] + (this.tired ? 0.14 : 0) - 0.12 * this.lean - 0.25 * hurtK - laugh * 2 + 0.03 * Math.pow(this.nodT, 2)), want('spy', sp[1]) + sway * 0.5, want('spz', sp[2]) + sway);
+    this.chest.scale.set(1 + breath * 0.012, 1, 1 + breath * 0.025);
+    // the head follows you (or the sun when he looks at it); a nod on the beat
+    let yaw = 0, pitch = 0;
+    if (this.lookSun && G.bg.desert) { _v1.copy(G.bg.desert.sunDir); this.root.getWorldQuaternion(_q2).invert(); _v1.applyQuaternion(_q2); yaw = clamp(Math.atan2(_v1.x, _v1.z), -1.0, 1.0); pitch = -0.15; }
+    else { this.root.worldToLocal(_v1.copy(Head.pos)); _v1.y -= 4.9; yaw = clamp(Math.atan2(_v1.x, _v1.z) - this.spine.rotation.y, -0.5, 0.5); pitch = clamp(-Math.atan2(_v1.y, Math.hypot(_v1.x, _v1.z)), -0.3, 0.4); }
+    this.headYaw = damp(this.headYaw, yaw, 3, dt); this.headPitch = damp(this.headPitch, pitch, 3, dt);
+    this.neck.rotation.set(this.headPitch * 0.5 + (this.tired ? 0.18 : 0) + 0.1 * Math.pow(this.nodT, 2) + 0.04 * this.beatK - (this.laughT > 0 ? 0.3 : 0) + 0.2 * hurtK, this.headYaw * 0.6, Math.sin(t * 0.6) * 0.02 + (this.smirkT > 0 ? 0.12 : 0));
+    this.head.rotation.set(this.headPitch * 0.4, this.headYaw * 0.4, 0);
+    // eyes on you: the pupils shift toward where you are
+    f.uLook.value.set(clamp(this.headYaw * -1.6, -1, 1), clamp(this.headPitch * -1.2, -1, 1));
+    // ---- arms
+    if (!this.aimSet && G.soul) this.aimT.copy(G.soul.pos);
+    this.aimSet = false;
+    this.twirl += dt * (P.twirl ? 9 : 0);
     this.arms.forEach((A, i) => {
-      const o = i === 0 ? 0 : 3, k = 1 - Math.exp(-dt * 8);
-      A.cur[0] += (P[o] - A.cur[0]) * k; A.cur[1] += (P[o + 1] - A.cur[1]) * k; A.cur[2] += (P[o + 2] - A.cur[2]) * k;
-      A.sh.rotation.set(A.cur[0] + (i === 1 ? fan : shake), 0, A.cur[1]);
-      A.el.rotation.set(A.cur[2], 0, 0);
+      const side = i === 0 ? 'R' : 'L', s = A.s;
+      this.recoil[i] = Math.max(0, this.recoil[i] - dt * 6);
+      let q, bendT = P['e' + side] !== undefined ? P['e' + side] : 0.3;
+      if (P['ik' + side]) {
+        this.ikPoint(P['ik' + side], _v8);
+        if (P.fan && side === 'L') _v8.y += Math.sin(t * 28) * 0.06 * this.root.scale.x;
+        q = _q1; bendT = this.ik(A, _v8, q);
+      } else if (P['aim' + side]) {
+        // point the arm (straight) at the target, from the shoulder, in the chest's space
+        this.chest.updateMatrixWorld(); A.sh.getWorldPosition(_v2);
+        let tgt = this.aimT;
+        if (side === 'L' && this.pose === 'point' && G.bg.desert) tgt = _v4.copy(G.bg.desert.sunDir).multiplyScalar(60).add(_v2);
+        _v3.subVectors(tgt, _v2).normalize();
+        this.chest.getWorldQuaternion(_q2).invert(); _v3.applyQuaternion(_q2);
+        q = _q1.setFromUnitVectors(_v5.set(0, -1, 0), _v3);
+        _q2.setFromAxisAngle(_v6.set(1, 0, 0), -0.28 * this.recoil[i]); q.multiply(_q2);   // the kick
+      } else {
+        const a = P[side] || [0.1, 0.2, 0];
+        let fwd = a[0], out = a[1];
+        if (side === 'R' && P.twirl) { fwd += Math.sin(this.twirl) * 0.12; out += Math.cos(this.twirl) * 0.12; }
+        if (side === 'R' && this.pose === 'idle') { fwd += this.twitch * 0.1; }
+        _v3.set(0, -1, 0).applyAxisAngle(_v6.set(0, 0, 1), s * out).applyAxisAngle(_v6.set(1, 0, 0), -fwd);
+        q = _q1.setFromUnitVectors(_v5.set(0, -1, 0), _v3);
+        if (a[2]) q.multiply(_q2.setFromAxisAngle(_v6.set(0, 1, 0), a[2] * s));
+      }
+      A.q.slerp(q, kj); A.sh.quaternion.copy(A.q);
+      A.bend += (bendT - A.bend) * kj;
+      A.el.rotation.set(-A.bend - (this.hesitate && i === 0 ? Math.sin(t * 31) * 0.04 * this.hesitate : 0), 0, 0);
+      const w = P['w' + side] || [0, 0];
+      A.wx += (w[0] - A.wx) * kj; A.wz += (w[1] * s - A.wz) * kj;
+      A.wr.rotation.set(-A.wx, 0, A.wz);
     });
+    // the trigger hand twitches now and then over the holster (idle)
+    this.twitchT -= dt; if (this.twitchT <= 0) { this.twitchT = rand(1.5, 4); this.twitchGo = 0.4; }
+    if (this.twitchGo > 0) { this.twitchGo -= dt; this.twitch = Math.sin((0.4 - this.twitchGo) / 0.4 * Math.PI * 3) * (this.twitchGo / 0.4); } else this.twitch = 0;
     // spinning a revolver by his hip (the stare-down, showing off)
     if (this.spinGun > 0) { this.spinGun = Math.max(0, this.spinGun - dt); const g = this.guns[0]; if (g.inHand) g.g.rotation.x += dt * 22; else this.drawGun(0); }
-    // sitting: on the ground by the fire, or on the front edge of his mesa with his legs over it
-    this.sitK = damp(this.sitK, this.sitT ? 1 : 0, 3, dt); this.edgeK = damp(this.edgeK, this.edge ? 1 : 0, 3, dt);
-    const sitY = lerp(0.45, 0.08, this.edgeK), hipY = lerp(2.9, sitY, this.sitK);
-    const sway = Math.sin(t * 0.8) * 0.03, laugh = this.laughT > 0 ? Math.abs(Math.sin(t * 19)) * 0.05 * Math.min(1, this.laughT) : 0;
-    this.body.rotation.set(-0.12 * this.lean + (this.tired ? 0.1 : 0) + 0.05 * this.sitK - laugh * 2, sway, 0);
-    this.body.position.y = hipY - 0.04 * Math.pow(this.nodT, 2) + laugh;
-    // his head follows you (or the sun, when he looks at it)
-    let yaw = 0;
-    if (this.lookSun && G.bg.desert) { _v1.copy(G.bg.desert.sunDir); this.root.getWorldQuaternion(_q2).invert(); _v1.applyQuaternion(_q2); yaw = clamp(Math.atan2(_v1.x, _v1.z), -0.9, 0.9); }
-    else { this.root.worldToLocal(_v1.copy(Head.pos)); yaw = clamp(Math.atan2(_v1.x, _v1.z), -0.45, 0.45); }
-    this.headYaw = damp(this.headYaw || 0, yaw, 3, dt);
-    this.head.rotation.set((this.tired ? 0.2 : 0) + 0.08 * Math.pow(this.nodT, 2) - (this.laughT > 0 ? 0.25 : 0) - (this.lookSun ? 0.12 : 0), this.headYaw + Math.sin(t * 0.5) * 0.04, Math.sin(t * 0.7) * 0.03 + (this.smirkT > 0 ? 0.14 : 0));
-    const legRot = lerp(-1.45, -0.32, this.edgeK) * this.sitK;
-    for (const L of this.legs) { L.kick = Math.max(0, (L.kick || 0) - dt * 5); L.pv.position.y = hipY; L.pv.rotation.x = -0.12 * L.kick * L.kick + legRot + (this.edgeK > 0.5 ? Math.sin(t * 1.3 + L.s) * 0.06 : 0); L.spur.rotation.z += dt * 2 + L.kick * 0.4; }
+    else if (this.guns[0].inHand) { const g = this.guns[0].g; let d = ((g.rotation.x - Math.PI / 2) % TAU + TAU) % TAU; if (d > Math.PI) d -= TAU; g.rotation.x = Math.PI / 2 + d * Math.exp(-dt * 10); }
+    // ---- legs and hips: weight shifts side to side; sitting drops the hips
+    this.weight = Math.sin(t * 0.45) * 0.5;
+    const legs = P.legs || [[0.03, 0.08], [0.03, 0.08]], kn = P.kn || [0.06, 0.06];
+    const sitY = lerp(0.36, 0.26, this.edgeK), hipY = lerp(2.75 - Math.abs(this.weight) * 0.02 - (P.kn ? Math.max(kn[0], kn[1]) * 0.12 : 0), sitY, this.sitK);
+    this.hips.position.y = hipY - 0.05 * Math.pow(this.nodT, 2) + laugh * 0.5 - 0.04 * this.beatK * (this.sitK > 0.5 ? 0 : 1) - 0.06 * hurtK;
+    this.hips.position.x = this.weight * 0.05 * (1 - this.sitK);
+    this.hips.rotation.set(0.04 * this.sitK, 0, -this.weight * 0.03 * (1 - this.sitK));
+    this.legs.forEach((L, i) => {
+      L.kick = Math.max(0, (L.kick || 0) - dt * 5);
+      const lg = S ? (this.edgeK > 0.5 ? [1.45, 0.12] : legs[i]) : legs[i], k = S ? (this.edgeK > 0.5 ? 1.25 + Math.sin(t * 1.3 + L.s) * 0.08 : kn[i]) : kn[i];
+      const fwd = want('lf' + i, lg[0] * (S ? this.sitK : 1)), out = want('lo' + i, lg[1]);
+      L.hip.rotation.set(-fwd - 0.12 * L.kick * L.kick, 0, L.s * out + this.weight * 0.03);
+      L.knee.rotation.set(want('kn' + i, k * (S ? this.sitK : 1)) + 0.05 * L.kick, 0, 0);
+      L.spur.rotation.x += dt * 2 + L.kick * 0.4;
+    });
     // the sidestep
     if (this.dodgeT > 0) {
       this.dodgeT = Math.max(0, this.dodgeT - dt);
@@ -17832,36 +18124,160 @@ class SundownModel {
     // the hat: on his head, askew, flying away
     if (this.hatState === 'on') {
       this.askew = damp(this.askew, 0, 0.4, dt);
-      this.hat.rotation.z = this.askew; this.hat.position.y = 0.52 + Math.abs(this.askew) * 0.08;
+      this.hat.rotation.set(-0.12 + 0.05 * hurtK, 0, this.askew); this.hat.position.y = 0.5 + Math.abs(this.askew) * 0.08 + 0.03 * this.beatK;
     } else if (this.hatState === 'flying') {
       this.hatV.y -= 2.2 * dt; this.hat.position.addScaledVector(this.hatV, dt); this.hat.rotation.y += this.hatSpin * dt; this.hat.rotation.z += dt * 1.5;
       if (this.hat.position.y < FRONTIER.GROUND_Y - 1) this.hatGone();
     }
-    // cloth in the wind
-    const wind = 2.5 + 1.5 * Math.sin(t * 0.4), cdt = Math.min(dt, 1 / 30) || 1 / 72;
-    this.stepCloth(this.cloth, cdt, wind);
-    this.stepCloth(this.tail, cdt, wind);
-    // his shadow: short and hard at noon, stretched long across the mesa at golden hour, faint by moonlight
+    // ---- cloth in the wind (blowing away from you, gusting)
+    const cdt = Math.min(dt, 1 / 30) || 1 / 72, gust = 1 + 0.6 * Math.sin(t * 0.37) * Math.sin(t * 0.91);
+    const wa = this._wind || (this._wind = [0, 0, 0]);
+    const W = (obj, x, y, z) => { obj.getWorldQuaternion(_q2).invert(); return _v1.set(x, y, z).multiplyScalar(gust).applyQuaternion(_q2).toArray(wa); };
+    this.skirt.step(cdt, W(this.hips, 1.6, 0.1, -3.2), t, -this.hips.position.y + 0.04);
+    this.cape.step(cdt, W(this.chest, 1.0, 0.2, -2.0), t);
+    this.serapeTail.step(cdt, W(this.spine, 2.4, 0.2, -2.6), t);
+    this.bandana.step(cdt, W(this.chest, 3.2, 0.6, -4.4), t);
+    // ---- his long shadow: short and hard at noon, stretched across the mesa at golden hour, faint by moonlight
     const sky = G.bg.desert;
     if (sky) {
-      const sd = sky.sunDir, night = sky.cur.night, el = night > 0.5 ? 0.6 : Math.max(0.06, Math.asin(clamp(sd.y, -1, 1)));
-      const len = clamp(1 / Math.tan(el), 0.35, 4.5);
-      _v1.set(-sd.x, 0, -sd.z); if (night > 0.5) _v1.set(-FRONTIER.MOON_AZ.x, 0, -FRONTIER.MOON_AZ.z);
-      this.root.getWorldQuaternion(_q2).invert(); _v1.applyQuaternion(_q2);
-      const a = Math.atan2(_v1.x, _v1.z);
-      this.shadow.rotation.set(-Math.PI / 2, 0, a);
-      this.shadow.position.set(_v1.x * len * 0.5, 0.03, _v1.z * len * 0.5);
-      this.shadow.scale.set(0.9, 0.6 + len * 0.5, 1);
-      this.shadowMat.opacity = (night > 0.5 ? 0.12 : 0.3) * this.fade * (1 - this.edgeK);
+      const sd = sky.sunDir, night = sky.cur.night, el = night > 0.5 ? 0.55 : Math.max(0.06, Math.asin(clamp(sd.y, -1, 1)));
+      const len = clamp(5.5 / Math.tan(el), 1.2, 9);
+      _v1.set(-sd.x, 0, -sd.z); if (night > 0.5) { const md = sky.moonDir; _v1.set(-md.x, 0, -md.z); }
+      this.root.getWorldQuaternion(_q2).invert(); _v1.applyQuaternion(_q2).normalize();
+      this.shadow.rotation.set(0, Math.atan2(_v1.x, _v1.z), 0);
+      this.shadow.position.set(0, 0.02 + 0.01 * this.sitK, 0);
+      this.shadow.scale.set(1.2 + 0.3 * this.sitK, 1, len * (1 - 0.6 * this.sitK));
+      this.shadowMat.opacity = (night > 0.5 ? 0.16 : 0.42) * this.fade * (1 - this.edgeK);
     }
     // dims as he fades into fireflies (the FIGHT ending)
     if (this.fade < 0.999 || this.fading) this.setFade(this.fade);
     const dim = this.fade;
-    this.faceU.uDim.value = dim; this.ponchoU.uDim.value = dim; this.halo.visible = dim > 0.35;
+    f.uDim.value = dim; this.corona.visible = dim > 0.2;
+    this.coronaU.uK.value = this.coronaBase * dim;
     this.root.visible = dim > 0.02;
   }
   dispose() { if (this.hat.parent === scene) disposeObject(this.hat); disposeObject(this.root); }
 }
+// the sun face: a burning disc (slow plasma, a bright limb, freckle sunspots) with a gunslinger's face;
+// at midnight a cratered moon, lit as a crescent, the same face on it (paler, sleepier)
+const SUNDOWN_FACE_FS = `uniform float uTime; uniform vec3 uCore; uniform vec3 uRim; uniform float uMoon; uniform float uFlash; uniform float uDim;
+  uniform vec4 uEye; uniform vec4 uMouth; uniform vec2 uLook; uniform float uBlush; uniform float uTalk;
+  varying vec2 vUv;
+  float hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y); }
+  float ell(vec2 p, vec2 r){ return (length(p / r) - 1.0) * min(r.x, r.y); }
+  mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+  float seg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h); }
+  float smin(float a, float b, float k){ float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+  void main(){
+    vec2 p = vUv * 2.0 - 1.0; float r = length(p);
+    if (r > 1.0) discard;
+    float aa = 0.012;
+    // ---- the sun's surface
+    float n = vn(p * 3.2 + vec2(uTime * 0.22, -uTime * 0.17)) * 0.6 + vn(p * 7.5 - vec2(uTime * 0.31, uTime * 0.2)) * 0.4;
+    vec3 sun = mix(uCore * 1.15, uRim, smoothstep(0.05, 1.05, r + (n - 0.5) * 0.22));
+    sun = mix(sun, uCore * 1.3, smoothstep(0.86, 1.0, r) * 0.45);                 // the bright limb
+    sun *= 0.9 + 0.2 * n;
+    // ---- the moon: silver, cratered, lit as a crescent from the left (the dark side still faintly there)
+    float cr = 0.0;
+    for (int i = 0; i < 6; i++) { float fi = float(i); vec2 c = vec2(sin(fi * 2.3 + 0.7), cos(fi * 1.7 + 0.3)) * (0.35 + 0.08 * fi); float rr = 0.07 + 0.03 * mod(fi, 3.0); cr += smoothstep(rr, rr - 0.02, length(p - c)) * 0.12 - smoothstep(rr + 0.012, rr, length(p - c)) * smoothstep(rr - 0.01, rr, length(p - c)) * 0.06; }
+    vec3 moon = vec3(0.86, 0.9, 1.0) * (0.86 + 0.14 * n) - cr;
+    float lit = smoothstep(-0.05, 0.05, length(p - vec2(1.02, 0.14)) - 0.86);   // a gibbous moon: the shadow on his left cheek
+    moon *= mix(vec3(0.34, 0.38, 0.6), vec3(1.0), lit);
+    vec3 col = mix(sun, moon, uMoon);
+    // ---- the face (ink: burnt umber on the sun, deep blue on the moon)
+    vec3 ink = mix(vec3(0.2, 0.07, 0.02), vec3(0.08, 0.1, 0.24), uMoon);
+    float side = sign(p.x); vec2 q = vec2(abs(p.x), p.y);
+    // cheeks and sunspot freckles
+    col = mix(col, mix(vec3(1.0, 0.36, 0.18), vec3(0.6, 0.66, 1.0), uMoon), uBlush * smoothstep(0.17, 0.0, length(q - vec2(0.5, -0.12))) * 0.55);
+    for (int i = 0; i < 3; i++) { float fi = float(i); col = mix(col, ink, 0.45 * (1.0 - uMoon * 0.5) * smoothstep(0.022, 0.012, length(q - vec2(0.42 + fi * 0.07, -0.05 - mod(fi, 2.0) * 0.06)))); }
+    // eyes: almond whites, a lid that squints, irises that follow you, a glint
+    float open = clamp(uEye.x, 0.0, 1.3), brow = uEye.y, squint = uEye.z;
+    vec2 e = q - vec2(0.33, 0.13);
+    float lidTilt = -brow * 0.35 * side * side;
+    vec2 el = rot(lidTilt) * e;
+    float eyeH = 0.105 * open;
+    float eye = ell(el, vec2(0.15, max(eyeH, 0.004)));
+    float lid = el.y - (eyeH * (1.0 - squint * 0.55));             // the upper lid line
+    float eyeIn = max(eye, lid);
+    vec3 white = mix(vec3(1.0, 0.97, 0.88), vec3(0.88, 0.92, 1.0), uMoon);
+    vec2 look = uLook * vec2(0.045, 0.03);
+    float iris = length(e - look * vec2(side, 1.0) - vec2(0.0, -0.01)) - 0.062;
+    if (open > 0.06) {
+      col = mix(col, ink, smoothstep(aa, 0.0, eyeIn - 0.022));                    // outline
+      col = mix(col, white, smoothstep(aa, 0.0, eyeIn));
+      col = mix(col, mix(vec3(0.42, 0.18, 0.05), vec3(0.2, 0.28, 0.6), uMoon), smoothstep(aa, 0.0, max(iris, eyeIn)));
+      col = mix(col, ink * 0.4, smoothstep(aa, 0.0, max(length(e - look * vec2(side, 1.0) - vec2(0.0, -0.01)) - 0.032, eyeIn)));
+      col = mix(col, vec3(1.0), smoothstep(aa, 0.0, max(length(e - look * vec2(side, 1.0) - vec2(-0.025 * side * side, 0.025)) - 0.017, eyeIn)));
+    } else {
+      // closed: a laughing arc (^) or a sleepy line
+      float arc = abs(length((e - vec2(0.0, -0.06)) * vec2(1.0, 1.4)) - 0.11) - 0.014;
+      col = mix(col, ink, smoothstep(aa, 0.0, max(arc, -(e.y + 0.02))));
+    }
+    // brows: thick and expressive
+    vec2 b = q - vec2(0.33, 0.3 + 0.05 * brow + 0.04 * open);
+    b = rot(-brow * 0.42) * b;
+    float browD = ell(b, vec2(0.17, 0.035 + 0.008 * (1.0 - squint)));
+    col = mix(col, ink, smoothstep(aa, 0.0, browD));
+    // a little nose shadow
+    col = mix(col, col * 0.85, smoothstep(0.07, 0.0, length((p - vec2(0.02, -0.05)) * vec2(1.4, 1.0))) * 0.5);
+    // the mouth (behind the moustache): a curve that smiles, smirks, opens to talk and laughs
+    float smile = uMouth.x, mo = uMouth.y, smirk = uMouth.z, laugh = uMouth.w;
+    vec2 m = p - vec2(0.0, -0.43);
+    m.y -= smile * 1.6 * m.x * m.x + smirk * 0.12 * m.x * 2.0 * step(0.0, m.x) * m.x * 4.0;
+    float mw = 0.2 + 0.06 * laugh;
+    float mouth = ell(m + vec2(0.0, (mo + laugh * 0.5) * 0.06), vec2(mw, 0.012 + (mo * 0.09 + laugh * 0.1)));
+    col = mix(col, ink, smoothstep(aa, 0.0, mouth - 0.008));
+    col = mix(col, mix(vec3(0.42, 0.06, 0.04), vec3(0.12, 0.12, 0.3), uMoon), smoothstep(aa, 0.0, mouth + 0.004) * step(0.02, mo + laugh));
+    // the handlebar moustache: thick at the middle, sweeping out and curling up at the tips (it twitches as he talks)
+    vec2 o = vec2(0.0, uTalk * 0.014);
+    float stache = seg(q, vec2(0.0, -0.255) + o, vec2(0.17, -0.3) + o) - 0.064;
+    stache = smin(stache, seg(q, vec2(0.17, -0.3) + o, vec2(0.31, -0.292) + o) - 0.046, 0.04);
+    stache = smin(stache, seg(q, vec2(0.31, -0.292) + o, vec2(0.39, -0.22) + o) - 0.03, 0.03);
+    stache = smin(stache, seg(q, vec2(0.39, -0.22) + o, vec2(0.365, -0.15) + o) - 0.018, 0.02);
+    stache = max(stache, -(length(q - vec2(0.0, -0.17) - o) - 0.035));   // the notch under his nose
+    vec3 hair = mix(vec3(0.26, 0.1, 0.03), vec3(0.62, 0.66, 0.82), uMoon);
+    col = mix(col, ink, smoothstep(aa, 0.0, stache - 0.012));
+    col = mix(col, hair * (0.85 + 0.3 * vn(q * vec2(40.0, 8.0))), smoothstep(aa, 0.0, stache));
+    // flash (hurt / talking)
+    col += vec3(1.0, 0.95, 0.82) * uFlash;
+    float edge = smoothstep(1.0, 0.985, r);
+    gl_FragColor = vec4(col * uDim, edge * uDim);
+    #include <colorspace_fragment>
+  }`;
+// the flames round his head: tongues of fire licking out of the disc (they flare on the beat);
+// at midnight a soft silver halo instead
+const SUNDOWN_CORONA_FS = `uniform float uTime; uniform vec3 uCol; uniform float uK; uniform float uFlame; uniform float uBeat; uniform float uMoon; varying vec2 vUv;
+  float hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y); }
+  void main(){
+    vec2 p = vUv * 2.0 - 1.0; float r = length(p), a = atan(p.y, p.x);
+    float R0 = 0.36;   // the disc's edge (0.66 m of 1.8)
+    // flame tongues: an angular pattern pushed outward by rising noise
+    float k = a / 6.2831853 * 16.0;
+    float wav = vn(vec2(k * 1.0, r * 5.0 - uTime * 2.2)) * 0.7 + vn(vec2(k * 2.3, r * 9.0 - uTime * 3.4)) * 0.3;
+    float tongue = pow(abs(cos(k * 3.14159 + wav * 2.2 + sin(uTime * 0.8 + k) * 0.6)), 2.0);
+    float len = (0.13 + 0.14 * vn(vec2(floor(k * 2.0 + 0.5), uTime * 0.7)) + 0.07 * uBeat) * uFlame;
+    float d = (r - R0) / max(len, 0.001);
+    float flame = smoothstep(1.0, 0.0, d - (tongue - 0.5) * 0.7 - (wav - 0.5) * 0.5) * smoothstep(-0.02, 0.05, r - R0) * step(0.001, uFlame);
+    vec3 fc = mix(uCol * 1.5, vec3(1.0, 0.98, 0.85), smoothstep(0.6, 0.0, d)) * flame;
+    // the glow: hot right at the disc, fading out (a silver halo for the moon)
+    float glow = exp(-max(r - R0, 0.0) * mix(7.0, 4.0, uMoon)) * smoothstep(R0 - 0.06, R0 + 0.01, r);
+    vec3 col = fc * (1.0 - uMoon) + uCol * glow * (0.55 + 0.35 * uBeat * (1.0 - uMoon));
+    // midnight: tiny star motes drifting round the halo
+    if (uMoon > 0.01) {
+      for (int i = 0; i < 9; i++) {
+        float fi = float(i), ang = fi * 0.698 + uTime * (0.08 + 0.02 * mod(fi, 3.0)), rr = 0.46 + 0.07 * sin(fi * 2.1 + uTime * 0.3);
+        vec2 sp = vec2(cos(ang), sin(ang)) * rr;
+        float tw = 0.6 + 0.4 * sin(uTime * 3.0 + fi * 1.7);
+        col += vec3(0.85, 0.9, 1.0) * smoothstep(0.016, 0.0, length(p - sp)) * tw * 1.6 * uMoon;
+      }
+    }
+    float vig = smoothstep(1.0, 0.75, r);
+    gl_FragColor = vec4(col * uK * vig, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// @@/MODEL
 
 
 // ---------------------------------------------------------------------------
