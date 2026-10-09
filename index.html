@@ -8200,7 +8200,7 @@ const HallKit = {
     this.setPhase(0, true);
     this.ignite = 0; this.out = 0; this.outOn = false; this.dawnK = 0; this.dawnOn = false; this.tired = false;
     this.flashK = 0; this.boltT = rand(4, 9); this.strikes = 0; this.peelSpike = 0;
-    this.wingOpen = 0; this.sinkTarget = 0; this.party = 0; this.stare = 0; this.attend = 0;
+    this.wingOpen = 0; this.sinkTarget = 0; this.party = 0; this.stare = 0; this.attend = 0; this.sad = 0;
     this.ready = true;
   },
   portraits: [],
@@ -8223,11 +8223,14 @@ const HallKit = {
   },
   setPhase(p, instant) {
     const L = MANOR_LOOKS[clamp(p, 0, 2)];
+    const up = !instant && this.ready && p > (this.phase || 0);
     this.phase = p; this.target = L;
     if (instant) { const l = this.look; l.key.fromArray(L.key); l.sky.fromArray(L.sky); l.ground.fromArray(L.ground); l.rim.fromArray(L.rim); l.eye.fromArray(L.eye); l.keyK = L.keyK; l.candle = L.candle; l.storm = L.storm; l.peel = L.peel; l.ghostA = L.ghostA; l.sway = L.sway; }
     if (p >= 1 && this.leafInfo) for (const d of this.leafInfo) d.target = p >= 1 ? 1.15 : 0;
     if (p === 0 && this.leafInfo) for (const d of this.leafInfo) { d.target = 0; if (instant) d.open = 0; }
     if (p < 2 && this.tileHome && instant) for (const t of this.tileHome) t.lift = 0;
+    // a new phase comes in on a crack of lightning: the chandeliers jump, the doors bang, the paper rips
+    if (up && !this.outOn && !this.dawnOn) { this.strike(); this.jolt(0.14); this.peelSpike = p >= 2 ? 0.7 : 0.2; for (const d of this.leafInfo) d.flap = 1; }
   },
   onBeat(b) {
     if (!this.ready) return;
@@ -8261,11 +8264,12 @@ const HallKit = {
     this.party = damp(this.party || 0, atk === 'ballroom' && !this.outOn ? 1 : 0, 1.4, rdt);
     this.stare = damp(this.stare || 0, atk === 'portrait' ? 1 : 0, 2, rdt);
     this.attend = damp(this.attend || 0, atk === 'guests' ? 1 : 0, 1.5, rdt);
+    this.sad = damp(this.sad || 0, atk === 'final' && B.pattern && B.pattern.sad ? 1 : 0, 0.6, rdt);   // M4N1C M4N0R's last bars
     // the mood eases toward the phase's look; tired: the candles burn low
     const k = 1 - Math.exp(-rdt * 0.8);
     _v1.fromArray(L.key); l.key.lerp(_v1, k); _v1.fromArray(L.sky); l.sky.lerp(_v1, k); _v1.fromArray(L.ground); l.ground.lerp(_v1, k); _v1.fromArray(L.rim); l.rim.lerp(_v1, k); _v1.fromArray(L.eye); l.eye.lerp(_v1, k);
     l.keyK = lerp(l.keyK, L.keyK, k); l.storm = lerp(l.storm, L.storm, k); l.ghostA = lerp(l.ghostA, L.ghostA, k); l.sway = lerp(l.sway, L.sway, k);
-    l.candle = lerp(l.candle, L.candle * (this.tired ? 0.55 : 1) , k);
+    l.candle = lerp(l.candle, L.candle * (this.tired ? 0.55 : 1) * (1 - 0.45 * this.sad), k);
     l.peel = lerp(l.peel, L.peel, 1 - Math.exp(-rdt * 0.35));
     this.ignite = Math.min(1, this.ignite + rdt * 0.32);
     if (this.outOn) this.out = Math.min(1, this.out + rdt * 0.3);
@@ -8273,7 +8277,7 @@ const HallKit = {
     const dim = G.bg.dim, outK = 1 - this.out;
     // lightning
     this.boltT -= rdt;
-    if (this.boltT <= 0 && this.ignite > 0.6 && !this.outOn && !this.dawnOn) { this.strike(); this.boltT = l.storm > 0.8 ? rand(4, 8) : l.storm > 0.5 ? rand(7, 13) : rand(13, 24); }
+    if (this.boltT <= 0 && this.ignite > 0.6 && !this.outOn && !this.dawnOn && this.sad < 0.5) { this.strike(); this.boltT = l.storm > 0.8 ? rand(4, 8) : l.storm > 0.5 ? rand(7, 13) : rand(13, 24); }
     this.flashK = Math.max(0, this.flashK - rdt * (red ? 1.2 : 2.6));
     const fl = this.flashK > 0 ? this.flashK * (red ? 1 : (0.6 + 0.4 * Math.sin(this.flashK * 40))) : 0;
     this.peelSpike = Math.max(0, this.peelSpike - rdt * 0.8);
@@ -8335,7 +8339,7 @@ const HallKit = {
     this.leaves.instanceMatrix.needsUpdate = true;
     // the guests
     const gU = this.ghostU; gU.uTime.value = t;
-    gU.uA.value = l.ghostA * dim * outK * smooth01(this.ignite * 1.5 - 0.3) * (1 - this.dawnK) * (this.tired ? 0.5 : 1) * (1 + 0.35 * this.party + 0.3 * this.attend);
+    gU.uA.value = l.ghostA * dim * outK * smooth01(this.ignite * 1.5 - 0.3) * (1 - this.dawnK) * (this.tired ? 0.5 : 1) * (1 + 0.35 * this.party + 0.3 * this.attend) * (1 - 0.55 * this.sad);
     gU.uGlitch.value = this.phase >= 2 ? 0.4 + G.fx.glitch * 0.6 : G.fx.glitch * 0.4;
     gU.uCol.value.setRGB(this.phase >= 2 ? 1.0 : 0.55, this.phase >= 2 ? 0.45 : 1.0, this.phase >= 2 ? 0.75 : 0.92);
     const ghostsOn = gU.uA.value > 0.01;
@@ -8346,7 +8350,7 @@ const HallKit = {
         const d = this.dance[i];
         d.turn = damp(d.turn, watch, 1.2, rdt);
         d.a += rdt * 0.09 * (1 - d.turn * 0.85) * (this.phase >= 2 ? 2.2 : 1);
-        d.spin += rdt * (2.4 * (1 - d.turn) * (1 + this.party * 1.2) + (this.phase >= 2 ? 3 : 0));
+        d.spin += rdt * (2.4 * (1 - d.turn) * (1 + this.party * 1.2) + (this.phase >= 2 ? 3 : 0)) * (1 - 0.8 * this.sad);
         const x = Math.cos(d.a) * d.r, z = Mn.BOSS_Z + Math.sin(d.a) * d.r * 0.7;
         const faceYou = Math.atan2(-x, -z);
         const yaw = lerp(d.spin, faceYou, d.turn) + (this.phase >= 2 ? Math.sin(t * 9 + i) * 0.4 : 0);
@@ -8407,6 +8411,8 @@ const HallKit = {
     U.uKeyDir.value.set(0.25 - dawn * 0.1, 0.85 - dawn * 0.35, 0.45 - dawn * 0.9).normalize();
     U.uKeyCol.value.set(l.key.x * kk * (1 - dawn) + dawn * 1.1, l.key.y * kk * (1 - dawn) + dawn * 0.72, l.key.z * kk * (1 - dawn) + dawn * 0.45).addScalar(fl * 0.35);
     U.uSky.value.copy(l.sky).multiplyScalar((0.55 + 0.45 * ig) * dim * (0.15 + 0.85 * outK)).addScalar(fl * 0.25 + dawn * 0.12);
+    const sk = this.sad || 0;
+    if (sk > 0.001) { U.uKeyCol.value.lerp(_v3.set(0.3, 0.36, 0.72).multiplyScalar(kk + 0.2), sk * 0.75); U.uSky.value.lerp(_v3.set(0.1, 0.12, 0.26).multiplyScalar(dim), sk * 0.6); }
     U.uGround.value.copy(l.ground).multiplyScalar(dim * (0.1 + 0.9 * outK) * (0.4 + 0.6 * ig));
     U.uRimCol.value.copy(l.rim).multiplyScalar(dim * (0.3 + 0.7 * outK));
     U.uHaze.value.set(0, 0, 0, 0); U.uHaze2.value.set(0, 0, 0, 0);
@@ -13427,23 +13433,43 @@ registerKit(BigTopKit, function () { this.panels = []; this.spots = []; this.gue
 
 // ---- cameo guests (small silhouettes of bosses 1 and 2)
 function buildProprietorMini() {
+  // a little THE PROPRIETOR for the cameos (boss 3's front row, boss 4's campfire): the house-front body with lit
+  // windows and a door, mansard shoulders, a magenta bow tie, white gloves, and the chandelier head with two candle eyes
   const root = new THREE.Group();
-  const body = new THREE.Mesh(mergeGeos([
-    { geo: new THREE.BoxGeometry(0.34, 0.42, 0.22), matrix: M4(0, 0.21, 0), color: 0x1a0a24 },
-    { geo: new THREE.BoxGeometry(0.1, 0.16, 0.02), matrix: M4(0, 0.34, 0.115), color: 0xfff4dc },
-    { geo: new THREE.BoxGeometry(0.08, 0.32, 0.08), matrix: M4(-0.21, 0.24, 0, 0, 0, 0.3), color: 0x1a0a24 },
-    { geo: new THREE.BoxGeometry(0.08, 0.32, 0.08), matrix: M4(0.21, 0.24, 0, 0, 0, -0.3), color: 0x1a0a24 },
-    { geo: new THREE.CylinderGeometry(0.035, 0.035, 0.1, 6), matrix: M4(0, 0.47, 0), color: 0xc8a040 },
-    { geo: new THREE.TorusGeometry(0.13, 0.016, 5, 14), matrix: M4(0, 0.55, 0, Math.PI / 2, 0, 0), color: 0xc8a040 },
-    { geo: new THREE.OctahedronGeometry(0.035, 0), matrix: M4(0, 0.5, 0), color: 0xdff8ff },
-  ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  const PL = 0x2a1630, ROOF = 0x1c1424, WIN = 0xffd27a, GOLD = 0xc8a040, CR = 0xdff8ff, GLOVE = 0xfff4dc, BOW = 0xc23c8a, WAX = 0xf4ecd8;
+  const P = [
+    { geo: new THREE.BoxGeometry(0.3, 0.34, 0.2), matrix: M4(0, 0.19, 0), color: PL },
+    { geo: new THREE.BoxGeometry(0.055, 0.075, 0.012), matrix: M4(-0.075, 0.24, 0.1), color: WIN },
+    { geo: new THREE.BoxGeometry(0.055, 0.075, 0.012), matrix: M4(0.075, 0.24, 0.1), color: WIN },
+    { geo: new THREE.BoxGeometry(0.065, 0.11, 0.012), matrix: M4(0, 0.075, 0.1), color: 0x4a2010 },
+    { geo: new THREE.BoxGeometry(0.36, 0.035, 0.24), matrix: M4(0, 0.36, 0), color: GOLD },
+    { geo: new THREE.CylinderGeometry(0.12, 0.2, 0.07, 4, 1), matrix: M4(0, 0.41, 0, 0, Math.PI / 4, 0, 1, 1, 0.7), color: ROOF },
+    { geo: new THREE.BoxGeometry(0.03, 0.08, 0.03), matrix: M4(0.11, 0.45, -0.03), color: 0x3a1a10 },
+    { geo: new THREE.BoxGeometry(0.055, 0.032, 0.03), matrix: M4(-0.026, 0.345, 0.11, 0, 0, 0.45), color: BOW },
+    { geo: new THREE.BoxGeometry(0.055, 0.032, 0.03), matrix: M4(0.026, 0.345, 0.11, 0, 0, -0.45), color: BOW },
+    { geo: new THREE.SphereGeometry(0.014, 6, 4), matrix: M4(0, 0.345, 0.122), color: BOW },
+    { geo: new THREE.BoxGeometry(0.055, 0.26, 0.055), matrix: M4(-0.19, 0.22, 0, 0, 0, 0.3), color: ROOF },
+    { geo: new THREE.BoxGeometry(0.055, 0.26, 0.055), matrix: M4(0.19, 0.22, 0, 0, 0, -0.3), color: ROOF },
+    { geo: new THREE.SphereGeometry(0.04, 8, 6), matrix: M4(-0.23, 0.1, 0.01), color: GLOVE },
+    { geo: new THREE.SphereGeometry(0.04, 8, 6), matrix: M4(0.23, 0.1, 0.01), color: GLOVE },
+    { geo: new THREE.CylinderGeometry(0.018, 0.03, 0.08, 8), matrix: M4(0, 0.48, 0), color: GOLD },
+    { geo: new THREE.TorusGeometry(0.13, 0.013, 5, 18), matrix: M4(0, 0.54, 0, Math.PI / 2, 0, 0), color: GOLD },
+    { geo: new THREE.CylinderGeometry(0.017, 0.017, 0.07, 8), matrix: M4(-0.055, 0.59, 0.075), color: WAX },
+    { geo: new THREE.CylinderGeometry(0.017, 0.017, 0.07, 8), matrix: M4(0.055, 0.59, 0.075), color: WAX },
+  ];
+  for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; P.push({ geo: new THREE.OctahedronGeometry(0.02, 0), matrix: M4(Math.cos(a) * 0.12, 0.505, Math.sin(a) * 0.12, 0, 0, 0, 1, 1.8, 1), color: CR }); }
+  P.push({ geo: new THREE.OctahedronGeometry(0.035, 0), matrix: M4(0, 0.47, 0, 0, 0, 0, 1, 1.8, 1), color: CR });
+  const body = new THREE.Mesh(mergeGeos(P), new THREE.MeshBasicMaterial({ vertexColors: true }));
   root.add(body);
   const g = { root, body, kind: 'proprietor' };
   g.update = (dt) => {
     g.cheerT = Math.max(0, (g.cheerT || 0) - dt);
     body.position.y = g.cheerT > 0 ? Math.abs(Math.sin(G.time * 12)) * 0.08 : Math.sin(G.time * 1.3) * 0.01;
+    root.updateMatrixWorld(true);
+    // his candle eyes, and the little flames round his crown
+    for (const ex of [-0.055, 0.055]) { _v6.set(ex, 0.64 + body.position.y, 0.075).applyMatrix4(root.matrixWorld); G.fx.glow.add(_v6.x, _v6.y, _v6.z, 0.07, 1, 0.75, 0.3, 0.9, 0); }
     root.getWorldPosition(_v6);
-    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + G.time * 0.6; G.fx.glow.add(_v6.x + Math.cos(a) * 0.13, _v6.y + 0.6 + body.position.y, _v6.z + Math.sin(a) * 0.13, 0.05, 1, 0.75, 0.3, 0.8, 0); }
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + G.time * 0.6; G.fx.glow.add(_v6.x + Math.cos(a) * 0.13, _v6.y + 0.56 + body.position.y, _v6.z + Math.sin(a) * 0.13, 0.04, 1, 0.75, 0.3, 0.6, 0); }
     if (g.cheerT > 0 && chance(dt * 20)) G.fx.parts.emit(_v6.x, _v6.y + 0.7, _v6.z, rand(-0.5, 0.5), rand(0.6, 1.4), rand(-0.5, 0.5), rand(0.5, 1.0), 0.03, 1, 0.85, 0.3, 1.2, 1.5, 1);
   };
   return g;
