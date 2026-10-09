@@ -5077,45 +5077,15 @@ class BulletPools {
   constructor() {
     const C = CONFIG.COL;
     const ico = mergeGeos([{ geo: new THREE.IcosahedronGeometry(1, 0) }]);
-    const shard = mergeGeos([{ geo: new THREE.OctahedronGeometry(1, 0), color: 0xdff8ff }]);
-    const keyG = mergeGeos([
-      { geo: new THREE.TorusGeometry(0.035, 0.011, 4, 10), matrix: M4(0, 0.075, 0) },
-      { geo: new THREE.BoxGeometry(0.014, 0.11, 0.014), matrix: M4(0, 0, 0) },
-      { geo: new THREE.BoxGeometry(0.03, 0.014, 0.012), matrix: M4(0.014, -0.045, 0) },
-      { geo: new THREE.BoxGeometry(0.022, 0.012, 0.012), matrix: M4(0.01, -0.022, 0) },
-    ]);
-    const discoParts = [];
-    let dg = new THREE.IcosahedronGeometry(1, 1); if (dg.index) dg = dg.toNonIndexed();
-    const dcol = new Float32Array(dg.attributes.position.count * 3);
-    for (let f = 0; f < dg.attributes.position.count / 3; f++) { const v = rand(0.35, 1); for (let k = 0; k < 9; k++) dcol[f * 9 + k] = v; }
-    discoParts.push({ geo: dg });
-    const disco = mergeGeos(discoParts);
-    disco.attributes.color.array.set(dcol);
-    const ghost = mergeGeos([
-      { geo: new THREE.SphereGeometry(0.11, 10, 8), matrix: M4(0, 0.03, 0) },
-      { geo: new THREE.ConeGeometry(0.11, 0.2, 10, 1, true), matrix: M4(0, -0.1, 0, Math.PI, 0, 0) },
-      { geo: new THREE.BoxGeometry(0.025, 0.04, 0.02), matrix: M4(-0.04, 0.05, 0.1), color: 0x000000 },
-      { geo: new THREE.BoxGeometry(0.025, 0.04, 0.02), matrix: M4(0.04, 0.05, 0.1), color: 0x000000 },
-      { geo: new THREE.BoxGeometry(0.05, 0.014, 0.02), matrix: M4(0, -0.01, 0.105), color: 0x000000 },
-    ]);
-    const candle = mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8), matrix: M4(0, 0, 0), color: 0xf4ecd8 },
-      { geo: new THREE.CylinderGeometry(0.075, 0.09, 0.08, 8), matrix: M4(0, -0.29, 0), color: 0xc8a040 },
-      { geo: new THREE.CylinderGeometry(0.03, 0.06, 0.12, 8), matrix: M4(0, -0.37, 0), color: 0xc8a040 },
-      { geo: new THREE.ConeGeometry(0.03, 0.08, 6), matrix: M4(0, 0.29, 0), color: 0xffd23c },
-    ]);
-    const tear = mergeGeos([
-      { geo: new THREE.SphereGeometry(1, 8, 6), matrix: M4(0, 0, 0) },
-      { geo: new THREE.ConeGeometry(0.98, 1.6, 8), matrix: M4(0, 1.1, 0) },
-    ]);
     this.pools = {
       pellet: new BulletPool('pellet', { r: 0.06, scale: 0.062, glow: 0.24, glowA: 0.45, spin: 2 }, ico, 300),
-      shard: new BulletPool('shard', { r: 0.055, scale: 0.05, stretch: 3.4, glow: 0.26, glowColor: 0xbff4ff, glowA: 0.5, faceVel: true }, shard, 120),
-      key: new BulletPool('key', { r: 0.065, scale: 1.25, glow: 0.22, glowColor: C.gold, glowA: 0.35, faceVel: true, color: 0xf0f0ff }, keyG, 60),
-      disco: new BulletPool('disco', { r: 0.07, scale: 0.07, glow: 0.3, glowColor: C.magenta, glowA: 0.55, spin: 5 }, disco, 100),
-      guest: new BulletPool('guest', { r: 0.12, scale: 1, glow: 0.55, glowA: 0.4 }, ghost, 40),
-      candle: new BulletPool('candle', { r: 0.07, scale: 1, glow: 0.0, glowA: 0 }, candle, 20),
-      tear: new BulletPool('tear', { r: 0.05, scale: 0.045, glow: 0.2, glowColor: C.sad, glowA: 0.4, color: C.sad }, tear, 160),
+      shard: new BulletPool('shard', { r: 0.055, scale: 0.05, stretch: 3.4, glow: 0.26, glowColor: 0xbff4ff, glowA: 0.5, faceVel: true }, ManorBullets.shard(), 120, ManorBullets.mat('shard')),
+      key: new BulletPool('key', { r: 0.065, scale: 1.25, glow: 0.22, glowColor: C.gold, glowA: 0.35, faceVel: true, color: 0xf0f0ff }, ManorBullets.key(), 60, ManorBullets.mat('key')),
+      disco: new BulletPool('disco', { r: 0.07, scale: 0.07, glow: 0.3, glowColor: C.magenta, glowA: 0.55, spin: 5 }, ManorBullets.disco(), 100, ManorBullets.mat('disco')),
+      guest: new BulletPool('guest', { r: 0.12, scale: 1, glow: 0.55, glowA: 0.4 }, ManorBullets.guest(), 40, ManorBullets.mat('guest')),
+      candle: new BulletPool('candle', { r: 0.07, scale: 1, glow: 0.0, glowA: 0 }, ManorBullets.candle(), 20, ManorBullets.mat('candle')),
+      // boss 1 (lit, the manor's light): crystal drops, skeleton keys, mirrorballs, party ghosts, candlesticks, tears
+      tear: new BulletPool('tear', { r: 0.05, scale: 0.045, glow: 0.2, glowColor: C.sad, glowA: 0.4, color: C.sad }, ManorBullets.tear(), 160, ManorBullets.mat('tear')),
       glyph: new GlyphPool('glyph', { r: 0.06, scale: 0.13, glow: 0.2, glowA: 0.35 }, 320),
       // boss 3 (lit by CircusShade): juggling / clown balls (tinted, white band), pins, throwing knives,
       // petals, confetti paper, raindrops, thread spools. Empty pools are hidden, so nothing compiles before boss 3.
@@ -5401,6 +5371,7 @@ class Shooter {
 //  a tinted ball) instead of taking the per-bullet / per-material tint.
 // ============================================================================
 const CIRCUS_SHADE_VS = `
+  #include <clipping_planes_pars_vertex>
   varying vec3 vN; varying vec3 vW; varying vec3 vCol; varying vec3 vTint; varying float vDecor;
   #ifdef HAS_MAP
     uniform vec4 uMapST; varying vec2 vUv;
@@ -5428,9 +5399,12 @@ const CIRCUS_SHADE_VS = `
     #ifdef HAS_MAP
       vUv = uv * uMapST.xy + uMapST.zw;
     #endif
-    gl_Position = projectionMatrix * viewMatrix * wp;
+    vec4 mvPosition = viewMatrix * wp;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <clipping_planes_vertex>
   }`;
 const CIRCUS_SHADE_FS = `
+  #include <clipping_planes_pars_fragment>
   uniform vec3 uKeyDir; uniform vec3 uKeyCol; uniform vec3 uSky; uniform vec3 uGround; uniform vec3 uRimCol;
   uniform int uPtN; uniform vec4 uPtPos[4]; uniform vec3 uPtCol[4];
   uniform int uSpN; uniform vec4 uSpPos[4]; uniform vec4 uSpDir[4]; uniform vec3 uSpCol[4];
@@ -5446,6 +5420,7 @@ const CIRCUS_SHADE_FS = `
     uniform vec4 uHaze; uniform vec4 uHaze2;
   #endif
   void main() {
+    #include <clipping_planes_fragment>
     vec3 base = vCol * mix(uColor * vTint, vec3(1.0), vDecor);
     #ifdef HAS_MAP
       vec4 tx = texture2D(uMap, vUv);
@@ -5518,7 +5493,7 @@ const CircusShade = {
   // o: { color, map, mask (map's red paints white over the tint), mapST [sx, sy, ox, oy], gloss, shine, rim,
   //      emit (self-light floor), wrap, glow (added self-light), opacity, transparent, side, decor, vertexColors,
   //      tri / triTop (world-space detail textures, grey 0.5 = neutral) + triST [side scale, top scale, strength],
-  //      haze (fades into the shared uHaze colour with distance) }
+  //      haze (fades into the shared uHaze colour with distance), clip (clipping planes, e.g. the arena box's) }
   material(o = {}) {
     const u = Object.assign({}, this.uniforms(), {
       uColor: { value: new THREE.Color(o.color !== undefined ? o.color : 0xffffff) },
@@ -5537,6 +5512,7 @@ const CircusShade = {
       uniforms: u, defines, vertexShader: CIRCUS_SHADE_VS, fragmentShader: CIRCUS_SHADE_FS,
       vertexColors: o.vertexColors !== false, side: o.side || THREE.FrontSide,
       transparent: !!o.transparent, depthWrite: o.depthWrite !== undefined ? o.depthWrite : !o.transparent,
+      clipping: !!o.clip, clippingPlanes: o.clip || null,
     });
   },
 };
@@ -5743,35 +5719,75 @@ const WallKit = {
     const wallGeo = mergeGeos(parts);
     const P = wallGeo.attributes.position, U = wallGeo.attributes.uv;
     for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 3, P.getY(i) * 3);
-    // outline of the heart gap (thin quads on every boundary edge)
-    const w = 0.03, op = [];
+    // the heart's edge: a glowing gold line along the cut, and a ragged band of torn paper (its cream core) around it
+    const w = 0.03, op = [], tp = [];
     const filled = (r, c) => r >= 0 && r < GAP_H && c >= 0 && c < GAP_W && HEART_GAP[r][c] === '#';
     const hor = new THREE.PlaneGeometry(GAP_C + w, w), ver = new THREE.PlaneGeometry(w, GAP_C + w);
+    const rag = (x, y, horiz, sgn) => {   // two jagged strips on the paper's side of an edge (never inside the gap)
+      for (let k = 0; k < 2; k++) {
+        const t = rand(0.014, 0.036), len = GAP_C / 2 + 0.008, off = (k - 0.5) * GAP_C / 2;
+        if (horiz) tp.push({ geo: new THREE.PlaneGeometry(len, t), matrix: M4(x + off, y + sgn * (t / 2 + 0.004), 0.001) });
+        else tp.push({ geo: new THREE.PlaneGeometry(t, len), matrix: M4(x + sgn * (t / 2 + 0.004), y + off, 0.001) });
+      }
+    };
     for (let r = 0; r < GAP_H; r++) for (let c = 0; c < GAP_W; c++) {
       if (!filled(r, c)) continue;
       const x0 = -hw + c * GAP_C, y0 = hh - r * GAP_C;
-      if (!filled(r - 1, c)) op.push({ geo: hor, matrix: M4(x0 + GAP_C / 2, y0, 0.002) });
-      if (!filled(r + 1, c)) op.push({ geo: hor, matrix: M4(x0 + GAP_C / 2, y0 - GAP_C, 0.002) });
-      if (!filled(r, c - 1)) op.push({ geo: ver, matrix: M4(x0, y0 - GAP_C / 2, 0.002) });
-      if (!filled(r, c + 1)) op.push({ geo: ver, matrix: M4(x0 + GAP_C, y0 - GAP_C / 2, 0.002) });
+      if (!filled(r - 1, c)) { op.push({ geo: hor, matrix: M4(x0 + GAP_C / 2, y0, 0.002) }); rag(x0 + GAP_C / 2, y0, true, 1); }
+      if (!filled(r + 1, c)) { op.push({ geo: hor, matrix: M4(x0 + GAP_C / 2, y0 - GAP_C, 0.002) }); rag(x0 + GAP_C / 2, y0 - GAP_C, true, -1); }
+      if (!filled(r, c - 1)) { op.push({ geo: ver, matrix: M4(x0, y0 - GAP_C / 2, 0.002) }); rag(x0, y0 - GAP_C / 2, false, -1); }
+      if (!filled(r, c + 1)) { op.push({ geo: ver, matrix: M4(x0 + GAP_C, y0 - GAP_C / 2, 0.002) }); rag(x0 + GAP_C, y0 - GAP_C / 2, false, 1); }
     }
-    const outGeo = mergeGeos(op);
-    const planes = G.arena.planes;
+    const outGeo = mergeGeos(op), ragGeo = mergeGeos(tp);
+    const planes = G.arena.planes, dam = ManorTex.get('damask');
     for (let i = 0; i < 6; i++) {
       const group = new THREE.Group();
-      const wall = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({ map: Tex.wallpaper(), side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthWrite: false, clippingPlanes: planes }));
+      // a strip of the hall's own plum damask, lit like the walls it came off
+      const wall = new THREE.Mesh(wallGeo, CircusShade.material({ map: dam, mapST: [0.28, 0.28, 0, 0], gloss: 0.35, shine: 22, rim: 0.55, emit: 0.24, wrap: 0.7, side: THREE.DoubleSide, transparent: true, opacity: 0.93, clip: planes, vertexColors: false }));
+      const rag = new THREE.Mesh(ragGeo, CircusShade.material({ color: 0xe9dcc0, gloss: 0.1, shine: 10, rim: 0.4, emit: 0.42, side: THREE.DoubleSide, transparent: true, clip: planes, vertexColors: false }));
       const out = new THREE.Mesh(outGeo, new THREE.MeshBasicMaterial({ color: CONFIG.COL.gold, side: THREE.DoubleSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, clippingPlanes: planes }));
-      group.add(wall, out); group.visible = false; scene.add(group);
+      wall.renderOrder = 1; rag.renderOrder = 2; out.renderOrder = 3;
+      group.add(wall, out, rag); group.visible = false; scene.add(group);
       const guide = new THREE.Mesh(outGeo, new THREE.MeshBasicMaterial({ color: CONFIG.COL.teal, side: THREE.DoubleSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
       guide.visible = false; scene.add(guide);
-      this.walls.push({ group, wall, out, guide, active: false, owner: null, axis: 'z', u: 0, v: 0, size: 1, enter: 0, exit: 0, key: { grazed: false } });
+      this.walls.push({ group, wall, out, rag, guide, active: false, owner: null, axis: 'z', u: 0, v: 0, size: 1, enter: 0, exit: 0, key: { grazed: false }, corrupt: false, scrap: 0 });
     }
   },
-  // normal wallpaper, or the boss-2 copy: magenta/black missing texture + magenta outline
+  // normal wallpaper (the hall's damask), or the boss-2 copy: magenta/black missing texture + magenta outline
   skin(W, corrupt) {
-    W.wall.material.map = corrupt ? Tex.missing() : Tex.wallpaper();
+    const u = W.wall.material.uniforms;
+    u.uMap.value = corrupt ? Tex.missing() : ManorTex.get('damask');
+    u.uMapST.value.set(corrupt ? 1 : 0.28, corrupt ? 1 : 0.28, 0, 0);
+    u.uEmit.value = corrupt ? 0.9 : 0.24;
+    W.rag.material.uniforms.uColor.value.setHex(corrupt ? 0x2affd5 : 0xe9dcc0);
     W.out.material.color.setHex(corrupt ? CONFIG.COL.hot : CONFIG.COL.gold);
     W.guide.material.color.setHex(corrupt ? CONFIG.COL.hot : CONFIG.COL.teal);
+    W.corrupt = corrupt;
+  },
+  // a strip tears loose: scraps fly, and the hall's own paper shivers for a moment
+  spawnFx(W) {
+    if (HallKit.ready && !W.corrupt) HallKit.peelSpike = Math.max(HallKit.peelSpike, 0.12);
+    W.scrap = -4;   // a burst of scraps as it comes in
+  },
+  // scraps of paper tear off where the strip meets the walls of the box
+  fx(dt) {
+    if (!ManorBits.ready) return;
+    const A = G.arena;
+    for (const W of this.walls) {
+      if (!W.active || !W.group.visible) continue;
+      W.scrap = Math.min(W.scrap + dt * 6, 3);
+      const p = W.group.position;
+      if (W.axis === 'z' ? p.z < A.min.z || p.z > A.max.z : p.y < A.min.y || p.y > A.max.y) continue;
+      while (W.scrap >= 1 || W.scrap < 0) {
+        W.scrap += W.scrap < 0 ? 1 : -1;
+        const onX = chance(0.5), side = chance(0.5) ? 1 : -1;
+        if (W.axis === 'z') _v1.set(onX ? (side > 0 ? A.max.x : A.min.x) : rand(A.min.x, A.max.x), onX ? rand(A.min.y, A.max.y) : (side > 0 ? A.max.y : A.min.y + 0.05), p.z);
+        else _v1.set(onX ? (side > 0 ? A.max.x : A.min.x) : rand(A.min.x, A.max.x), p.y, onX ? rand(A.min.z, A.max.z) : (side > 0 ? A.max.z : A.min.z));
+        _v2.set(rand(-0.4, 0.4), rand(0.1, 0.7), rand(-0.4, 0.4));
+        if (W.axis === 'z') _v2.z += 1.2; else _v2.y -= 0.6;
+        ManorBits.emit(_v1, _v2, W.corrupt ? [1, 0.3, 0.95] : null);
+      }
+    }
   },
 };
 
@@ -5849,7 +5865,7 @@ class WallpaperPeel extends Pattern {
     debugAssert(Math.hypot(u - cu, v - cv) / tReach <= CONFIG.PULL_MAX_SPEED, `wallpaper gap unreachable (${(Math.hypot(u - cu, v - cv) / tReach).toFixed(2)} m/s)`);
     W.active = true; W.owner = this; W.axis = axis; W.u = u; W.v = v; W.size = size;
     W.enter = n + 4; W.exit = n + 4 + this.travel; W.key = { grazed: false };
-    WallKit.skin(W, this.corrupt);
+    WallKit.skin(W, this.corrupt); WallKit.spawnFx(W);
     W.group.scale.setScalar(size); W.guide.scale.setScalar(size);
     if (axis === 'z') { W.group.rotation.set(0, 0, 0); W.guide.rotation.set(0, 0, 0); }
     else { W.group.rotation.set(-Math.PI / 2, 0, 0); W.guide.rotation.set(-Math.PI / 2, 0, 0); }
@@ -5901,26 +5917,53 @@ const ChandKit = {
   ready: false, items: [],
   init() {
     if (this.ready) return; this.ready = true;
-    const gold = 0xc8a040, parts = [
-      { geo: new THREE.TorusGeometry(0.2, 0.018, 6, 16), matrix: M4(0, 0, 0, Math.PI / 2, 0, 0), color: gold },
-      { geo: new THREE.CylinderGeometry(0.02, 0.03, 0.22, 6), matrix: M4(0, 0.06, 0), color: gold },
-      { geo: new THREE.OctahedronGeometry(0.05, 0), matrix: M4(0, -0.12, 0, 0, 0, 0, 1, 1.8, 1), color: 0xdff8ff },
-    ];
-    for (let i = 0; i < 6; i++) {
-      const a = i / 6 * TAU;
-      parts.push({ geo: new THREE.CylinderGeometry(0.014, 0.014, 0.07, 5), matrix: M4(Math.cos(a) * 0.2, 0.04, Math.sin(a) * 0.2), color: 0xf4ecd8 });
-      parts.push({ geo: new THREE.OctahedronGeometry(0.025, 0), matrix: M4(Math.cos(a + 0.5) * 0.17, -0.06, Math.sin(a + 0.5) * 0.17, 0, 0, 0, 1, 1.8, 1), color: 0xdff8ff });
-    }
+    // a small crystal chandelier: gilt S-scroll arms, six candles, hanging drops; its ring sits at the hazard's centre
+    const R = 0.19, c = mChandelierParts(R, 1, 6), lift = 1.1 * R;
+    const up = new THREE.Matrix4().makeTranslation(0, lift, 0);
+    const parts = c.P.map((p) => ({ geo: p.geo, matrix: (p.matrix ? p.matrix.clone() : new THREE.Matrix4()).premultiply(up), color: p.color }));
+    const drop = ManorBullets.shard();
+    for (const q of c.crystals) parts.push({ geo: drop, matrix: M4(q.x, q.y + lift - q.len * 0.5, q.z, Math.PI, 0, 0, q.len * 0.3, q.len * 0.5, q.len * 0.3), color: 0xdff4ff });
     const geo = mergeGeos(parts);
-    const chainGeo = new THREE.BoxGeometry(0.012, 1, 0.012); chainGeo.translate(0, 0.5, 0);
+    this.candles = c.candles.map((v) => v.clone().setY(v.y + lift));
+    // the chain: links near the chandelier, then a gilt rod up into the hall's ceiling
+    const link = new THREE.TorusGeometry(0.015, 0.0042, 3, 6), cp = [];
+    for (let k = 0; k * 0.034 < 2.4; k++) cp.push({ geo: link, matrix: M4(0, k * 0.034 + 0.016, 0, 0, k % 2 ? Math.PI / 2 : 0, 0, 1, 1.45, 1) });
+    cp.push({ geo: new THREE.CylinderGeometry(0.008, 0.008, 7, 6), matrix: M4(0, 2.4 + 3.5, 0) });
+    const chainGeo = mergeGeos(cp);
     for (let i = 0; i < 3; i++) {
       const group = new THREE.Group();
-      const body = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true }));
-      const chain = new THREE.Mesh(chainGeo, new THREE.MeshBasicMaterial({ color: 0x806020 }));
-      chain.position.y = 0.17;
+      const body = new THREE.Mesh(geo, CircusShade.material({ gloss: 1.5, shine: 90, rim: 0.7, emit: 0.32 }));
+      const chain = new THREE.Mesh(chainGeo, CircusShade.material({ color: 0xb08a40, gloss: 1.3, shine: 70, rim: 0.5, emit: 0.2, vertexColors: false }));
+      chain.position.y = lift;
       group.add(body, chain); group.visible = false; scene.add(group);
-      this.items.push({ group, chain, active: false, owner: null, p: new THREE.Vector3(), spawnBeat: 0, burstBeat: 0, theta0: 0, count: 8, key: { grazed: false } });
+      this.items.push({ group, chain, active: false, owner: null, p: new THREE.Vector3(), spawnBeat: 0, burstBeat: 0, theta0: 0, count: 8, key: { grazed: false }, corrupt: false });
     }
+  },
+  // the boss-2 copy: a red chandelier (its candles burn cyan)
+  skin(c, corrupt) { c.group.children[0].material.uniforms.uColor.value.setHex(corrupt ? 0xff4a6a : 0xffffff); c.corrupt = corrupt; },
+  // candle flames and a glint running round the crystals while it comes down
+  fx(dt) {
+    const glow = G.fx.glow;
+    for (const c of this.items) {
+      if (!c.active || !c.group.visible) continue;
+      c.group.updateMatrixWorld(true);
+      for (let i = 0; i < this.candles.length; i++) {
+        _v1.copy(this.candles[i]).applyMatrix4(c.group.matrixWorld);
+        const f = 0.8 + 0.2 * Math.sin(G.time * 13 + i * 2.3);
+        if (c.corrupt) glow.add(_v1.x, _v1.y, _v1.z, 0.16, 0.2 * f, 1 * f, 0.9 * f, 0.7, 0);
+        else glow.add(_v1.x, _v1.y, _v1.z, 0.16, 1 * f, 0.68 * f, 0.3 * f, 0.7, 0);
+        glow.add(_v1.x, _v1.y, _v1.z, 0.045, 1, 0.95, 0.8, f, 0);
+      }
+      if (chance(dt * 9)) { const a = rand(0, TAU); _v1.set(Math.cos(a) * 0.2, rand(-0.12, 0.02), Math.sin(a) * 0.2).applyMatrix4(c.group.matrixWorld); glow.add(_v1.x, _v1.y, _v1.z, 0.06, 1, 1, 1, 0.9, 1); }
+    }
+  },
+  // it bursts: a flash of candlelight through the hall, sparks, and every chandelier above you jumps on its chain
+  burstFx(c) {
+    const red = Flash.reduced ? 0.5 : 1;
+    if (c.corrupt) { OFX.flare(c.p, 0.9 * red, 0.22, 0.4, 1, 0.9, { spikes: 6 }); OFX.spark(c.p, 12, 0.3, 1, 0.9, 3); }
+    else { OFX.flare(c.p, 0.9 * red, 0.22, 1, 0.82, 0.5, { spikes: 6 }); OFX.spark(c.p, 12, 1, 0.82, 0.45, 3); }
+    ManorLight.flash(c.p, 1.1 * red, 0.8 * red, 0.45 * red, 4, 0.28);
+    if (HallKit.ready) HallKit.jolt(0.06);
   },
 };
 class ChandelierRain extends Pattern {
@@ -5965,7 +6008,7 @@ class ChandelierRain extends Pattern {
     const A = G.arena, s = G.soul.pos;
     c.p.set(s.x + rand(-0.6, 0.6), s.y + rand(-0.25, 0.25), s.z + rand(-0.6, 0.6)); A.clampPoint(c.p, 0.45);
     c.active = true; c.owner = this; c.spawnBeat = n; c.burstBeat = n + this.lead; c.theta0 = rand(0, TAU);
-    c.group.children[0].material.color.setHex(this.corrupt ? 0xff4a6a : 0xffffff);
+    ChandKit.skin(c, this.corrupt);
     c.count = this.intensity >= 1.7 ? 12 : this.intensity >= 1.3 ? 10 : 8; c.key = { grazed: false };
     const life = this.lead * this.bd;
     G.tele.ring(c.p, UP, 0.32, CONFIG.COL.red, life, { pulse: 1, grow: 2.5 });
@@ -5977,7 +6020,7 @@ class ChandelierRain extends Pattern {
     G.audio.sfx.creak();
   }
   burst(c, when) {
-    c.active = false; c.group.visible = false;
+    c.active = false; c.group.visible = false; ChandKit.burstFx(c);
     G.audio.sfx.crash(when);
     G.fx.shards(c.p, 16, 1, 0.9, 0.6, 2.2); G.fx.burst(c.p, 10, 1, 0.85, 0.4, 2, 0.08);
     const sp = 2.3 * Math.sqrt(this.intensity);
@@ -5998,7 +6041,6 @@ class ChandelierRain extends Pattern {
       const top = A.max.y + 0.35;
       const y = lerp(top, c.p.y, easeIn(k) * 0.8 + k * 0.2);
       c.group.visible = true; c.group.position.set(c.p.x, y, c.p.z); c.group.rotation.y += dt * 1.6;
-      c.chain.scale.y = Math.max(0.01, top + 2 - y);
       if (this.corrupt) G.fx.glow.add(c.p.x, y + 0.04, c.p.z, 0.45, 0.16, 1, 0.84, 0.6, 0);
       else G.fx.glow.add(c.p.x, y + 0.04, c.p.z, 0.45, 1, 0.75, 0.3, 0.6, 0);
       if (k < 0.97) Haz.sphere(c.group.position, 0.2, RULE.WHITE, this.dmg, c.key);
@@ -6015,25 +6057,120 @@ const DoorKit = {
   ready: false, items: [],
   init() {
     if (this.ready) return; this.ready = true;
-    const frameGeo = mergeGeos([
-      { geo: new THREE.BoxGeometry(0.08, 1.2, 0.08), matrix: M4(-0.39, 0, 0), color: 0x2a140a },
-      { geo: new THREE.BoxGeometry(0.08, 1.2, 0.08), matrix: M4(0.39, 0, 0), color: 0x2a140a },
-      { geo: new THREE.BoxGeometry(0.86, 0.08, 0.08), matrix: M4(0, 0.6, 0), color: 0x2a140a },
-      { geo: new THREE.BoxGeometry(0.5, 0.06, 0.06), matrix: M4(0, 0.67, 0), color: 0xc8a040 },
-    ]);
-    const panelGeo = new THREE.BoxGeometry(0.7, 1.12, 0.04); panelGeo.translate(0.35, 0, 0);
+    const MAHOG = 0x3a1a0c, GOLD = 0xc8a040, hw = 0.35, hh = 0.56, t = 0.085;
+    // a carved architrave round a 0.7 x 1.12 doorway: jambs and head, gilt beading, a cornice and a broken pediment with an urn
+    const fp = [];
+    for (const s of [-1, 1]) {
+      fp.push({ geo: new THREE.BoxGeometry(t, 2 * hh + t, 0.07), matrix: M4(s * (hw + t / 2), t / 2, 0.02), color: MAHOG });
+      fp.push({ geo: new THREE.BoxGeometry(0.014, 2 * hh, 0.02), matrix: M4(s * (hw + 0.006), 0, 0.058), color: GOLD });
+      fp.push({ geo: new THREE.BoxGeometry(t + 0.02, 0.1, 0.09), matrix: M4(s * (hw + t / 2), -hh + 0.05, 0.03), color: MAHOG });
+      fp.push({ geo: new THREE.BoxGeometry(0.3, 0.035, 0.08), matrix: M4(s * 0.24, hh + t + 0.12, 0.03, 0, 0, -s * 0.42), color: MAHOG });
+      fp.push({ geo: new THREE.SphereGeometry(0.022, 8, 6), matrix: M4(s * 0.37, hh + t + 0.07, 0.06), color: GOLD });
+    }
+    fp.push({ geo: new THREE.BoxGeometry(2 * hw + 2 * t, t, 0.07), matrix: M4(0, hh + t / 2, 0.02), color: MAHOG });
+    fp.push({ geo: new THREE.BoxGeometry(2 * hw + 0.026, 0.014, 0.02), matrix: M4(0, hh + 0.006, 0.058), color: GOLD });
+    fp.push({ geo: new THREE.BoxGeometry(2 * hw + 2 * t + 0.1, 0.045, 0.11), matrix: M4(0, hh + t + 0.022, 0.035), color: MAHOG });
+    fp.push({ geo: new THREE.BoxGeometry(2 * hw + 2 * t + 0.12, 0.016, 0.12), matrix: M4(0, hh + t + 0.05, 0.04), color: GOLD });
+    fp.push({ geo: new THREE.SphereGeometry(0.036, 10, 8), matrix: M4(0, hh + t + 0.13, 0.05, 0, 0, 0, 1, 1.3, 1), color: GOLD });
+    fp.push({ geo: new THREE.CylinderGeometry(0.02, 0.032, 0.035, 8), matrix: M4(0, hh + t + 0.08, 0.05), color: GOLD });
+    const frameGeo = mergeGeos(fp);
+    // the door: six raised panels (the hall's door texture), a brass knob, rosette and keyhole on both faces
+    const panelGeo = new THREE.BoxGeometry(0.7, 1.12, 0.045); panelGeo.translate(0.35, 0, 0);
+    const kp = [];
+    for (const z of [-1, 1]) {
+      kp.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.008, 12), matrix: M4(0.6, -0.03, z * 0.026, Math.PI / 2, 0, 0) });
+      kp.push({ geo: new THREE.CylinderGeometry(0.01, 0.012, 0.03, 8), matrix: M4(0.6, -0.03, z * 0.042, Math.PI / 2, 0, 0) });
+      kp.push({ geo: new THREE.SphereGeometry(0.024, 10, 8), matrix: M4(0.6, -0.03, z * 0.064) });
+      kp.push({ geo: new THREE.BoxGeometry(0.024, 0.05, 0.006), matrix: M4(0.6, -0.085, z * 0.025) });
+    }
+    const knobGeo = mergeGeos(kp);
+    // the room beyond, painted in perspective (a hallway to a lit door); a warm wash and a shaft of light spill out
+    const roomTex = this.roomTex();
+    const lightGeo = mergeGeos([{ geo: new THREE.PlaneGeometry(0.7, 1.12), color: 0xb0b0b0 }]), shaftGeo = this.shaftGeo();
     for (let i = 0; i < 5; i++) {
       const group = new THREE.Group();
-      const frameMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true });
+      const frameMat = CircusShade.material({ gloss: 0.9, shine: 50, rim: 0.4, emit: 0.14, transparent: true, depthWrite: true });
       const frame = new THREE.Mesh(frameGeo, frameMat);
       const pivot = new THREE.Group(); pivot.position.set(-0.35, 0, 0.0);
-      const panelMat = new THREE.MeshBasicMaterial({ map: Tex.door(), transparent: true });
+      const panelMat = CircusShade.material({ map: ManorTex.get('door'), gloss: 0.9, shine: 50, rim: 0.35, emit: 0.12, transparent: true, depthWrite: true, vertexColors: false });
       const panel = new THREE.Mesh(panelGeo, panelMat); pivot.add(panel);
-      const light = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.12), new THREE.MeshBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      const brassMat = CircusShade.material({ color: 0xd8b050, gloss: 1.7, shine: 90, rim: 0.7, emit: 0.25, transparent: true, depthWrite: true, vertexColors: false });
+      pivot.add(new THREE.Mesh(knobGeo, brassMat));
+      const roomMat = new THREE.MeshBasicMaterial({ map: roomTex, transparent: true });
+      const room = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.12), roomMat); room.position.z = -0.03;
+      const light = new THREE.Mesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0xffb060, vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       light.position.z = -0.02;
-      group.add(frame, pivot, light); group.visible = false; scene.add(group);
-      this.items.push({ group, frameMat, panelMat, pivot, light, active: false, owner: null, bar: 0, wall: 'far', fired: 0, center: new THREE.Vector3(), key: { grazed: false } });
+      light.add(new THREE.Mesh(shaftGeo, light.material));   // the shaft shares the wash's colour and opacity (set by the pattern)
+      group.add(frame, pivot, light, room); group.visible = false; scene.add(group);
+      this.items.push({ group, frameMat, panelMat, brassMat, roomMat, pivot, light, active: false, owner: null, bar: 0, wall: 'far', fired: 0, center: new THREE.Vector3(), key: { grazed: false }, corrupt: false, blink: 0 });
     }
+  },
+  roomTex() {
+    return softTex(128, 192, (g, w, h) => {
+      const cx = 64, cy = 98, fw = 22, fh = 38;
+      g.fillStyle = '#0a0307'; g.fillRect(0, 0, w, h);
+      const quad = (pts, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) g.lineTo(p[0], p[1]); g.fill(); };
+      quad([[0, 0], [cx - fw, cy - fh], [cx - fw, cy + fh], [0, h]], '#1c0a18');
+      quad([[w, 0], [cx + fw, cy - fh], [cx + fw, cy + fh], [w, h]], '#170814');
+      quad([[0, 0], [w, 0], [cx + fw, cy - fh], [cx - fw, cy - fh]], '#0e050c');
+      quad([[0, h], [w, h], [cx + fw, cy + fh], [cx - fw, cy + fh]], '#24100a');
+      quad([[18, h], [w - 18, h], [cx + 9, cy + fh], [cx - 9, cy + fh]], '#4a0c1e');   // a runner down the floor
+      for (const f of [0.3, 0.55]) { const x0 = (cx - fw) * f; g.fillStyle = 'rgba(200,160,64,0.45)'; g.fillRect(x0 * 0.6 + 4, cy - 10 - (1 - f) * 20, 3, 6); g.fillRect(w - x0 * 0.6 - 7, cy - 10 - (1 - f) * 20, 3, 6); }   // sconces down the walls
+      const gr = g.createRadialGradient(cx, cy + 6, 2, cx, cy + 6, 70); gr.addColorStop(0, 'rgba(255,190,110,0.85)'); gr.addColorStop(0.35, 'rgba(255,120,40,0.25)'); gr.addColorStop(1, 'rgba(255,90,30,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#ffe2a0'; g.fillRect(cx - 9, cy - 22, 18, 40);
+      g.fillStyle = '#ffd070'; g.fillRect(cx - 9, cy + 18, 18, 2);
+      g.fillStyle = 'rgba(30,8,20,0.9)'; g.beginPath(); g.ellipse(cx, cy + 4, 5, 12, 0, 0, TAU); g.fill();   // someone in the far doorway
+    });
+  },
+  // a frustum of light from the doorway into the box, bright at the door and gone by 1.1 m (additive)
+  shaftGeo() {
+    const n0 = [0.33, 0.54], n1 = [0.62, 0.82], z1 = 1.1, pos = [], col = [], idx = [];
+    const c0 = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    for (let s = 0; s < 4; s++) {
+      const a = c0[s], b = c0[(s + 1) % 4], o = pos.length / 3;
+      pos.push(a[0] * n0[0], a[1] * n0[1], 0.01, b[0] * n0[0], b[1] * n0[1], 0.01, b[0] * n1[0], b[1] * n1[1], z1, a[0] * n1[0], a[1] * n1[1], z1);
+      col.push(0.42, 0.42, 0.42, 0.42, 0.42, 0.42, 0, 0, 0, 0, 0, 0);
+      idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  },
+  // normal mahogany, or the boss-2 copy: a missing-texture door in a cyan frame, a magenta light
+  skin(d, corrupt) {
+    const u = d.panelMat.uniforms;
+    u.uMap.value = corrupt ? Tex.missing() : ManorTex.get('door');
+    u.uEmit.value = corrupt ? 0.85 : 0.12;
+    d.frameMat.uniforms.uColor.value.setHex(corrupt ? CONFIG.COL.cyan : 0xffffff);
+    d.light.material.color.setHex(corrupt ? CONFIG.COL.hot : 0xffb060);
+    d.corrupt = corrupt;
+  },
+  fade(d, f) { d.frameMat.uniforms.uOpacity.value = f; d.panelMat.uniforms.uOpacity.value = f; d.brassMat.uniforms.uOpacity.value = f; d.roomMat.opacity = f; },
+  // eyes in the dark room while the door stands open; its light reaches into the hall
+  fx(dt) {
+    const glow = G.fx.glow;
+    let best = null, bk = 0.2;
+    for (const d of this.items) {
+      if (!d.active || !d.group.visible) continue;
+      const k = d.light.material.opacity;
+      if (k > bk) { bk = k; best = d; }
+      if (k < 0.25) continue;
+      d.blink -= dt; if (d.blink < -0.12) d.blink = rand(0.8, 2.4);
+      if (d.blink < 0) continue;
+      for (const ex of [-0.045, 0.045]) {
+        _v1.set(ex, 0.1, -0.025).applyMatrix4(d.group.matrixWorld);
+        if (d.corrupt) glow.add(_v1.x, _v1.y, _v1.z, 0.05, 0.2 * k, 1 * k, 0.9 * k, 1, 0); else glow.add(_v1.x, _v1.y, _v1.z, 0.05, 1 * k, 0.25 * k, 0.12 * k, 1, 0);
+      }
+    }
+    if (best) { const c = best.light.material.color, k = bk * 0.9; ManorLight.hold(best.center, c.r * k, c.g * k, c.b * k, 3.2); }
+  },
+  // the slam: a puff of dust from the frame, splinters, and the hall's own doors bang in sympathy
+  slamFx(d) {
+    OFX.dust(d.center, 5, 0.22, 1.0, d.corrupt ? [0.6, 0.3, 0.7] : [0.55, 0.42, 0.36], { speed: 0.7, alpha: 0.45 });
+    OFX.rocks(d.center, 3, 1.4, d.corrupt ? 0xff3cc8 : 0x5a2a12, 0.35);
+    if (HallKit.ready && !d.corrupt) { HallKit.doorBang(); HallKit.jolt(0.025); }
   },
 };
 class DoorSlam extends Pattern {
@@ -6044,7 +6181,7 @@ class DoorSlam extends Pattern {
       const rel = n - d.bar;
       if (rel === 0) { if (d.wall === 'behind') G.audio.sfx.whoosh(d.center); G.audio.sfx.creak(when); }
       if (rel === 2) G.audio.sfx.keys(when);
-      if (rel === 3) { G.audio.sfx.slam(when); G.fx.burst(d.center, 6, 0.8, 0.5, 0.3, 0.8, 0.06); G.input.pulseAll(0.2, 30); }
+      if (rel === 3) { G.audio.sfx.slam(when); G.fx.burst(d.center, 6, 0.8, 0.5, 0.3, 0.8, 0.06); G.input.pulseAll(0.2, 30); DoorKit.slamFx(d); }
     }
     if (!this.spawning) return;
     const bar = n + 2;
@@ -6069,9 +6206,7 @@ class DoorSlam extends Pattern {
     g.updateMatrixWorld(true);
     d.center.set(0, 0, 0.12).applyMatrix4(g.matrixWorld);
     d.active = true; d.owner = this; d.bar = bar; d.wall = wall; d.fired = 0; d.key = { grazed: false };
-    d.panelMat.map = this.corrupt ? Tex.missing() : Tex.door();
-    d.frameMat.color.setHex(this.corrupt ? CONFIG.COL.cyan : 0xffffff);
-    d.light.material.color.setHex(this.corrupt ? CONFIG.COL.hot : 0xffb060);
+    DoorKit.skin(d, this.corrupt);
     g.visible = true;
     if (wall === 'behind' || wall === 'ceil') G.audio.sfx.ghostWail(d.center);
   }
@@ -6082,7 +6217,7 @@ class DoorSlam extends Pattern {
       if (!d.active || d.owner !== this) continue;
       const rel = pb - d.bar;
       const fade = clamp((rel + 2) / 1, 0, 1) * clamp((4.6 - rel) / 0.5, 0, 1);
-      d.frameMat.opacity = fade; d.panelMat.opacity = fade;
+      DoorKit.fade(d, fade);
       let ang = 0;
       if (rel >= 0 && rel < 3) ang = easeOut(clamp(rel / 0.8, 0, 1)) * 1.75;
       else if (rel >= 3) ang = 1.75 * (1 - clamp((rel - 3) / 0.12, 0, 1));
@@ -6109,27 +6244,28 @@ class DoorSlam extends Pattern {
 // ---------------------------------------------------------------------------
 //  4. PORTRAIT GAZE - eyes track you, a sight line locks, then BLUE/ORANGE beams
 // ---------------------------------------------------------------------------
+const PK_Z = new THREE.Vector3(0, 0, 1);
 const PortraitKit = {
   ready: false, items: [],
   init() {
     if (this.ready) return; this.ready = true;
-    const frameGeo = mergeGeos([
-      { geo: new THREE.BoxGeometry(0.62, 0.06, 0.05), matrix: M4(0, 0.37, 0), color: 0xc8a040 },
-      { geo: new THREE.BoxGeometry(0.62, 0.06, 0.05), matrix: M4(0, -0.37, 0), color: 0xc8a040 },
-      { geo: new THREE.BoxGeometry(0.06, 0.8, 0.05), matrix: M4(-0.31, 0, 0), color: 0xc8a040 },
-      { geo: new THREE.BoxGeometry(0.06, 0.8, 0.05), matrix: M4(0.31, 0, 0), color: 0xc8a040 },
-      { geo: new THREE.BoxGeometry(0.1, 0.1, 0.06), matrix: M4(0, 0.42, 0, 0, 0, Math.PI / 4), color: 0xffd23c },
-    ]);
-    const cyl = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
+    // an ornate gilt frame round a 0.56 x 0.7 oil painting (the gaze atlas: hollow painted eyes at the anchor's height),
+    // real eyeballs in the sockets, and a beam of light with bands running down it
+    const fp = []; mFrame(fp, 0.56, 0.7, 0.05);
+    const frameGeo = mergeGeos(fp);
+    const cyl = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true), cyl12 = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
+    const gaze = ManorTex.get('gaze'), bands = this.bandTex();
+    const eyeGeo = new THREE.SphereGeometry(0.035, 16, 12), irisGeo = this.irisGeo();
     for (let i = 0; i < 4; i++) {
       const group = new THREE.Group();
-      group.add(new THREE.Mesh(frameGeo, new THREE.MeshBasicMaterial({ vertexColors: true })));
-      const paint = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.7), new THREE.MeshBasicMaterial({ map: Tex.portrait(i) }));
+      group.add(new THREE.Mesh(frameGeo, CircusShade.material({ gloss: 1.5, shine: 80, rim: 0.6, emit: 0.22 })));
+      const paint = new THREE.Mesh(mCell(new THREE.PlaneGeometry(0.56, 0.7), i, 0, 4, 1), CircusShade.material({ map: gaze, gloss: 0.5, shine: 60, rim: 0.1, emit: 0.3, vertexColors: false }));
       paint.position.z = 0.005; group.add(paint);
-      const eyes = [];
+      const eyes = [], sclera = CircusShade.material({ color: 0xf2ede4, gloss: 1.8, shine: 120, rim: 0.4, emit: 0.38, vertexColors: false });
+      const irisMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xffb040 });
       for (const ex of [-0.075, 0.075]) {
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-        const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+        const eye = new THREE.Mesh(eyeGeo, sclera);
+        const pupil = new THREE.Mesh(irisGeo, irisMat);
         eye.position.set(ex, 0.08, 0.03); pupil.position.set(0, 0, 0.028); eye.add(pupil);
         group.add(eye); eyes.push({ eye, pupil });
       }
@@ -6138,11 +6274,14 @@ const PortraitKit = {
       const line = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: CONFIG.COL.red, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending }));
       line.visible = false; scene.add(line);
       const beam = new THREE.Group();
-      const core = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      const outer = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: CONFIG.COL.blue, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
-      core.scale.set(0.028, 1, 0.028); outer.scale.set(0.075, 1, 0.075);
+      const core = new THREE.Mesh(cyl12, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      const b = bands.clone(); b.needsUpdate = true;
+      const outer = new THREE.Mesh(cyl12, new THREE.MeshBasicMaterial({ color: CONFIG.COL.blue, map: b, transparent: true, opacity: 0.62, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const halo = new THREE.Mesh(cyl12, new THREE.MeshBasicMaterial({ color: CONFIG.COL.blue, transparent: true, opacity: 0.14, depthWrite: false, blending: THREE.AdditiveBlending }));
+      core.scale.set(0.028, 1, 0.028); outer.scale.set(0.075, 1, 0.075); halo.scale.set(2.1, 1, 2.1);
+      outer.add(halo);   // the halo rides on the sheath (the pattern makes it flicker)
       beam.add(core, outer); beam.visible = false; scene.add(beam);
-      this.items.push({ i, group, eyes, anchor, line, beam, outer, active: false, owner: null, home: new THREE.Vector3(), eye: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1), end: new THREE.Vector3(), state: 'idle', color: RULE.BLUE, cycle0: 0, key: { grazed: false } });
+      this.items.push({ i, group, eyes, anchor, line, beam, outer, halo, irisMat, active: false, owner: null, home: new THREE.Vector3(), eye: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1), end: new THREE.Vector3(), state: 'idle', color: RULE.BLUE, cycle0: 0, key: { grazed: false }, corrupt: false, was: 'idle' });
     }
   },
   orient(mesh, a, b, r) {
@@ -6150,6 +6289,44 @@ const PortraitKit = {
     mesh.position.addVectors(a, b).multiplyScalar(0.5);
     mesh.quaternion.setFromUnitVectors(UP, _v1.divideScalar(len));
     if (r !== undefined) mesh.scale.set(r, len, r); else mesh.scale.y = len;
+  },
+  // bright bands that run down a beam (its sheath's texture, scrolled each frame)
+  bandTex() {
+    return canvasTex(4, 64, (g, w, h) => {
+      for (let y = 0; y < h; y++) { const v = 0.55 + 0.45 * Math.pow(0.5 + 0.5 * Math.sin(y / h * TAU * 4), 3); const c = Math.round(255 * v); g.fillStyle = `rgb(${c},${c},${c})`; g.fillRect(0, y, w, 1); }
+    }, { repeat: true });
+  },
+  // an iris on a small sphere: a black pupil at +Z, the coloured iris, a dark ring at its edge (white beyond: hidden in the eyeball)
+  irisGeo() {
+    const g = new THREE.SphereGeometry(0.0175, 16, 12), P = g.attributes.position, col = new Float32Array(P.count * 3);
+    for (let i = 0; i < P.count; i++) {
+      const c = P.getZ(i) / 0.0175;
+      const v = c > 0.9 ? [0.02, 0.01, 0.02] : c > 0.62 ? [1, 1, 1] : c > 0.56 ? [0.15, 0.08, 0.05] : [0.95, 0.93, 0.9];
+      col.set(v, i * 3);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+  },
+  // the boss-2 copy: a pink-tinted canvas (its eyes burn magenta)
+  skin(P, corrupt) { P.group.children[1].material.uniforms.uColor.value.setHex(corrupt ? 0xff7a9a : 0xffffff); P.corrupt = corrupt; },
+  // irises turn to face where the pupils look and take the beam's colour; a flare and a flash of light when one fires
+  fx(dt) {
+    for (const P of this.items) {
+      if (!P.active || !P.group.visible) { P.was = 'idle'; continue; }
+      for (const e of P.eyes) { const p = e.pupil.position, l = p.length(); if (l > 1e-5) e.pupil.quaternion.setFromUnitVectors(PK_Z, _v1.copy(p).divideScalar(l)); }
+      const glitch = P.color === RULE.GLITCH, col = glitch ? (glitchIsBlue() ? CONFIG.COL.blue : CONFIG.COL.orange) : RULE_COL[P.color];
+      if (P.state === 'lock' || P.state === 'fire') P.irisMat.color.setHex(col);
+      else P.irisMat.color.setHex(P.corrupt ? CONFIG.COL.hot : P.state === 'track' ? 0xff7040 : 0xc89040);
+      P.halo.material.color.copy(P.outer.material.color);
+      if (P.beam.visible) P.outer.material.map.offset.y -= dt * 2.4;
+      if (P.state === 'fire' && P.was !== 'fire') {
+        _c1.setHex(col);
+        OFX.flare(P.eye, 0.55, 0.3, _c1.r, _c1.g, _c1.b, { spikes: 4 });
+        ManorLight.flash(P.eye, _c1.r * 0.9, _c1.g * 0.9, _c1.b * 0.9, 3.5, 0.35);
+      }
+      if (P.state === 'fire') { _c1.setHex(col); _v2.copy(P.eye).addScaledVector(P.dir, 0.6); ManorLight.hold(_v2, _c1.r * 0.55, _c1.g * 0.55, _c1.b * 0.55, 3); }
+      P.was = P.state;
+    }
   },
 };
 class PortraitGaze extends Pattern {
@@ -6170,7 +6347,7 @@ class PortraitGaze extends Pattern {
       const P = PortraitKit.items[i]; const s = spots[(i + (this.fragment ? randi(0, 3) : 0)) % 4];
       P.active = true; P.owner = this; P.home.set(s[0], s[1], s[2]); P.group.rotation.set(0, s[3], 0); P.group.visible = true;
       P.cycle0 = (this.fragment ? 0 : 1) + i * (this.fragment ? 2 : 3); P.state = 'idle'; P.key = { grazed: false };
-      P.group.children[1].material.color.setHex(this.corrupt ? 0xff7a9a : 0xffffff);
+      PortraitKit.skin(P, this.corrupt);
       this.ps.push(P);
     }
     this.volley = G.battle ? G.battle.volley || 0 : 0;
@@ -6246,11 +6423,22 @@ const StairKit = {
   ready: false, N: 10, steps: [],
   init() {
     if (this.ready) return; this.ready = true;
+    // one tread in unit space (the pattern scales it to 0.55 x 0.07 x 0.42 m; local -z faces out of the spiral):
+    // veined marble, a velvet runner flush with the top, gilt nosing on both edges, a gilt scroll bracket underneath
+    const MARB = 0xe6dccb, VEL = 0x6a1434, GOLD = 0xc8a040;
     const geo = mergeGeos([
-      { geo: new THREE.BoxGeometry(1, 1, 1), color: 0xe6dcf5 },
-      { geo: new THREE.BoxGeometry(1.04, 0.3, 1.04), matrix: M4(0, 0.36, 0), color: 0xc8a040 },
+      { geo: new THREE.BoxGeometry(1, 0.76, 1), matrix: M4(0, -0.12, 0), color: MARB },
+      { geo: new THREE.BoxGeometry(1, 0.24, 0.6), matrix: M4(0, 0.38, 0), color: VEL },
+      { geo: new THREE.BoxGeometry(1, 0.24, 0.2), matrix: M4(0, 0.38, -0.4), color: MARB },
+      { geo: new THREE.BoxGeometry(1, 0.24, 0.2), matrix: M4(0, 0.38, 0.4), color: MARB },
+      { geo: new THREE.BoxGeometry(1.0, 0.06, 0.03), matrix: M4(0, 0.47, -0.3), color: GOLD },
+      { geo: new THREE.BoxGeometry(1.0, 0.06, 0.03), matrix: M4(0, 0.47, 0.3), color: GOLD },
+      { geo: new THREE.BoxGeometry(1.06, 0.4, 0.07), matrix: M4(0, 0.1, -0.52), color: GOLD },
+      { geo: new THREE.BoxGeometry(1.06, 0.24, 0.05), matrix: M4(0, 0.2, 0.52), color: GOLD },
+      { geo: new THREE.CylinderGeometry(0.07, 0.02, 1.7, 4), matrix: M4(0, -1.35, 0.34, 0, Math.PI / 4, 0), color: GOLD },
+      { geo: new THREE.SphereGeometry(0.05, 8, 6), matrix: M4(0, -2.25, 0.34, 0, 0, 0, 1, 1.6, 1), color: GOLD },
     ]);
-    this.mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true }), this.N);
+    this.mesh = new THREE.InstancedMesh(geo, CircusShade.material({ gloss: 1.1, shine: 70, rim: 0.5, emit: 0.24, tri: ManorTex.get('noise'), triST: [1.8, 1.8, 0.4, 0] }), this.N);
     this.mesh.frustumCulled = false;
     this.group = new THREE.Group(); this.group.add(this.mesh); this.group.visible = false; scene.add(this.group);
     for (let i = 0; i < this.N; i++) this.steps.push({ x: 0, z: 0, yaw: 0, hx: 0.275, hz: 0.21, top: 0, solid: true, dYaw: 0, dy: 0 });
@@ -6352,41 +6540,105 @@ const FurnKit = {
   ready: false, types: {}, pendulums: [],
   init() {
     if (this.ready) return; this.ready = true;
-    const V = 0x8a2ab0, W = 0x4a2412, W2 = 0x6a3418, GOLD = 0xc8a040;
-    const defs = {
-      chair: { dims: [0.8, 0.85, 0.7], cap: 14, parts: [
-        [new THREE.BoxGeometry(0.72, 0.14, 0.62), [0, -0.08, 0.03], V], [new THREE.BoxGeometry(0.72, 0.5, 0.12), [0, 0.24, -0.28], V],
-        [new THREE.BoxGeometry(0.76, 0.06, 0.14), [0, 0.5, -0.28], GOLD], [new THREE.BoxGeometry(0.1, 0.22, 0.6), [-0.36, 0.06, 0.02], W],
-        [new THREE.BoxGeometry(0.1, 0.22, 0.6), [0.36, 0.06, 0.02], W],
-        ...[[-0.3, -0.24], [0.3, -0.24], [-0.3, 0.24], [0.3, 0.24]].map(([x, z]) => [new THREE.BoxGeometry(0.07, 0.25, 0.07), [x, -0.3, z], W])] },
-      table: { dims: [0.6, 0.6, 0.6], cap: 14, parts: [
-        [new THREE.CylinderGeometry(0.3, 0.3, 0.05, 12), [0, 0.27, 0], W2], [new THREE.CylinderGeometry(0.04, 0.05, 0.48, 8), [0, 0.02, 0], GOLD],
-        [new THREE.CylinderGeometry(0.2, 0.22, 0.05, 10), [0, -0.27, 0], W2], [new THREE.CylinderGeometry(0.025, 0.025, 0.14, 6), [0.1, 0.36, 0], 0xf4ecd8],
-        [new THREE.ConeGeometry(0.02, 0.05, 5), [0.1, 0.455, 0], 0xffd23c]] },
-      clock: { dims: [0.56, 2.0, 0.42], cap: 10, parts: [
-        [new THREE.BoxGeometry(0.46, 1.4, 0.36), [0, -0.25, 0], W], [new THREE.BoxGeometry(0.56, 0.5, 0.42), [0, 0.7, 0], 0x5a2c16],
-        [new THREE.BoxGeometry(0.6, 0.08, 0.46), [0, 0.97, 0], GOLD], [new THREE.CylinderGeometry(0.17, 0.17, 0.02, 16), [0, 0.7, 0.215, Math.PI / 2], 0xf4ecd8],
-        [new THREE.BoxGeometry(0.015, 0.12, 0.01), [0, 0.75, 0.23], 0x000000], [new THREE.BoxGeometry(0.09, 0.015, 0.01), [0.04, 0.7, 0.23], 0x000000],
-        [new THREE.BoxGeometry(0.24, 0.8, 0.02), [0, -0.3, 0.185], 0x1a0a05], [new THREE.CylinderGeometry(0.07, 0.07, 0.02, 12), [0, -0.55, 0.19, Math.PI / 2], GOLD],
-        [new THREE.BoxGeometry(0.52, 0.12, 0.4), [0, -0.94, 0], W]] },
+    const VEL = 0x6e1f5c, GILT = 0xc8a040, GILT2 = 0xe8c870, WOOD = 0x4a2010, WOOD2 = 0x2e1408, MARB = 0xe8dccb, CREAM = 0xf4ecd8, INK = 0x14080a;
+    // a cabriole leg: knee out, ankle in, a little scroll foot (from the seat rail at `top` down to the floor at `bot`)
+    const leg = (P, x, z, top, bot, r = 0.022) => {
+      const sx = Math.sign(x), sz = Math.sign(z);
+      const c = new THREE.CubicBezierCurve3(new THREE.Vector3(x, top, z), new THREE.Vector3(x + sx * 0.05, top - (top - bot) * 0.3, z + sz * 0.05), new THREE.Vector3(x - sx * 0.03, top - (top - bot) * 0.75, z - sz * 0.03), new THREE.Vector3(x + sx * 0.012, bot + 0.02, z + sz * 0.012));
+      P.push({ geo: new THREE.TubeGeometry(c, 8, r, 6, false), color: GILT });
+      P.push({ geo: new THREE.SphereGeometry(r * 1.4, 8, 6), matrix: M4(x + sx * 0.014, bot + 0.018, z + sz * 0.014, 0, 0, 0, 1, 0.7, 1), color: GILT2 });
     };
+    const defs = {
+      // a Louis XV armchair (fauteuil): plum velvet, a medallion back, scrolled arms, cabriole legs, all giltwood
+      chair: { dims: [0.8, 0.85, 0.7], cap: 14, build(P) {
+        P.push({ geo: new THREE.BoxGeometry(0.62, 0.1, 0.5), matrix: M4(0, -0.075, 0.05), color: VEL });
+        P.push({ geo: new THREE.SphereGeometry(0.3, 14, 6, 0, TAU, 0, Math.PI / 2), matrix: M4(0, -0.026, 0.05, 0, 0, 0, 1.0, 0.13, 0.8), color: VEL });
+        P.push({ geo: new THREE.BoxGeometry(0.7, 0.07, 0.58), matrix: M4(0, -0.155, 0.04), color: GILT });
+        P.push({ geo: new THREE.SphereGeometry(0.05, 10, 8), matrix: M4(0, -0.165, 0.33, 0, 0, 0, 1.3, 0.75, 0.5), color: GILT2 });
+        for (const [x, z] of [[-0.3, 0.27], [0.3, 0.27], [-0.29, -0.2], [0.29, -0.2]]) leg(P, x, z, -0.18, -0.425);
+        // the medallion back: a velvet oval in a gilt frame, a carved crest, posts down to the seat
+        P.push({ geo: new THREE.CylinderGeometry(0.24, 0.24, 0.05, 22), matrix: M4(0, 0.16, -0.27, Math.PI / 2 - 0.12, 0, 0, 1.12, 1, 1), color: VEL });
+        P.push({ geo: new THREE.TorusGeometry(0.245, 0.022, 6, 28), matrix: M4(0, 0.16, -0.255, -0.12, 0, 0, 1.12, 1, 1), color: GILT });
+        P.push({ geo: new THREE.SphereGeometry(0.045, 10, 8), matrix: M4(0, 0.39, -0.29, 0, 0, 0, 1.6, 0.7, 0.6), color: GILT2 });
+        for (const [x, y] of [[-0.09, 0.24], [0.09, 0.24], [0, 0.16], [-0.09, 0.08], [0.09, 0.08]]) P.push({ geo: new THREE.SphereGeometry(0.011, 6, 4), matrix: M4(x, y, -0.238 - (y - 0.16) * 0.12), color: GILT2 });
+        for (const s of [-1, 1]) {
+          P.push({ geo: new THREE.CylinderGeometry(0.02, 0.022, 0.18, 8), matrix: M4(s * 0.24, -0.06, -0.26, -0.1, 0, 0), color: GILT });
+          // the arm: a scroll from the back post forward, a velvet pad on it, a support down to the seat
+          const a = new THREE.CubicBezierCurve3(new THREE.Vector3(s * 0.27, 0.14, -0.24), new THREE.Vector3(s * 0.34, 0.12, -0.1), new THREE.Vector3(s * 0.35, 0.1, 0.12), new THREE.Vector3(s * 0.33, 0.04, 0.25));
+          P.push({ geo: new THREE.TubeGeometry(a, 8, 0.022, 6, false), color: GILT });
+          P.push({ geo: new THREE.BoxGeometry(0.055, 0.03, 0.24), matrix: M4(s * 0.345, 0.125, -0.02), color: VEL });
+          P.push({ geo: new THREE.CylinderGeometry(0.016, 0.02, 0.18, 8), matrix: M4(s * 0.32, -0.06, 0.24), color: GILT });
+          P.push({ geo: new THREE.SphereGeometry(0.03, 8, 6), matrix: M4(s * 0.33, 0.04, 0.265), color: GILT2 });
+        }
+      } },
+      // a gueridon: a marble top in a gilt rim, a turned column on scrolled tripod feet, a lit candlestick
+      table: { dims: [0.6, 0.6, 0.6], cap: 14, build(P) {
+        P.push({ geo: new THREE.CylinderGeometry(0.29, 0.29, 0.035, 26), matrix: M4(0, 0.262, 0), color: MARB });
+        P.push({ geo: new THREE.TorusGeometry(0.29, 0.013, 5, 30), matrix: M4(0, 0.262, 0, Math.PI / 2, 0, 0), color: GILT });
+        P.push({ geo: new THREE.CylinderGeometry(0.262, 0.245, 0.05, 26, 1, true), matrix: M4(0, 0.222, 0), color: GILT });
+        for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; P.push({ geo: new THREE.SphereGeometry(0.018, 6, 4), matrix: M4(Math.cos(a) * 0.255, 0.195, Math.sin(a) * 0.255), color: GILT2 }); }
+        P.push({ geo: new THREE.LatheGeometry([[0, -0.2], [0.07, -0.2], [0.05, -0.17], [0.032, -0.1], [0.05, -0.04], [0.03, 0.02], [0.026, 0.12], [0.05, 0.17], [0.04, 0.2], [0, 0.2]].map(([x, y]) => new THREE.Vector2(x, y)), 12), color: GILT });
+        for (let k = 0; k < 3; k++) {
+          const a = k / 3 * TAU + 0.5, ca = Math.cos(a), sa = Math.sin(a);
+          const c = new THREE.CubicBezierCurve3(new THREE.Vector3(ca * 0.04, -0.16, sa * 0.04), new THREE.Vector3(ca * 0.14, -0.15, sa * 0.14), new THREE.Vector3(ca * 0.22, -0.2, sa * 0.22), new THREE.Vector3(ca * 0.25, -0.28, sa * 0.25));
+          P.push({ geo: new THREE.TubeGeometry(c, 8, 0.02, 6, false), color: GILT });
+          P.push({ geo: new THREE.SphereGeometry(0.03, 8, 6), matrix: M4(ca * 0.255, -0.28, sa * 0.255, 0, 0, 0, 1, 0.65, 1), color: GILT2 });
+        }
+        P.push({ geo: new THREE.CylinderGeometry(0.042, 0.052, 0.018, 12), matrix: M4(0.1, 0.289, 0.03), color: GILT });
+        P.push({ geo: new THREE.CylinderGeometry(0.011, 0.016, 0.07, 8), matrix: M4(0.1, 0.33, 0.03), color: GILT });
+        P.push({ geo: new THREE.CylinderGeometry(0.026, 0.014, 0.02, 10), matrix: M4(0.1, 0.372, 0.03), color: GILT2 });
+        P.push({ geo: new THREE.CylinderGeometry(0.015, 0.016, 0.09, 8), matrix: M4(0.1, 0.425, 0.03), color: CREAM });
+        P.push({ geo: new THREE.ConeGeometry(0.012, 0.035, 6), matrix: M4(0.1, 0.488, 0.03), color: 0xffd23c });
+      } },
+      // a longcase clock: bracket feet, a mahogany trunk with a glazed door and its pendulum bob, a hood with an
+      // enamel dial (hands, hour marks, a gilt bezel), columns, and a broken-arch crown with three finials
+      clock: { dims: [0.56, 2.0, 0.42], cap: 10, build(P) {
+        P.push({ geo: new THREE.BoxGeometry(0.52, 0.15, 0.4), matrix: M4(0, -0.905, 0), color: WOOD });
+        for (const [x, z] of [[-0.21, -0.15], [0.21, -0.15], [-0.21, 0.15], [0.21, 0.15]]) P.push({ geo: new THREE.BoxGeometry(0.08, 0.05, 0.08), matrix: M4(x, -0.975, z), color: GILT });
+        P.push({ geo: new THREE.BoxGeometry(0.54, 0.03, 0.41), matrix: M4(0, -0.82, 0), color: GILT });
+        P.push({ geo: new THREE.BoxGeometry(0.42, 1.12, 0.33), matrix: M4(0, -0.25, 0), color: WOOD });
+        P.push({ geo: new THREE.BoxGeometry(0.3, 0.86, 0.02), matrix: M4(0, -0.27, 0.17), color: WOOD2 });
+        P.push({ geo: new THREE.BoxGeometry(0.17, 0.42, 0.012), matrix: M4(0, -0.1, 0.18), color: 0x18303a });
+        P.push({ geo: new THREE.BoxGeometry(0.008, 0.3, 0.006), matrix: M4(0, -0.02, 0.188), color: GILT });
+        P.push({ geo: new THREE.CylinderGeometry(0.05, 0.05, 0.012, 16), matrix: M4(0, -0.2, 0.19, Math.PI / 2, 0, 0), color: GILT2 });
+        for (const s of [-1, 1]) P.push({ geo: new THREE.BoxGeometry(0.03, 1.1, 0.03), matrix: M4(s * 0.2, -0.25, 0.16), color: GILT });
+        P.push({ geo: new THREE.BoxGeometry(0.5, 0.04, 0.38), matrix: M4(0, 0.33, 0), color: GILT });
+        P.push({ geo: new THREE.BoxGeometry(0.54, 0.48, 0.4), matrix: M4(0, 0.6, 0), color: WOOD });
+        P.push({ geo: new THREE.CylinderGeometry(0.17, 0.17, 0.02, 30), matrix: M4(0, 0.6, 0.205, Math.PI / 2, 0, 0), color: CREAM });
+        P.push({ geo: new THREE.TorusGeometry(0.17, 0.014, 5, 30), matrix: M4(0, 0.6, 0.214), color: GILT });
+        for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; P.push({ geo: new THREE.BoxGeometry(0.012, k % 3 ? 0.022 : 0.036, 0.006), matrix: M4(Math.sin(a) * 0.14, 0.6 + Math.cos(a) * 0.14, 0.218, 0, 0, -a), color: INK }); }
+        P.push({ geo: new THREE.BoxGeometry(0.014, 0.08, 0.006), matrix: M4(0.028, 0.622, 0.222, 0, 0, -0.9), color: INK });
+        P.push({ geo: new THREE.BoxGeometry(0.009, 0.125, 0.006), matrix: M4(-0.018, 0.656, 0.224, 0, 0, 0.3), color: INK });
+        P.push({ geo: new THREE.SphereGeometry(0.014, 8, 6), matrix: M4(0, 0.6, 0.226), color: GILT2 });
+        for (const [x, y] of [[-0.21, 0.42], [0.21, 0.42], [-0.21, 0.78], [0.21, 0.78]]) P.push({ geo: new THREE.SphereGeometry(0.028, 8, 6), matrix: M4(x, y, 0.205, 0, 0, 0, 1, 1, 0.4), color: GILT2 });
+        for (const s of [-1, 1]) P.push({ geo: new THREE.CylinderGeometry(0.018, 0.018, 0.46, 8), matrix: M4(s * 0.25, 0.6, 0.18), color: GILT });
+        P.push({ geo: new THREE.BoxGeometry(0.58, 0.05, 0.42), matrix: M4(0, 0.865, 0), color: WOOD });
+        for (const s of [-1, 1]) P.push({ geo: new THREE.TorusGeometry(0.06, 0.018, 5, 10, Math.PI), matrix: M4(s * 0.12, 0.89, 0.2), color: WOOD });
+        for (const [x, y] of [[-0.22, 0.925], [0, 0.95], [0.22, 0.925]]) { P.push({ geo: new THREE.CylinderGeometry(0.02, 0.03, 0.04, 8), matrix: M4(x, y - 0.03, 0.05), color: GILT }); P.push({ geo: new THREE.SphereGeometry(0.028, 8, 6), matrix: M4(x, y + 0.01, 0.05, 0, 0, 0, 1, 1.4, 1), color: GILT2 }); }
+      } },
+    };
+    const planes = G.arena.planes;
     for (const k in defs) {
-      const d = defs[k];
-      const geo = mergeGeos(d.parts.map(([g, p, c]) => ({ geo: g, matrix: M4(p[0], p[1], p[2], p[3] || 0, 0, 0), color: c })));
-      const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, clippingPlanes: G.arena.planes }), d.cap);
+      const d = defs[k], parts = []; d.build(parts);
+      const mesh = new THREE.InstancedMesh(mergeGeos(parts), CircusShade.material({ gloss: 0.95, shine: 55, rim: 0.55, emit: 0.22, clip: planes }), d.cap);
       mesh.frustumCulled = false; mesh.count = 0; scene.add(mesh);
       const items = []; for (let i = 0; i < d.cap; i++) items.push({ type: k, active: false, owner: null, col: 0, row: 0, t0: 0, flip: false, spin: 0, yaw: 0, key: { grazed: false }, min: new THREE.Vector3(), max: new THREE.Vector3() });
       this.types[k] = { dims: d.dims, mesh, items };
     }
-    const L = 1.55;
-    const pgeo = mergeGeos([
-      { geo: new THREE.BoxGeometry(0.035, L, 0.035), matrix: M4(0, -L / 2, 0), color: GOLD },
-      { geo: new THREE.CylinderGeometry(0.19, 0.19, 0.05, 18), matrix: M4(0, -L, 0, Math.PI / 2, 0, 0), color: 0xd8b050 },
-      { geo: new THREE.TorusGeometry(0.19, 0.02, 4, 18), matrix: M4(0, -L, 0.03), color: 0x806020 },
-      { geo: new THREE.BoxGeometry(0.1, 0.06, 0.1), matrix: M4(0, 0, 0), color: 0x806020 },
-    ]);
+    // the corridor's pendulums: a gilt lyre rod and a brass bob embossed with a sunburst (the bob is the hazard's 0.19 m)
+    const L = 1.55, pp = [];
+    pp.push({ geo: new THREE.BoxGeometry(0.1, 0.06, 0.1), color: 0x806020 });
+    for (const s of [-1, 1]) pp.push({ geo: new THREE.CylinderGeometry(0.009, 0.009, L - 0.12, 6), matrix: M4(s * 0.022, -L / 2 + 0.02, 0), color: GILT });
+    for (let k = 1; k < 5; k++) pp.push({ geo: new THREE.BoxGeometry(0.06, 0.012, 0.02), matrix: M4(0, -k * L / 5.2, 0), color: GILT2 });
+    pp.push({ geo: new THREE.CylinderGeometry(0.19, 0.19, 0.045, 28), matrix: M4(0, -L, 0, Math.PI / 2, 0, 0), color: 0xd8b050 });
+    pp.push({ geo: new THREE.TorusGeometry(0.185, 0.016, 5, 28), matrix: M4(0, -L, 0.022), color: GILT2 });
+    pp.push({ geo: new THREE.TorusGeometry(0.11, 0.008, 4, 24), matrix: M4(0, -L, 0.024), color: 0x8a6420 });
+    pp.push({ geo: new THREE.SphereGeometry(0.04, 10, 8), matrix: M4(0, -L, 0.025, 0, 0, 0, 1, 1, 0.5), color: GILT2 });
+    for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; pp.push({ geo: new THREE.BoxGeometry(0.012, 0.11, 0.006), matrix: M4(Math.sin(a) * 0.115, -L + Math.cos(a) * 0.115, 0.025, 0, 0, -a), color: GILT2 }); }
+    pp.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.05, 10), matrix: M4(0, -L + 0.2, 0), color: GILT });
+    const pgeo = mergeGeos(pp), pmat = CircusShade.material({ gloss: 1.6, shine: 90, rim: 0.7, emit: 0.26, clip: planes });
     for (let i = 0; i < 4; i++) {
-      const m = new THREE.Mesh(pgeo, new THREE.MeshBasicMaterial({ vertexColors: true, clippingPlanes: G.arena.planes }));
+      const m = new THREE.Mesh(pgeo, pmat);
       m.visible = false; scene.add(m);
       this.pendulums.push({ mesh: m, L, active: false, owner: null, t0: 0, key: { grazed: false }, pivot: new THREE.Vector3(), bob: new THREE.Vector3() });
     }
@@ -6403,6 +6655,7 @@ class ClockworkCorridor extends Pattern {
     this.safeLane = [1, 1];
     this.travel = this.stretch(10);
     G.ui.showPrompt('The hallway stretches...', 2.0, '#2affd5');
+    CorridorKit.open();
   }
   laneX(col) { return G.arena.center.x + (col - 1) * 1.0; }
   laneY(row, h) { const A = G.arena; return row === 0 ? A.min.y + h / 2 : row === 2 ? A.max.y - h / 2 : A.center.y; }
@@ -6494,7 +6747,7 @@ class ClockworkCorridor extends Pattern {
   }
   onEnd() {
     const A = G.arena;
-    A.resetBox(3 * this.bd); A.soulMinZ = null; A.gridTex.offset.set(0, 0);
+    A.resetBox(3 * this.bd); A.soulMinZ = null; A.gridTex.offset.set(0, 0); CorridorKit.close();
     for (const k in FurnKit.types) { for (const it of FurnKit.types[k].items) if (it.owner === this) it.active = false; FurnKit.types[k].mesh.count = 0; }
     for (const p of FurnKit.pendulums) if (p.owner === this) { p.active = false; p.mesh.visible = false; }
   }
@@ -6504,22 +6757,89 @@ class ClockworkCorridor extends Pattern {
 //  7. STROBE BALLROOM - checker dance floor, red tiles raise damage pillars,
 //     disco-ball bullets spiral (photosensitivity aware)
 // ---------------------------------------------------------------------------
+// STROBE BALLROOM's floor: glass tiles lit from below (the pattern colours each one), pillars of light, a mirrorball
+const BALL_TILE_VS = `varying vec2 vUv; varying vec3 vCol; varying vec3 vN; varying vec3 vW;
+  void main(){ vUv = uv; vN = normal; vCol = vec3(1.0);
+    #ifdef USE_INSTANCING_COLOR
+      vCol = instanceColor;
+    #endif
+    vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+const BALL_TILE_FS = `uniform float uTime; varying vec2 vUv; varying vec3 vCol; varying vec3 vN; varying vec3 vW;
+  void main(){
+    vec2 q = abs(vUv - 0.5) * 2.0; float e = max(q.x, q.y);
+    // a bright core under the glass, a crisp bevel line, dark gilt grout at the very edge
+    float core = 1.0 - e * 0.6;
+    float bevel = smoothstep(0.78, 0.84, e) * (1.0 - smoothstep(0.9, 0.95, e));
+    float grout = smoothstep(0.95, 0.985, e);
+    vec3 c = vCol * (0.5 + 0.9 * core) + vCol * bevel * 0.9 + vec3(0.02, 0.015, 0.03);
+    c = mix(c, vec3(0.16, 0.11, 0.04) + vCol * 0.12, grout);
+    c += pow(max(0.0, sin((vW.x + vW.z) * 2.2 - uTime * 1.3)), 24.0) * 0.16 * (0.6 + vCol);   // a glint drifting across
+    c = mix(vCol * 0.35 + vec3(0.03), c, step(0.5, vN.y));
+    gl_FragColor = vec4(c, 1.0);
+    #include <colorspace_fragment>
+  }`;
+const BALL_PILLAR_VS = `varying vec2 vUv; varying vec3 vCol; varying vec3 vN; varying float vY; varying float vD;
+  void main(){ vUv = uv; vN = normal; vY = position.y; vCol = vec3(1.0);
+    #ifdef USE_INSTANCING_COLOR
+      vCol = instanceColor;
+    #endif
+    vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vD = length(w.xyz - cameraPosition);
+    gl_Position = projectionMatrix * viewMatrix * w; }`;
+// glass columns of light: nearly clear faces, bright edges and a glow rising off the tile. Many of them around you
+// add up to a clear pink cage, never a white-out (the old solid additive pillars washed the whole view out)
+const BALL_PILLAR_FS = `uniform float uTime; varying vec2 vUv; varying vec3 vCol; varying vec3 vN; varying float vY; varying float vD;
+  void main(){
+    float side = 1.0 - step(0.5, abs(vN.y));
+    float edge = smoothstep(0.84, 0.97, abs(vUv.x - 0.5) * 2.0) + smoothstep(0.955, 0.995, vY) * 0.8;
+    float base = exp(-vY * 3.5);
+    float scan = 0.7 + 0.3 * sin(vY * 30.0 - uTime * 8.0);
+    float cap = 0.1 + smoothstep(0.84, 0.97, max(abs(vUv.x - 0.5), abs(vUv.y - 0.5)) * 2.0) * 0.6;
+    float a = side * (0.07 * scan + 0.4 * base + edge * (0.55 + 0.3 * base)) + (1.0 - side) * cap;
+    a *= smoothstep(0.35, 1.25, vD);   // one rising right beside (or under) your head doesn't fill your eyes
+    gl_FragColor = vec4(vCol * a, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// (the pillars are one-sided: from inside one, as when one rises under your head, you see none of it)
 const BallKit = {
   ready: false,
   init() {
     if (this.ready) return; this.ready = true;
-    this.tiles = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 36);
+    this.U = { uTime: { value: 0 } }; this.PU = { uTime: { value: 0 } };
+    this.tiles = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({ uniforms: this.U, vertexShader: BALL_TILE_VS, fragmentShader: BALL_TILE_FS }), 36);
     const pg = new THREE.BoxGeometry(1, 1, 1); pg.translate(0, 0.5, 0);
-    this.pillars = new THREE.InstancedMesh(pg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }), 36);
+    this.pillars = new THREE.InstancedMesh(pg, new THREE.ShaderMaterial({ uniforms: this.PU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexShader: BALL_PILLAR_VS, fragmentShader: BALL_PILLAR_FS }), 36);
     for (const m of [this.tiles, this.pillars]) { m.frustumCulled = false; m.setColorAt(0, _c1.setRGB(1, 1, 1)); }
     this.pillars.count = 0;
-    let dg = new THREE.IcosahedronGeometry(0.2, 1); if (dg.index) dg = dg.toNonIndexed();
-    const col = new Float32Array(dg.attributes.position.count * 3);
-    for (let f = 0; f < col.length / 9; f++) { const v = rand(0.3, 1); for (let k = 0; k < 9; k++) col[f * 9 + k] = v; }
+    // the mirrorball: rings of mirror tiles, a gilt cap, and a rod up into the dark above the box
+    let dg = new THREE.SphereGeometry(0.2, 20, 14).toNonIndexed(); dg.computeVertexNormals();
+    const n = dg.attributes.position.count, col = new Float32Array(n * 3);
+    for (let f = 0; f < n / 6; f++) { const v = Math.random() < 0.14 ? 1 : 0.4 + Math.random() * 0.45; for (let k = 0; k < 18 && f * 18 + k < col.length; k++) col[f * 18 + k] = v; }
     dg.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    this.disco = new THREE.Mesh(dg, new THREE.MeshBasicMaterial({ vertexColors: true }));
+    this.disco = new THREE.Mesh(dg, CircusShade.material({ gloss: 2.6, shine: 160, rim: 1.0, emit: 0.42 }));
+    this.disco.add(new THREE.Mesh(mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.035, 0.05, 0.05, 12), matrix: M4(0, 0.215, 0) },
+      { geo: new THREE.TorusGeometry(0.018, 0.005, 4, 10), matrix: M4(0, 0.255, 0) },
+      { geo: new THREE.CylinderGeometry(0.006, 0.006, 8, 6), matrix: M4(0, 4.27, 0) },
+    ]), CircusShade.material({ color: 0xc8a040, gloss: 1.4, shine: 80, rim: 0.6, emit: 0.2, vertexColors: false })));
     this.group = new THREE.Group(); this.group.add(this.tiles, this.pillars); this.group.visible = false; scene.add(this.group);
     this.disco.visible = false; scene.add(this.disco);
+    // where the mirrorball throws its specks (a fixed spray of directions, turned with the ball)
+    this.rays = []; for (let i = 0; i < 30; i++) { const y = -0.15 - 0.85 * (i + 0.5) / 30, r = Math.sqrt(1 - y * y), a = i * 2.39996; this.rays.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r)); }
+  },
+  // specks of light wheel round the box from the mirrorball; it lights the room in slow-changing colours
+  fx(dt) {
+    const red = Flash.reduced;
+    this.U.uTime.value += dt; this.PU.uTime.value += dt * (red ? 0.35 : 1);
+    if (!this.disco.visible) return;
+    const A = G.arena, c = this.disco.position, glow = G.fx.glow, ry = this.disco.rotation.y, cs = Math.cos(ry), sn = Math.sin(ry);
+    for (let i = 0; i < this.rays.length; i++) {
+      const r = this.rays[i]; _v1.set(r.x * cs + r.z * sn, r.y, -r.x * sn + r.z * cs);
+      const d = rayBoxExit(c, _v1) - 0.02;
+      _c1.setHSL((i * 0.13 + G.time * 0.04) % 1, 0.6, 0.72);
+      glow.add(c.x + _v1.x * d, c.y + _v1.y * d, c.z + _v1.z * d, 0.075, _c1.r, _c1.g, _c1.b, red ? 0.35 : 0.6, 0);
+    }
+    _c1.setHSL((G.time * 0.05) % 1, 0.7, 0.5);
+    ManorLight.hold(c, _c1.r * 0.5, _c1.g * 0.5, _c1.b * 0.5, 3.5);
   },
 };
 function discoUpdate(owner, b, dt) {
@@ -7104,6 +7424,26 @@ const ManorTex = {
       g.fillStyle = '#c8a040'; g.beginPath(); g.arc(C, C, 6, 0, TAU); g.fill();
     });
   },
+  // ---- the CLOCKWORK CORRIDOR's runner: deep red wool, gold borders with a key band, medallions down the middle (two per tile)
+  make_runner() {
+    const W = 256, H = 512;
+    return softTex(W, H, (g) => {
+      pixelFill(g, W, H, (x, y) => { const n = 0.8 + 0.3 * ONoise.fbm2(x / 18, y / 18, 3, 64); return [92 * n, 16 * n, 28 * n]; });
+      g.fillStyle = '#170610'; g.fillRect(0, 0, 30, H); g.fillRect(W - 30, 0, 30, H);
+      g.fillStyle = '#c8a040'; g.fillRect(30, 0, 4, H); g.fillRect(W - 34, 0, 4, H); g.fillRect(40, 0, 2, H); g.fillRect(W - 42, 0, 2, H);
+      g.strokeStyle = '#a8843a'; g.lineWidth = 3;
+      for (let y = 0; y < H; y += 32) for (const x0 of [7, W - 23]) { g.beginPath(); g.moveTo(x0, y + 4); g.lineTo(x0 + 16, y + 4); g.lineTo(x0 + 16, y + 22); g.lineTo(x0 + 6, y + 22); g.lineTo(x0 + 6, y + 13); g.lineTo(x0 + 11, y + 13); g.stroke(); }
+      const lozenge = (cx, cy, rx, ry, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(cx, cy - ry); g.lineTo(cx + rx, cy); g.lineTo(cx, cy + ry); g.lineTo(cx - rx, cy); g.fill(); };
+      for (const cy of [128, 384]) {
+        lozenge(128, cy, 70, 96, '#170610'); lozenge(128, cy, 62, 86, '#c8a040'); lozenge(128, cy, 56, 78, '#4a0c22');
+        lozenge(128, cy, 30, 42, '#a8843a'); lozenge(128, cy, 22, 31, '#6a1430');
+        g.fillStyle = '#e8c870'; g.beginPath(); g.arc(128, cy, 7, 0, TAU); g.fill();
+        for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; g.fillStyle = '#a8843a'; g.beginPath(); g.arc(128 + Math.cos(a) * 44, cy + Math.sin(a) * 60, 4, 0, TAU); g.fill(); }
+      }
+      for (const cy of [0, 256, 512]) { lozenge(128, cy, 26, 18, '#a8843a'); lozenge(128, cy, 16, 11, '#170610'); }
+      pixelNoise(g, W, H, 0.16, 0.05);
+    }, { repeat: true });
+  },
   // ---- grey-around-0.5 detail for plaster, stone and wood (world-space tri-planar; linear)
   make_noise() {
     const N = 128;
@@ -7369,8 +7709,9 @@ function mSconce(P, n = 2) {
   return fl;
 }
 // a crystal chandelier: gold rings and scrolled arms, cream candles, a canopy and chain (crystals are instanced)
-// returns { geo, candles: [local Vector3], crystals: [{ x, y, z, len }] }
-function mChandelier(R, tiers = 2, armsN = 10) {
+// returns { geo, candles: [local Vector3], crystals: [{ x, y, z, len }] } (mChandelierParts: the parts, unmerged)
+function mChandelier(R, tiers = 2, armsN = 10) { const c = mChandelierParts(R, tiers, armsN); return { geo: mergeGeos(c.P), candles: c.candles, crystals: c.crystals }; }
+function mChandelierParts(R, tiers = 2, armsN = 10) {
   const P = [], B = 0xc8a040, B2 = 0xe8c870, C = 0xf4ecd8, candles = [], crystals = [];
   P.push({ geo: new THREE.LatheGeometry([[0, 0], [0.16, 0], [0.22, -0.18], [0.16, -0.4], [0.24, -0.62], [0.12, -0.9], [0.2, -1.15], [0.36, -1.32], [0.1, -1.55], [0, -1.6]].map(([x, y]) => new THREE.Vector2(x * R, y * R)), 12), color: B });
   for (let t = 0; t < tiers; t++) {
@@ -7395,7 +7736,7 @@ function mChandelier(R, tiers = 2, armsN = 10) {
   }
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; crystals.push({ x: Math.cos(a) * 0.32 * R, y: -1.38 * R, z: Math.sin(a) * 0.32 * R, len: 0.3 * R }); }
   crystals.push({ x: 0, y: -1.62 * R, z: 0, len: 0.5 * R });
-  return { geo: mergeGeos(P), candles, crystals };
+  return { P, candles, crystals };
 }
 // the ghostly guests: a waltzing couple (him facing -z, her facing +z), a lady, a gentleman (feet at y = 0)
 const ManorGhostGeo = {
@@ -7540,7 +7881,10 @@ const MANOR_LOOKS = [
 const ManorLight = {
   pts: [],   // { pos, c, radius, t, life }
   flash(pos, r, g, b, radius, life) { if (this.pts.length >= 2) this.pts.shift(); this.pts.push({ pos: pos.clone(), c: [r, g, b], radius, t: 0, life }); },
-  clear() { this.pts.length = 0; },
+  // a light held for this frame only (an open door, a firing portrait, the mirrorball): kits call it every frame
+  held: [],
+  hold(pos, r, g, b, radius) { if (this.held.length < 2) this.held.push({ x: pos.x, y: pos.y, z: pos.z, r, g, b, radius }); },
+  clear() { this.pts.length = 0; this.held.length = 0; },
   // boss 2's copy-pasted manor attacks are lit too: a cool server-room light while he is on
   forKiddie() {
     const U = CircusShade.uniforms();
@@ -7856,7 +8200,7 @@ const HallKit = {
     this.setPhase(0, true);
     this.ignite = 0; this.out = 0; this.outOn = false; this.dawnK = 0; this.dawnOn = false; this.tired = false;
     this.flashK = 0; this.boltT = rand(4, 9); this.strikes = 0; this.peelSpike = 0;
-    this.wingOpen = 0; this.sinkTarget = 0;
+    this.wingOpen = 0; this.sinkTarget = 0; this.party = 0; this.stare = 0; this.attend = 0;
     this.ready = true;
   },
   portraits: [],
@@ -7894,6 +8238,10 @@ const HallKit = {
   lightsOut() { this.outOn = true; },
   // the SPARE ending: dawn comes up in the windows, the guests drift away
   dawn() { this.dawnOn = true; },
+  // the chandeliers jump on their chains (a chandelier bursting in the box, a door slamming)
+  jolt(k) { if (!this.ready) return; for (const c of this.chands) c.sw += (Math.random() - 0.5) * 2 * k; },
+  // a door in the hall bangs open and shut (DOOR SLAM's slams)
+  doorBang() { if (!this.ready || this.outOn || this.dawnOn) return; const d = pick(this.leafInfo); d.flap = Math.max(d.flap, 0.8); },
   // a retry puts everything back
   resetLook(p) { this.outOn = false; this.out = 0; this.dawnOn = false; this.dawnK = 0; this.setPhase(p, true); for (const t of this.tileHome) t.lift = 0; this.fragList.length = 0; this.sinkTarget = 0; },
   // CLOCKWORK CORRIDOR: the middle of the balustrade sinks into the floor while the hallway stands there
@@ -7908,11 +8256,16 @@ const HallKit = {
   update(dt, rdt) {
     if (!this.ready) return;
     const t = G.time, Mn = MANOR, L = this.target, l = this.look, red = Flash.reduced;
+    // attacks the hall joins in on: STROBE BALLROOM's party lights, PORTRAIT GAZE's stare, GUEST LIST's attention
+    const B = G.battle, atk = B && B.state === 'BOSS_ATTACK' ? B.attackName : null;
+    this.party = damp(this.party || 0, atk === 'ballroom' && !this.outOn ? 1 : 0, 1.4, rdt);
+    this.stare = damp(this.stare || 0, atk === 'portrait' ? 1 : 0, 2, rdt);
+    this.attend = damp(this.attend || 0, atk === 'guests' ? 1 : 0, 1.5, rdt);
     // the mood eases toward the phase's look; tired: the candles burn low
     const k = 1 - Math.exp(-rdt * 0.8);
     _v1.fromArray(L.key); l.key.lerp(_v1, k); _v1.fromArray(L.sky); l.sky.lerp(_v1, k); _v1.fromArray(L.ground); l.ground.lerp(_v1, k); _v1.fromArray(L.rim); l.rim.lerp(_v1, k); _v1.fromArray(L.eye); l.eye.lerp(_v1, k);
     l.keyK = lerp(l.keyK, L.keyK, k); l.storm = lerp(l.storm, L.storm, k); l.ghostA = lerp(l.ghostA, L.ghostA, k); l.sway = lerp(l.sway, L.sway, k);
-    l.candle = lerp(l.candle, L.candle * (this.tired ? 0.55 : 1), k);
+    l.candle = lerp(l.candle, L.candle * (this.tired ? 0.55 : 1) , k);
     l.peel = lerp(l.peel, L.peel, 1 - Math.exp(-rdt * 0.35));
     this.ignite = Math.min(1, this.ignite + rdt * 0.32);
     if (this.outOn) this.out = Math.min(1, this.out + rdt * 0.3);
@@ -7982,18 +8335,18 @@ const HallKit = {
     this.leaves.instanceMatrix.needsUpdate = true;
     // the guests
     const gU = this.ghostU; gU.uTime.value = t;
-    gU.uA.value = l.ghostA * dim * outK * smooth01(this.ignite * 1.5 - 0.3) * (1 - this.dawnK) * (this.tired ? 0.5 : 1);
+    gU.uA.value = l.ghostA * dim * outK * smooth01(this.ignite * 1.5 - 0.3) * (1 - this.dawnK) * (this.tired ? 0.5 : 1) * (1 + 0.35 * this.party + 0.3 * this.attend);
     gU.uGlitch.value = this.phase >= 2 ? 0.4 + G.fx.glitch * 0.6 : G.fx.glitch * 0.4;
     gU.uCol.value.setRGB(this.phase >= 2 ? 1.0 : 0.55, this.phase >= 2 ? 0.45 : 1.0, this.phase >= 2 ? 0.75 : 0.92);
     const ghostsOn = gU.uA.value > 0.01;
     this.dancers.visible = this.ladies.visible = this.gents.visible = ghostsOn;
     if (ghostsOn) {
-      const bar = G.clock.beat / 4, watch = this.phase >= 1 ? 1 : 0;
+      const bar = G.clock.beat / 4, watch = Math.max(this.phase >= 1 ? 1 : 0, this.attend);
       for (let i = 0; i < this.dance.length; i++) {
         const d = this.dance[i];
         d.turn = damp(d.turn, watch, 1.2, rdt);
         d.a += rdt * 0.09 * (1 - d.turn * 0.85) * (this.phase >= 2 ? 2.2 : 1);
-        d.spin += rdt * (2.4 * (1 - d.turn) + (this.phase >= 2 ? 3 : 0));
+        d.spin += rdt * (2.4 * (1 - d.turn) * (1 + this.party * 1.2) + (this.phase >= 2 ? 3 : 0));
         const x = Math.cos(d.a) * d.r, z = Mn.BOSS_Z + Math.sin(d.a) * d.r * 0.7;
         const faceYou = Math.atan2(-x, -z);
         const yaw = lerp(d.spin, faceYou, d.turn) + (this.phase >= 2 ? Math.sin(t * 9 + i) * 0.4 : 0);
@@ -8011,7 +8364,7 @@ const HallKit = {
       this.ladies.instanceMatrix.needsUpdate = true; this.gents.instanceMatrix.needsUpdate = true;
     }
     // portrait eyes: in the EAST WING they open, glow and watch you
-    const eyeK = (this.phase >= 1 ? (this.phase >= 2 ? 1 : 0.6) : 0) * dim * outK * (1 - this.dawnK);
+    const eyeK = Math.max(this.phase >= 1 ? (this.phase >= 2 ? 1 : 0.6) : 0, this.stare * 0.8) * dim * outK * (1 - this.dawnK);
     if (eyeK > 0.02) for (const e of this.eyes) { const c = e.prop ? [1, 0.82, 0.3] : e.cat ? [0.8, 1, 0.3] : [1, 0.15, 0.2]; glow.add(e.p.x, e.p.y, e.p.z, 0.14, c[0] * eyeK, c[1] * eyeK, c[2] * eyeK, 0.9, 0); }
     // phase III: tears in the paper, fragments drift up, the middle of the ceiling comes loose
     const peel = clamp(l.peel + this.peelSpike, 0, 1) * (1 - this.dawnK);
@@ -8065,6 +8418,8 @@ const HallKit = {
       const f = 1 - p.t / p.life;
       U.uPtPos.value[n].set(p.pos.x, p.pos.y, p.pos.z, p.radius); U.uPtCol.value[n].set(p.c[0] * f, p.c[1] * f, p.c[2] * f); n++;
     }
+    for (const h of ManorLight.held) { if (n >= 4) break; U.uPtPos.value[n].set(h.x, h.y, h.z, h.radius); U.uPtCol.value[n].set(h.r * dim, h.g * dim, h.b * dim); n++; }
+    ManorLight.held.length = 0;
     if (G.boss && G.boss.root.visible && G.boss.headWorldPos && n < 4) {
       G.boss.headWorldPos(_v2); const f = (G.boss.eyeK !== undefined ? G.boss.eyeK : 1) * dim * (G.boss.fade !== undefined ? G.boss.fade : 1);
       U.uPtPos.value[n].set(_v2.x, _v2.y + 0.4, _v2.z + 1.4, 8); U.uPtCol.value[n].set(l.eye.x * f * 0.9, l.eye.y * f * 0.9, l.eye.z * f * 0.9); n++;
@@ -8075,9 +8430,17 @@ const HallKit = {
     // spots: the candle pool on the ballroom floor around him, the pool on the gallery, the moonbeam, a stage light on him
     let s = 0;
     const spot = (px, py, pz, tx, ty, tz, outer, inner, r, g, b) => { _v3.set(tx - px, ty - py, tz - pz).normalize(); U.uSpPos.value[s].set(px, py, pz, Math.cos(outer)); U.uSpDir.value[s].set(_v3.x, _v3.y, _v3.z, Math.cos(inner)); U.uSpCol.value[s].set(r, g, b); s++; };
-    const ck = l.candle * dim * outK * ig;
-    spot(0, 10, -10, 0, MANOR.FLOOR, -9, 0.75, 0.3, 0.95 * ck * l.key.x, 0.75 * ck * l.key.y, 0.5 * ck * l.key.z);
-    spot(0, 8, 2.6, 0, 0, 0.4, 0.62, 0.25, 0.75 * ck, 0.55 * ck, 0.32 * ck);
+    const ck = l.candle * dim * outK * ig, pk = this.party;
+    if (pk > 0.01) {
+      // STROBE BALLROOM: no strobing in the hall itself, just two coloured pools drifting slowly over the floor
+      const tt = G.time * (Flash.reduced ? 0.35 : 0.7), h1 = (G.time * 0.05) % 1;
+      _c1.setHSL(h1, 0.85, 0.5); _c2.setHSL((h1 + 0.45) % 1, 0.85, 0.5);
+      spot(Math.sin(tt) * 3, 10, -10, Math.sin(tt * 1.3) * 5, MANOR.FLOOR, -9 + Math.cos(tt) * 3, 0.75, 0.3, lerp(0.95 * ck * l.key.x, _c1.r * 1.3 * ck, pk), lerp(0.75 * ck * l.key.y, _c1.g * 1.3 * ck, pk), lerp(0.5 * ck * l.key.z, _c1.b * 1.3 * ck, pk));
+      spot(0, 8, 2.6, Math.cos(tt * 0.8) * 1.2, 0, 0.4, 0.62, 0.25, lerp(0.75 * ck, _c2.r * ck, pk), lerp(0.55 * ck, _c2.g * ck, pk), lerp(0.32 * ck, _c2.b * ck, pk));
+    } else {
+      spot(0, 10, -10, 0, MANOR.FLOOR, -9, 0.75, 0.3, 0.95 * ck * l.key.x, 0.75 * ck * l.key.y, 0.5 * ck * l.key.z);
+      spot(0, 8, 2.6, 0, 0, 0.4, 0.62, 0.25, 0.75 * ck, 0.55 * ck, 0.32 * ck);
+    }
     const mk = (0.3 + l.storm * 0.3 + fl * 1.6) * dim * outK + dawn * 0.9;
     spot(0, 5.5, MANOR.FAR + 0.5, 0, MANOR.FLOOR, -11, 0.42, 0.15, (0.45 + dawn * 0.6) * mk, (0.5 + dawn * 0.2) * mk, (0.95 - dawn * 0.5) * mk);
     const bk = dim * outK * ig * (this.phase >= 2 ? 0.9 + 0.3 * G.fx.beatPulse : 0.6);
@@ -8543,6 +8906,283 @@ class ProprietorModel {
     if (this.coreU.uOpen.value > 0.1) { this.chestPos(_v2); G.fx.glow.add(_v2.x, _v2.y, _v2.z + 0.1, 2.2 * this.coreU.uOpen.value, 0.7, 0.3, 1, 0.45, 0); }
   }
 }
+
+// ---------------------------------------------------------------------------
+//  The manor's attacks, remastered: lit bullet shapes for boss 1's pools (boss 2's copies borrow them),
+//  the kits' per-frame flourishes, torn paper scraps, the CLOCKWORK CORRIDOR's hallway, and a prewarm.
+//  Gameplay is untouched: every shape keeps its pool's hit radius, scale and facing.
+// ---------------------------------------------------------------------------
+const ManorBullets = {
+  // a faceted crystal drop; the point leads along +Y (shards face their flight)
+  shard() {
+    let g = new THREE.LatheGeometry([[0, -0.85], [0.42, -0.62], [0.62, -0.14], [0.52, 0.3], [0, 1.0]].map(([x, y]) => new THREE.Vector2(x, y)), 6);
+    g = g.toNonIndexed(); g.computeVertexNormals();
+    const n = g.attributes.position.count, col = new Float32Array(n * 3);
+    for (let f = 0; f < n / 3; f++) { const v = Math.random() < 0.2 ? 1 : 0.74 + Math.random() * 0.2; for (let k = 0; k < 3; k++) { const i = (f * 3 + k) * 3; col[i] = 0.74 * v; col[i + 1] = 0.92 * v; col[i + 2] = v; } }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+  },
+  // a silver skeleton key: a trefoil bow, a collar, the shaft and a toothed bit (the bit leads along +Y)
+  key() {
+    const S = 0xf4f4ff, D = 0xb4b8d4;
+    return mergeGeos([
+      { geo: new THREE.TorusGeometry(0.03, 0.0075, 5, 16), matrix: M4(0, -0.072, 0), color: S },
+      { geo: new THREE.TorusGeometry(0.012, 0.0048, 4, 10), matrix: M4(0, -0.104, 0), color: S },
+      { geo: new THREE.TorusGeometry(0.012, 0.0048, 4, 10), matrix: M4(-0.032, -0.074, 0), color: S },
+      { geo: new THREE.TorusGeometry(0.012, 0.0048, 4, 10), matrix: M4(0.032, -0.074, 0), color: S },
+      { geo: new THREE.SphereGeometry(0.009, 6, 4), matrix: M4(0, -0.072, 0), color: D },
+      { geo: new THREE.CylinderGeometry(0.011, 0.011, 0.012, 8), matrix: M4(0, -0.036, 0), color: D },
+      { geo: new THREE.CylinderGeometry(0.0065, 0.0065, 0.115, 6), matrix: M4(0, 0.02, 0), color: S },
+      { geo: new THREE.BoxGeometry(0.028, 0.026, 0.0065), matrix: M4(0.016, 0.058, 0), color: S },
+      { geo: new THREE.BoxGeometry(0.007, 0.012, 0.007), matrix: M4(0.027, 0.04, 0), color: D },
+      { geo: new THREE.BoxGeometry(0.007, 0.009, 0.007), matrix: M4(0.014, 0.041, 0), color: D },
+      { geo: new THREE.SphereGeometry(0.0075, 6, 4), matrix: M4(0, 0.078, 0), color: S },
+    ]);
+  },
+  // a mirrorball: flat facets, each its own shade of silver (a few flash white)
+  disco() {
+    let g = new THREE.IcosahedronGeometry(1, 1); if (g.index) g = g.toNonIndexed();
+    g.computeVertexNormals();
+    const n = g.attributes.position.count, col = new Float32Array(n * 3);
+    for (let f = 0; f < n / 3; f++) { const v = Math.random() < 0.16 ? 1 : 0.42 + Math.random() * 0.42; for (let k = 0; k < 9; k++) col[f * 9 + k] = v; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+  },
+  // a party guest: a round little ghost with a scalloped hem, big dark eyes and a tiny top hat (it faces +Z, the SOUL)
+  guest() {
+    const prof = [[0, -0.11], [0.06, -0.145], [0.098, -0.17], [0.11, -0.1], [0.113, -0.03], [0.108, 0.03], [0.094, 0.075], [0.068, 0.11], [0.036, 0.13], [0, 0.137]];
+    const body = new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x, y)), 24);
+    const P = body.attributes.position;
+    for (let i = 0; i < P.count; i++) { const y = P.getY(i); if (y < -0.13) { const a = Math.atan2(P.getZ(i), P.getX(i)); P.setY(i, y + Math.sin(a * 6) * 0.022 * clamp((-0.13 - y) / 0.04, 0, 1)); } }
+    body.computeVertexNormals();
+    const INK = 0x14081a, HAT = 0x24142a, BAND = 0xc23c8a;
+    return CircusGeo.decor([
+      { geo: body },
+      { geo: new THREE.SphereGeometry(0.03, 8, 6), matrix: M4(-0.112, -0.025, 0.012, 0, 0, 0.5, 0.65, 1, 0.65) },
+      { geo: new THREE.SphereGeometry(0.03, 8, 6), matrix: M4(0.112, -0.025, 0.012, 0, 0, -0.5, 0.65, 1, 0.65) },
+      { geo: new THREE.SphereGeometry(0.02, 10, 8), matrix: M4(-0.037, 0.04, 0.092, 0, 0, 0, 0.95, 1.35, 0.5), color: INK, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.02, 10, 8), matrix: M4(0.037, 0.04, 0.092, 0, 0, 0, 0.95, 1.35, 0.5), color: INK, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.006, 6, 4), matrix: M4(-0.031, 0.05, 0.102), color: 0xffffff, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.006, 6, 4), matrix: M4(0.043, 0.05, 0.102), color: 0xffffff, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.013, 8, 6), matrix: M4(0, -0.012, 0.103, 0, 0, 0, 1.15, 0.85, 0.4), color: INK, decor: 1 },
+      { geo: new THREE.CylinderGeometry(0.066, 0.066, 0.008, 16), matrix: M4(0.022, 0.135, 0, 0, 0, -0.26), color: HAT, decor: 1 },
+      { geo: new THREE.CylinderGeometry(0.041, 0.045, 0.072, 16), matrix: M4(0.032, 0.172, 0, 0, 0, -0.26), color: HAT, decor: 1 },
+      { geo: new THREE.CylinderGeometry(0.0465, 0.0465, 0.014, 16), matrix: M4(0.025, 0.146, 0, 0, 0, -0.26), color: BAND, decor: 1 },
+    ]);
+  },
+  // a lit wax candle in a brass candlestick (its axis along Y, the flame at +0.31: the pattern's glow end)
+  candle() {
+    const W = 0xf4ecd8, B = 0xc8a040, B2 = 0xe8c870;
+    return mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.048, 0.05, 0.5, 12), color: W },
+      { geo: new THREE.SphereGeometry(0.018, 6, 4), matrix: M4(0.045, 0.2, 0.012, 0, 0, 0, 0.8, 2.2, 0.8), color: W },
+      { geo: new THREE.SphereGeometry(0.015, 6, 4), matrix: M4(-0.03, 0.17, 0.037, 0, 0, 0, 0.8, 2.6, 0.8), color: W },
+      { geo: new THREE.SphereGeometry(0.014, 6, 4), matrix: M4(-0.021, 0.21, -0.043, 0, 0, 0, 0.8, 2, 0.8), color: W },
+      { geo: new THREE.CylinderGeometry(0.004, 0.004, 0.03, 4), matrix: M4(0, 0.262, 0), color: 0x2a1a10 },
+      { geo: new THREE.ConeGeometry(0.028, 0.09, 8), matrix: M4(0, 0.31, 0), color: 0xffc040 },
+      { geo: new THREE.SphereGeometry(0.02, 8, 6), matrix: M4(0, 0.286, 0, 0, 0, 0, 1, 1.3, 1), color: 0xfff0b0 },
+      { geo: new THREE.CylinderGeometry(0.085, 0.07, 0.022, 12), matrix: M4(0, -0.258, 0), color: B2 },
+      { geo: new THREE.LatheGeometry([[0, -0.42], [0.1, -0.42], [0.1, -0.4], [0.06, -0.385], [0.025, -0.36], [0.04, -0.33], [0.022, -0.3], [0.035, -0.27], [0, -0.27]].map(([x, y]) => new THREE.Vector2(x, y)), 12), color: B },
+    ]);
+  },
+  // a smooth teardrop (point up: it falls)
+  tear() {
+    return mergeGeos([
+      { geo: new THREE.SphereGeometry(1, 14, 10) },
+      { geo: new THREE.ConeGeometry(0.97, 1.7, 14, 1, true), matrix: M4(0, 1.05, 0) },
+    ]);
+  },
+  mat(name) {
+    const L = (o) => CircusShade.material(o);
+    if (name === 'shard') return L({ gloss: 1.6, shine: 120, rim: 0.9, emit: 0.46, wrap: 0.5 });
+    if (name === 'key') return L({ gloss: 1.6, shine: 90, rim: 0.8, emit: 0.5 });
+    if (name === 'disco') return L({ gloss: 2.4, shine: 150, rim: 0.9, emit: 0.5 });
+    if (name === 'guest') return L({ gloss: 0.4, shine: 20, rim: 1.4, emit: 0.66, wrap: 0.9, decor: true });
+    if (name === 'candle') return L({ gloss: 1.2, shine: 60, rim: 0.6, emit: 0.45 });
+    return L({ gloss: 1.7, shine: 100, rim: 1.1, emit: 0.5 });   // tear
+  },
+};
+
+// ---------------------------------------------------------------------------
+//  ManorBits: torn scraps of wallpaper fluttering down (lit, instanced)
+// ---------------------------------------------------------------------------
+const ManorBits = {
+  ready: false, list: [],
+  init() {
+    if (this.ready) return; this.ready = true;
+    const g = new THREE.PlaneGeometry(0.075, 0.055, 2, 1), P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) P.setZ(i, Math.pow(P.getX(i) / 0.0375, 2) * 0.01);
+    g.computeVertexNormals();
+    this.mesh = new THREE.InstancedMesh(g, CircusShade.material({ map: ManorTex.get('damask'), mapST: [0.22, 0.22, 0, 0], gloss: 0.3, shine: 16, rim: 0.5, emit: 0.3, side: THREE.DoubleSide, vertexColors: false }), 90);
+    this.mesh.frustumCulled = false; this.mesh.count = 0; this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.setColorAt(0, _c1.setRGB(1, 1, 1)); this.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    scene.add(this.mesh);
+  },
+  // a scrap at p drifting with velocity v; col: an [r, g, b] tint (the missing texture's magenta for boss 2's copies)
+  emit(p, v, col) {
+    if (!this.ready) return;
+    if (this.list.length >= 90) this.list.shift();
+    this.list.push({ p: p.clone(), v: v.clone(), q: new THREE.Quaternion().setFromEuler(_e1.set(rand(0, TAU), rand(0, TAU), rand(0, TAU))), w: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize().multiplyScalar(rand(3, 8)),
+      life: 0, max: rand(1.6, 2.6), s: rand(0.7, 1.25), c: col || null, ph: rand(0, TAU) });
+  },
+  update(dt) {
+    if (!this.ready) return;
+    let n = 0;
+    for (let i = 0; i < this.list.length; i++) {
+      const b = this.list[i]; b.life += dt;
+      if (b.life >= b.max) { this.list.splice(i, 1); i--; continue; }
+      // paper falls slowly and swings from side to side
+      b.v.multiplyScalar(Math.exp(-2.4 * dt)); b.v.y -= 0.9 * dt;
+      b.p.addScaledVector(b.v, dt); b.p.x += Math.sin(b.life * 5 + b.ph) * 0.25 * dt;
+      _q1.setFromAxisAngle(_v1.copy(b.w).normalize(), b.w.length() * dt); b.q.premultiply(_q1);
+      const k = b.s * Math.min(1, b.life * 8) * Math.min(1, (b.max - b.life) * 2);
+      _m1.compose(b.p, b.q, _s1.set(k, k, k)); this.mesh.setMatrixAt(n, _m1);
+      this.mesh.setColorAt(n, b.c ? _c1.setRGB(b.c[0], b.c[1], b.c[2]) : _c1.setRGB(1, 1, 1));
+      n++;
+    }
+    this.mesh.count = n; this.mesh.visible = n > 0;
+    if (n) { this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; }
+  },
+};
+registerKit(ManorBits, function () { this.list = []; });
+
+// ---------------------------------------------------------------------------
+//  CorridorKit: CLOCKWORK CORRIDOR's hallway. While the box stretches out over the ballroom, a hallway grows
+//  around it: a red runner down its length, papered walls with sconces and little portraits, gilt archways,
+//  and a great clock over the far arch that ticks with the beat. The middle of your balustrade sinks out of
+//  the way. Nothing here is a hazard and all of it stays outside the box.
+// ---------------------------------------------------------------------------
+const CorridorKit = {
+  ready: false,
+  init() {
+    if (this.ready) return; this.ready = true;
+    const T = ManorTex, lit = (o) => CircusShade.material(o), Mn = MANOR;
+    const root = this.root = new THREE.Group(); root.visible = false; scene.add(root);
+    const z0 = Mn.EDGE, z1 = -5.7, L = z0 - z1, cz = (z0 + z1) / 2, X = 1.74, H = 2.72;
+    const MAHOG = 0x3a1a0c, GOLD = 0xc8a040, CREAM = 0xd8ccb6;
+    this.mats = {
+      wall: lit({ map: T.get('damask'), gloss: 0.3, shine: 18, rim: 0.3, emit: 0.1, vertexColors: false }),
+      wains: lit({ map: T.get('wainscot'), gloss: 0.8, shine: 46, rim: 0.25, emit: 0.08, vertexColors: false }),
+      trim: lit({ gloss: 1.0, shine: 60, rim: 0.45, emit: 0.12 }),
+      art: lit({ map: T.get('portraits'), gloss: 0.5, shine: 60, rim: 0.1, emit: 0.14, vertexColors: false }),
+      runner: lit({ map: T.get('runner'), gloss: 0.12, shine: 10, rim: 0.3, emit: 0.1, vertexColors: false }),
+      dial: lit({ map: T.get('clock'), gloss: 1.0, shine: 60, emit: 0.35, vertexColors: false }),
+    };
+    // the walls rise from the floor; the floor slab and runner roll out from the gallery's edge
+    this.rise = new THREE.Group(); this.roll = new THREE.Group(); this.roll.position.z = z0;
+    root.add(this.rise, this.roll);
+    const wall = [], wains = [], trim = [], art = [];
+    this.flames = [];
+    for (const s of [-1, 1]) {
+      const ry = -s * Math.PI / 2;
+      wall.push({ geo: mPlane(L, H - 1.0, 1.2, 1.2), matrix: M4(s * X, 1.0 + (H - 1.0) / 2, cz, 0, ry, 0) });
+      wains.push({ geo: mPlane(L, 1.0, 2, 1.0), matrix: M4(s * X, 0.5, cz, 0, ry, 0) });
+      trim.push({ geo: new THREE.BoxGeometry(0.1, H + 0.1, L), matrix: M4(s * (X + 0.06), (H + 0.1) / 2 - 0.1, cz), color: MAHOG });
+      trim.push({ geo: new THREE.BoxGeometry(0.05, 0.06, L), matrix: M4(s * (X - 0.02), 1.0, cz), color: GOLD });
+      trim.push({ geo: new THREE.BoxGeometry(0.05, 0.12, L), matrix: M4(s * (X - 0.02), 0.06, cz), color: MAHOG });
+      trim.push({ geo: new THREE.BoxGeometry(0.14, 0.14, L), matrix: M4(s * (X - 0.05), H - 0.07, cz), color: CREAM });
+      trim.push({ geo: new THREE.BoxGeometry(0.16, 0.03, L), matrix: M4(s * (X - 0.06), H - 0.15, cz), color: GOLD });
+      // sconces between the arches, and a little portrait between them
+      for (const z of [-2.9, -4.75]) {
+        const sp = []; const fl = mSconce(sp, 1);
+        const m = new THREE.Matrix4().makeTranslation(s * (X - 0.01), 1.72, z).multiply(new THREE.Matrix4().makeRotationY(ry));
+        for (const q of sp) trim.push({ geo: q.geo, matrix: m.clone().multiply(q.matrix), color: q.color });
+        for (const f of fl) this.flames.push(f.clone().applyMatrix4(m));
+      }
+      { const z = -3.82, fp = [], w = 0.36, h = 0.5;
+        mFrame(fp, w, h, 0.05);
+        const m = new THREE.Matrix4().makeTranslation(s * (X - 0.01), 1.6, z).multiply(new THREE.Matrix4().makeRotationY(ry));
+        for (const q of fp) trim.push({ geo: q.geo, matrix: m.clone().multiply(q.matrix), color: q.color });
+        art.push({ geo: s < 0 ? mCell(new THREE.PlaneGeometry(w, h), 0, 1, 4, 2, 0.7) : mCell(new THREE.PlaneGeometry(w, h), 2, 0, 4, 2, 0.7), matrix: m.clone().multiply(M4(0, 0, 0.004)) });
+      }
+    }
+    // gilt archways: at the gallery's edge, halfway, and the far end (the clock rides on the last)
+    for (const z of [z0 - 0.08, -3.82, z1 + 0.1]) {
+      for (const s of [-1, 1]) {
+        // (the posts stand just outside the box: nothing of the hallway reaches into the play space)
+        trim.push({ geo: new THREE.BoxGeometry(0.2, H, 0.24), matrix: M4(s * (X - 0.02), H / 2, z), color: MAHOG });
+        trim.push({ geo: new THREE.BoxGeometry(0.24, 0.12, 0.28), matrix: M4(s * X, 0.06, z), color: MAHOG });
+        trim.push({ geo: new THREE.BoxGeometry(0.03, H - 0.3, 0.03), matrix: M4(s * (X - 0.12), H / 2, z + 0.13), color: GOLD });
+        trim.push({ geo: new THREE.BoxGeometry(0.24, 0.05, 0.3), matrix: M4(s * (X - 0.01), H - 0.34, z), color: GOLD });
+      }
+      trim.push({ geo: new THREE.BoxGeometry(2 * X, 0.22, 0.24), matrix: M4(0, H - 0.11, z), color: MAHOG });
+      trim.push({ geo: new THREE.BoxGeometry(2 * X + 0.06, 0.04, 0.28), matrix: M4(0, H - 0.24, z), color: GOLD });
+      trim.push({ geo: new THREE.BoxGeometry(0.22, 0.26, 0.3), matrix: M4(0, H - 0.12, z), color: CREAM });
+      trim.push({ geo: new THREE.SphereGeometry(0.06, 10, 8), matrix: M4(0, H - 0.12, z + 0.15), color: GOLD });
+    }
+    // the great clock above the far arch
+    const cy = H + 0.42, czc = z1 + 0.24;
+    trim.push({ geo: new THREE.CylinderGeometry(0.5, 0.5, 0.12, 32), matrix: M4(0, cy, czc - 0.06, Math.PI / 2, 0, 0), color: MAHOG });
+    trim.push({ geo: new THREE.TorusGeometry(0.47, 0.035, 6, 36), matrix: M4(0, cy, czc + 0.02), color: GOLD });
+    for (const s of [-1, 1]) trim.push({ geo: new THREE.BoxGeometry(0.5, 0.06, 0.12), matrix: M4(s * 0.55, cy - 0.32, czc - 0.04, 0, 0, s * 0.5), color: MAHOG });
+    this.clockC = new THREE.Vector3(0, cy, czc + 0.03);
+    this.rise.add(new THREE.Mesh(mergeGeos(wall), this.mats.wall), new THREE.Mesh(mergeGeos(wains), this.mats.wains), new THREE.Mesh(mergeGeos(trim), this.mats.trim), new THREE.Mesh(mergeGeos(art), this.mats.art));
+    const dial = new THREE.Mesh(new THREE.CircleGeometry(0.43, 32), this.mats.dial); dial.position.copy(this.clockC); this.rise.add(dial);
+    const handGeo = (len, w) => { const g = new THREE.BoxGeometry(w, len, 0.012); g.translate(0, len / 2 - 0.04, 0); return g; };
+    this.minute = new THREE.Mesh(handGeo(0.36, 0.022), this.mats.trim); this.hour = new THREE.Mesh(handGeo(0.24, 0.034), this.mats.trim);
+    for (const h of [this.minute, this.hour]) { h.position.copy(this.clockC); h.position.z += 0.012; this.rise.add(h); }
+    this.minute.position.z += 0.012;
+    // the floor: a slab over the void (gilt along its edges) and the runner down the whole hallway
+    const slab = [], sl = L + 0.1;
+    slab.push({ geo: new THREE.BoxGeometry(2 * X + 0.24, 0.16, sl), matrix: M4(0, -0.08, -sl / 2), color: MAHOG });
+    slab.push({ geo: new THREE.BoxGeometry(2 * X + 0.28, 0.035, 0.05), matrix: M4(0, -0.03, -sl + 0.02), color: GOLD });
+    for (const s of [-1, 1]) slab.push({ geo: new THREE.BoxGeometry(0.05, 0.035, sl), matrix: M4(s * (X + 0.13), -0.03, -sl / 2), color: GOLD });
+    this.roll.add(new THREE.Mesh(mergeGeos(slab), this.mats.trim));
+    const runLen = L + 3.6;
+    this.runner = new THREE.Mesh(mPlane(2.3, runLen, 2.3, 4.6), this.mats.runner);
+    this.runner.rotation.x = -Math.PI / 2; this.runner.position.set(0, 0.014, -runLen / 2 + 3.55);
+    this.roll.add(this.runner);
+    this.k = 0; this.target = 0; this.scroll = 0;
+  },
+  // CLOCKWORK CORRIDOR starts / ends
+  open() { if (!this.ready) return; this.target = 1; this.root.visible = true; if (HallKit.ready) HallKit.sinkRail(true); },
+  close() { if (!this.ready) return; this.target = 0; if (HallKit.ready) HallKit.sinkRail(false); },
+  update(dt) {
+    if (!this.ready || !this.root.visible) return;
+    this.k = this.target > this.k ? Math.min(1, this.k + dt / 1.1) : Math.max(0, this.k - dt / 0.8);
+    if (this.k <= 0 && this.target === 0) { this.root.visible = false; return; }
+    const e = easeOut(this.k);
+    this.rise.scale.y = Math.max(0.001, e);
+    this.roll.scale.z = Math.max(0.001, easeOut(clamp(this.k * 1.4, 0, 1)));
+    // the runner rolls toward you with the floor's scrolling grid
+    this.scroll += dt * 1.6 / 4.6;
+    this.mats.runner.uniforms.uMapST.value.w = this.scroll % 1;
+    // the clock ticks on the beat; sconces light up as the walls finish rising
+    const beat = G.clock.beat, tick = Math.floor(beat) + easeOut(clamp((beat % 1) / 0.15, 0, 1));
+    this.minute.rotation.z = -tick * TAU / 16; this.hour.rotation.z = -tick * TAU / 192 - 1.1;
+    const glow = G.fx.glow, fk = clamp(this.k * 3 - 2, 0, 1) * G.bg.dim;
+    if (fk > 0.01) for (let i = 0; i < this.flames.length; i++) {
+      const f = this.flames[i], y = f.y * e, w = (0.82 + 0.18 * Math.sin(G.time * 11 + i * 1.9)) * fk;
+      glow.add(f.x, y, f.z, 0.42, 1.0 * w, 0.62 * w, 0.25 * w, 0.5, 0);
+      glow.add(f.x, y, f.z, 0.1, 1, 0.94, 0.72, w, 0);
+    }
+  },
+};
+registerKit(CorridorKit, function () { this.flames = []; this.k = 0; this.target = 0; });
+
+// ---------------------------------------------------------------------------
+//  ManorKitFX: the attack kits' per-frame flourishes (candle flames, eyes in the doorways, the mirrorball's
+//  specks, beams' bands), and compiling everything the fight needs during the intro
+// ---------------------------------------------------------------------------
+const ManorKitFX = {
+  update(dt) {
+    if (WallKit.ready) WallKit.fx(dt);
+    if (ChandKit.ready) ChandKit.fx(dt);
+    if (DoorKit.ready) DoorKit.fx(dt);
+    if (PortraitKit.ready) PortraitKit.fx(dt);
+    if (BallKit.ready) BallKit.fx(dt);
+    if (CorridorKit.ready) CorridorKit.update(dt);
+    ManorBits.update(dt);
+  },
+  prewarm() {
+    const list = ['shard', 'key', 'disco', 'guest', 'candle', 'tear'].map((k) => G.bullets.pools[k].mesh);
+    for (const kit of [HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, OFX]) if (kit.ready && kit.roots) list.push(...kit.roots);
+    const par = !!renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile');
+    for (const o of list) {
+      try { if (par) renderer.compileAsync(o, camera, scene).catch(() => {}); else renderer.compile(o, camera, scene); } catch { /* a shader that cannot prewarm compiles on first use */ }
+    }
+  },
+};
 // @@/MANOR
 
 // free every geometry / material / texture under root (shared resources are skipped)
@@ -9674,7 +10314,7 @@ BOSSES.proprietor = {
   hp: 2200, stats: { atk: 12, def: 6 }, bulletDmg: [3, 4, 5], phaseGlitch: [0, 0.15, 0.35],
   transition: 'tapeStop',
   beatsPerBar: 4,
-  get kits() { return [OFX, HallKit, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit]; },   // effects, the hall + attack kits, built at fight start (a getter: OFX is defined further down)
+  get kits() { return [OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit]; },   // effects, the hall + attack kits, built at fight start (a getter: OFX is defined further down)
   musicSlot: 'MUSIC_PROPRIETOR', dataUri: MUSIC_DATA_URI_PROPRIETOR, musicUrl: MUSIC_URL_PROPRIETOR,
   fallbackMusic() { return synthFallbackTrack(this.music.bpm); },
   palette: { name: '#ffffff', spareName: '#ffe600', hp: '#3dff5a', hpBack: '#c80024', accent: '#c23cff', pelletGlow: 0xffffff, glyph: 0xffffff },
@@ -9696,9 +10336,9 @@ BOSSES.proprietor = {
     const B = G.battle;
     HallKit.tired = !!(B && B.tired);
     const bi = G.clock.beatIndex; if (bi !== this.lastBeat) { this.lastBeat = bi; HallKit.onBeat(bi); }
-    HallKit.update(dt, G.rdt); OFX.update(dt);
+    ManorKitFX.update(dt); HallKit.update(dt, G.rdt); OFX.update(dt);
   },
-  onLoad(B) { HallKit.resetLook(0); ManorLight.clear(); },
+  onLoad(B) { HallKit.resetLook(0); ManorLight.clear(); ManorKitFX.prewarm(); },
   applyPhaseLook(B, p, instant) { HallKit.setPhase(p, instant); },
   onRetry(B) { HallKit.resetLook(B.phase); ManorLight.clear(); },
   newState() { return { items: { mint: 3, canape: 2, towel: 1, key: 1 }, windowStun: false, towelSlow: false, compliments: 0, rsvp: false, rsvpTrigger: false }; },
@@ -11872,7 +12512,7 @@ BOSSES.kiddie = {
   hp: 2600, stats: { atk: 14, def: 4 }, bulletDmg: [4, 5, 6], phaseGlitch: [0.05, 0.15, 0.3],
   transition: 'seekIntoGap',
   beatsPerBar: 4,
-  kits: [KidKit, WallKit, ChandKit, DoorKit, PortraitKit],   // his own kit + the boss 1 kits his copy-paste attacks borrow
+  kits: [KidKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit],   // his own kit + the boss 1 kits his copy-paste attacks borrow
   musicSlot: 'MUSIC_KIDDIE', dataUri: MUSIC_DATA_URI_KIDDIE, musicUrl: MUSIC_URL_KIDDIE,
   fallbackMusic() { return synthKiddieFallback(117.5); },   // the brief's fallback spec: 117.5 BPM, D minor
   palette: { name: '#2affd5', spareName: '#ffe14a', hp: '#3cff6e', hpBack: '#3a0010', accent: '#ff3cc8', pelletGlow: 0xc8fff4, glyph: 0x3cff6e },
@@ -11891,7 +12531,7 @@ BOSSES.kiddie = {
   buildModel() { return new KiddieModel(); },
   updateModel(dt, clock, energy) {
     if (G.boss) G.boss.update(dt);
-    KidKit.update(G.rdt);
+    KidKit.update(G.rdt); ManorKitFX.update(dt);
     // chat status dot: green "online" while he is spareable, red "busy" otherwise
     const B = G.battle;
     if (B && !['VICTORY_FIGHT', 'VICTORY_SPARE', 'FRIEND_REQUEST', 'COZY', 'RESULTS', 'TITLE', 'GAME_OVER'].includes(B.state)) G.ui.chat.setStatus(B.spare >= 100 ? 'online' : 'busy');
@@ -11903,7 +12543,7 @@ BOSSES.kiddie = {
   snapshot(B) { return { items: Object.assign({}, B.items), rates: B.rates, teachDone: B.teachDone, gg: B.gg }; },
   restore(B, s) { B.items = Object.assign({}, s.items); B.rates = s.rates; B.teachDone = s.teachDone; B.gg = s.gg; B.boost = false; B.antivirus = false; B.stunned = false; B.bugged = false; B.hpLost = 0; },
   hudName(B) { return B && B.phase >= 2 ? (B.tired ? 'ADM1N_K1DD1E (LAGGING)' : 'ADM1N_K1DD1E') : 'SCR1PT_K1DD1E'; },
-  onLoad() { ManorLight.forKiddie(); const C = G.ui.chat; C.name = 'SCR1PT_K1DD1E'; C.status = 'busy'; },
+  onLoad() { ManorLight.forKiddie(); ManorKitFX.prewarm(); const C = G.ui.chat; C.name = 'SCR1PT_K1DD1E'; C.status = 'busy'; },
   intro(B) {
     const how = Save.beaten('proprietor');
     const L = (how === 'fight' ? KLINES.intro.fight : how === 'spare' ? KLINES.intro.spare : KLINES.intro.none).concat(KLINES.intro.tail);
@@ -25475,7 +26115,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX }, camera };
+window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)
