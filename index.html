@@ -3150,7 +3150,8 @@ class Background {
     this.dim = 1;
     this.theme = 'manor'; this.server = null; this.red = 0; this.redTarget = 0;
   }
-  // void theme from the active boss: 'manor' (checker void + mansion) or 'server' (navy + hex rain)
+  // void theme from the active boss: 'manor' (checker void + mansion) or 'server' (navy + hex rain);
+  // 'rift' is the title (RiftKit)
   setTheme(name) {
     this.theme = name;
     const manor = name === 'manor', hall = name === 'hall';
@@ -3161,6 +3162,7 @@ class Background {
     if (this.circus) this.circus.group.visible = name === 'circus';
     if (name === 'desert' && !this.desert) this.desert = new DesertSky();   // boss 4's sky over the frontier
     if (this.desert) this.desert.group.visible = name === 'desert';
+    if (name === 'rift' || RiftKit.on) RiftKit.show(name === 'rift');   // the SoulRift title
   }
   setRed(on, instant) { this.redTarget = on ? 1 : 0; if (instant) this.red = this.redTarget; }
   buildServer() {
@@ -3266,6 +3268,7 @@ class Background {
     }
     if (this.theme === 'circus' && this.circus) { this.circus.update(dt, t, this.dim); return; }
     if (this.theme === 'desert' && this.desert) { this.desert.update(dt, t, this.dim); return; }
+    if (this.theme === 'rift') { RiftKit.update(dt, t, this.dim); return; }   // the title: the rift
     if (this.theme === 'shop') return;   // KNOBS' SHOP: the room's walls hide the void
     this.uniforms.uTime.value = t;
     this.uniforms.uPulse.value = (bass * 1.1 + G.fx.beatPulse * 0.35) * amp;
@@ -4248,16 +4251,12 @@ class UI {
     this.big = new TextPanel({ w: 2.4, h: 1.3, cw: 720, scale: 3, pad: 22, align: 'center', valign: 'middle', renderOrder: 8 });
     scene.add(this.big.mesh); this.big.mesh.visible = false;
     this.bigTW = new Typewriter(this.big);
-    // ---- title (RGB split) ----
-    this.titleTex = canvasTex(400, 40, (g) => { const t = 'S O U L R I F T', s = 2; PixelFont.draw(g, t, Math.round((400 - PixelFont.width(t, s)) / 2), 6, s, '#ffffff'); });
+    // ---- title: the SoulRift logo (lit voxels, torn by the rift) over the music / soul lines ----
     this.title = new THREE.Group();
-    this.titleLayers = [CONFIG.COL.magenta, CONFIG.COL.teal, 0xffffff].map((c, i) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.36), new THREE.MeshBasicMaterial({ map: this.titleTex, color: c, transparent: true, depthWrite: false, blending: i < 2 ? THREE.AdditiveBlending : THREE.NormalBlending }));
-      m.renderOrder = 9 + i; this.title.add(m); return m;
-    });
-    this.titleSub = new TextPanel({ w: 2.6, h: 0.36, cw: 650, bg: null, border: null, scale: 2, align: 'center', valign: 'middle', color: '#bbbbbb', renderOrder: 9 });
-    this.titleSub.mesh.position.set(0, -0.41, 0); this.title.add(this.titleSub.mesh);
-    this.title.position.set(0, 2.35, -2.4); scene.add(this.title);
+    this.title.add(SoulLogo.build());
+    this.titleSub = new TextPanel({ w: 2.6, h: 0.36, cw: 650, bg: null, border: null, scale: 2, align: 'center', valign: 'middle', color: '#cbb8ff', shadow: '#1a0a33', renderOrder: 9 });
+    this.titleSub.mesh.position.set(0, -0.54, 0); this.titleSub.mesh.scale.setScalar(1.3); this.title.add(this.titleSub.mesh);
+    this.title.position.set(0, 2.55, -3.6); scene.add(this.title);
     // ---- wrist panels (attached on controller connect) ----
     this.wristHP = new TextPanel({ w: 0.085, h: 0.06375, cw: 128, ch: 96, bg: 'rgba(0,0,0,0.9)', border: '#ffffff', borderPx: 3, renderOrder: 30 });
     // GOLD under the HP: a little coin spinning beside the number
@@ -4958,11 +4957,9 @@ class UI {
       if (this.promptT >= this.promptLife) this.prompt.mesh.visible = false;
     }
     if (this.title.visible) {
-      const t = G.time, gl = (0.4 + G.audio.treble) * Flash.glitchMul;
-      this.title.position.y = 2.35 + Math.sin(t * 1.3) * 0.05;
-      const j = Math.sin(t * 17) > 0.86 ? 0.03 : 0.008;
-      this.titleLayers[0].position.set(-j * gl * 3 - 0.012, 0.004, -0.002);
-      this.titleLayers[1].position.set(j * gl * 3 + 0.012, -0.004, -0.001);
+      const t = G.time;
+      this.title.position.y = 2.55 + Math.sin(t * 1.3) * 0.04;
+      SoulLogo.update(rdt, t);
       this.title.lookAt(Head.pos.x, this.title.position.y, Head.pos.z);
     }
     if (this.howPanel.mesh.visible) this.drawHowTo(rdt);
@@ -9581,10 +9578,10 @@ class Battle {
     if (this.def) G.ui.disposeBossMenus(this.def.id);
     disposeKits(); ManorTex.dispose(); DCTex.dispose();
   }
-  // leaving the fight: free everything the boss built, back to the manor look
+  // leaving the fight: free everything the boss built, back to the title's rift
   unloadBoss() {
     this.releaseBoss();
-    G.arena.setTheme('manor'); G.bg.setTheme('manor'); G.bg.setRed(false, true); G.bg.disposeServer();
+    G.arena.setTheme('manor'); G.bg.setTheme('rift'); G.bg.setRed(false, true); G.bg.disposeServer();
   }
   // ------------------------------------------------------------------ KNOBS' SHOP
   // from the SAVE FILES door or "* Swing by the shop?" after a fight
@@ -9639,6 +9636,7 @@ class Battle {
     this.loadTok = null; G.ui.showLoading(false);
     G.clock.stop(0.4);
     this.unloadBoss();
+    G.arena.visible = false;   // the title floats in the rift: no battle box
     MusicLibrary.retain(['shop']);
     debugLogMemory('title (boss model destroyed)');
     G.audio.drone(true);
@@ -27031,7 +27029,7 @@ const Shop = {
     G.audio.setDuck(false);
     G.ui.deskHud.style.display = 'none';
     ShopKit.dispose(); OFX.dispose();
-    G.bg.setTheme('manor');
+    G.bg.setTheme('rift');
     this.active = false; this.padItem = null; this.deskHeld = null;
   },
   // ------------------------------------------------------------ KNOBS talks (an LCD strip above the counter)
@@ -27594,6 +27592,544 @@ const Shop = {
 };
 
 // ============================================================================
+//  RiftKit - the SoulRift title. You stand on a floating island of dark stone in deep space, in front of
+//  THE RIFT: a tear of light where the worlds leak through (bits of the manor, the server, the big top,
+//  the frontier and KNOBS' records drift round it, and soul motes rise from the island into it).
+//  Built once (the title is home) and shown by the background's 'rift' theme. While it is up it owns the
+//  shared lit-material light block, and it hands the block back exactly as it found it, so no fight
+//  looks any different for having passed through here.
+// ============================================================================
+const RIFT = { Z: -30, Y: 7, H: 24, PW: 16, ISLE_R: 2.8 };
+const RIFT_NOISE_GLSL = `
+  float rh1(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  float rn2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(rh1(i), rh1(i + vec2(1.0, 0.0)), f.x), mix(rh1(i + vec2(0.0, 1.0)), rh1(i + 1.0), f.x), f.y); }
+  float rh3(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+  float rn3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(rh3(i), rh3(i + vec3(1.0, 0.0, 0.0)), f.x), mix(rh3(i + vec3(0.0, 1.0, 0.0)), rh3(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+               mix(mix(rh3(i + vec3(0.0, 0.0, 1.0)), rh3(i + vec3(1.0, 0.0, 1.0)), f.x), mix(rh3(i + vec3(0.0, 1.0, 1.0)), rh3(i + 1.0), f.x), f.y), f.z); }
+  float rfbm(vec3 p){ float a = 0.5, t = 0.0; for (int i = 0; i < 5; i++) { t += a * rn3(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return t; }
+`;
+// deep space: an indigo-to-ink gradient, two drifting nebula layers (magenta, teal) that thicken toward
+// the rift, dust lanes, three sizes of slowly twinkling stars, and the rift's tall aura
+const RIFT_SKY_FS = `uniform float uTime; uniform float uDim; uniform float uOpen; uniform float uBreath; varying vec3 vP;
+  ${RIFT_NOISE_GLSL}
+  void main(){
+    vec3 d = normalize(vP);
+    vec3 col = mix(vec3(0.008, 0.005, 0.022), vec3(0.036, 0.014, 0.064), smoothstep(-0.7, 0.0, d.y));
+    col = mix(col, vec3(0.006, 0.008, 0.026), smoothstep(0.05, 0.85, d.y));
+    vec3 rd = normalize(vec3(0.0, ${(RIFT.Y - 1.6).toFixed(2)}, ${RIFT.Z.toFixed(2)}));
+    float toR = max(dot(d, rd), 0.0);
+    vec3 q = d * 2.3 + vec3(uTime * 0.004, 0.0, uTime * 0.003);
+    float n1 = rfbm(q), n2 = rfbm(q * 1.6 + 4.0), n3 = rfbm(q * 3.3 + 9.0);
+    float neb = smoothstep(0.42, 0.86, n1) * (0.3 + 0.7 * pow(toR, 3.0));
+    float neb2 = smoothstep(0.48, 0.9, n2) * (0.2 + 0.55 * pow(toR, 2.0));
+    col += vec3(0.30, 0.05, 0.26) * neb * 0.6 + vec3(0.02, 0.20, 0.24) * neb2 * 0.5;
+    col *= 0.72 + 0.28 * smoothstep(0.32, 0.62, n3);
+    vec3 a = abs(d); vec2 uv; float face;
+    if (a.x >= a.y && a.x >= a.z) { uv = d.zy / a.x; face = sign(d.x); }
+    else if (a.y >= a.z) { uv = d.xz / a.y; face = 2.0 + sign(d.y); }
+    else { uv = d.xy / a.z; face = 4.0 + sign(d.z); }
+    float st = 0.0;
+    for (int k = 0; k < 3; k++) {
+      float sc = 46.0 + float(k) * 64.0;
+      vec2 g = uv * sc, id = floor(g), f = fract(g) - 0.5;
+      float h = rh3(vec3(id, face * 7.0 + float(k) * 3.0));
+      if (h > 0.962) {
+        vec2 o = vec2(rh3(vec3(id, 1.3 + float(k))), rh3(vec3(id, 2.7 + float(k)))) - 0.5;
+        float r = length(f - o * 0.6);
+        float tw = 0.72 + 0.28 * sin(uTime * (0.8 + h * 2.4) + h * 40.0);
+        st += smoothstep(0.13, 0.0, r) * (h - 0.962) / 0.038 * tw * (1.0 - float(k) * 0.22);
+      }
+    }
+    col += mix(vec3(0.7, 0.75, 1.0), vec3(1.0, 0.85, 0.95), rn2(uv * 3.0)) * st;
+    vec3 rx = normalize(cross(rd, vec3(0.0, 1.0, 0.0))), ry = normalize(cross(rx, rd));
+    float ax = dot(d, rx), ay = dot(d, ry);
+    float aura = exp(-ax * ax * 90.0 / max(uOpen, 0.05)) * exp(-ay * ay * 3.2) * toR;
+    col += vec3(0.42, 0.26, 0.78) * aura * (0.16 + 0.06 * uBreath) * uOpen;
+    gl_FragColor = vec4(col * uDim, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// THE RIFT: a jagged tear that writhes slowly, white-hot inside, magenta and teal at its lips, energy
+// pouring up through it in the colours of the four worlds, a soft halo and sparks crawling on the edges
+const RIFT_TEAR_FS = `uniform float uTime; uniform float uOpen; uniform float uBreath; uniform float uCalm; uniform float uSurge; uniform float uDim; varying vec2 vUv;
+  ${RIFT_NOISE_GLSL}
+  void main(){
+    vec2 p = vUv * 2.0 - 1.0;
+    float y = p.y, env = pow(max(1.0 - y * y, 0.0), 1.1) * smoothstep(1.0, 0.78, abs(y));
+    float cx = (0.05 * sin(y * 5.3 + 0.7) + 0.03 * sin(y * 12.7 + uTime * 0.23) + 0.03 * (rn2(vec2(y * 9.0, uTime * 0.13)) - 0.5)) * env;
+    float w = (0.062 + 0.03 * rn2(vec2(y * 4.0, uTime * 0.11))) * env * uOpen * (1.0 + 0.05 * uBreath + 0.6 * uSurge);
+    float dx = abs(p.x - cx), k = dx / max(w, 1e-4);
+    float core = 1.0 - smoothstep(0.55, 1.0, k);
+    float rim = exp(-max(dx - w, 0.0) * 34.0) * env * uOpen;
+    float halo = exp(-max(dx - w * 0.5, 0.0) * 7.0) * env * uOpen * 0.3;
+    float flow = rn2(vec2(p.x * 60.0, y * 7.0 - uTime * 0.5)) * 0.6 + rn2(vec2(p.x * 140.0, y * 16.0 - uTime * 1.05)) * 0.4;
+    float bnd = fract(y * 0.6 - uTime * 0.025) * 4.0;
+    vec3 wa = vec3(1.0, 0.78, 0.42), wb = vec3(0.3, 1.0, 0.88), wc = vec3(1.0, 0.38, 0.4), wd = vec3(1.0, 0.6, 0.28);
+    vec3 world = bnd < 1.0 ? mix(wa, wb, smoothstep(0.7, 1.0, bnd)) : bnd < 2.0 ? mix(wb, wc, smoothstep(1.7, 2.0, bnd)) : bnd < 3.0 ? mix(wc, wd, smoothstep(2.7, 3.0, bnd)) : mix(wd, wa, smoothstep(3.7, 4.0, bnd));
+    vec3 hot = vec3(1.0, 0.95, 1.0), violet = vec3(0.72, 0.46, 1.0);
+    vec3 c = mix(violet, hot, 1.0 - smoothstep(0.0, 0.6, k));
+    c = mix(c, world, 0.3 * smoothstep(0.15, 0.7, k) * flow);
+    vec3 edge = mix(vec3(1.0, 0.24, 0.82), vec3(0.18, 1.0, 0.86), smoothstep(-0.01, 0.01, p.x - cx));
+    vec3 col = c * core * (0.7 + 0.5 * flow) + edge * rim * 0.85 + mix(violet, edge, 0.4) * halo;
+    float sp = step(0.975, rn2(vec2(y * 70.0, floor(uTime * (uCalm > 0.5 ? 2.0 : 9.0))))) * exp(-abs(dx - w) * 120.0) * env;
+    col += edge * sp * (uCalm > 0.5 ? 0.35 : 0.9);
+    col *= (1.0 + 0.6 * uSurge) * uDim;
+    gl_FragColor = vec4(col, 1.0);
+    #include <colorspace_fragment>
+  }`;
+const RiftKit = {
+  ready: false, on: false, open: 0, openT: 9, surge: 0, breath: 0, focus: 1, saved: null,
+  init() {
+    if (this.ready) return;
+    this.ready = true;
+    const grp = this.group = new THREE.Group(); grp.visible = false; scene.add(grp);
+    // ---- the sky
+    this.su = { uTime: { value: 0 }, uDim: { value: 1 }, uOpen: { value: 1 }, uBreath: { value: 0 } };
+    const sky = new THREE.Mesh(new THREE.BoxGeometry(220, 220, 220), new THREE.ShaderMaterial({
+      uniforms: this.su, side: THREE.BackSide, depthWrite: false,
+      vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: RIFT_SKY_FS,
+    }));
+    sky.renderOrder = -10; sky.frustumCulled = false; grp.add(sky);
+    // ---- the rift
+    this.tu = { uTime: { value: 0 }, uOpen: { value: 1 }, uBreath: { value: 0 }, uCalm: { value: 0 }, uSurge: { value: 0 }, uDim: { value: 1 } };
+    const tear = new THREE.Mesh(new THREE.PlaneGeometry(RIFT.PW, RIFT.H), new THREE.ShaderMaterial({
+      uniforms: this.tu, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: RIFT_TEAR_FS,
+    }));
+    tear.position.set(0, RIFT.Y, RIFT.Z); tear.renderOrder = -8; tear.frustumCulled = false; grp.add(tear);
+    this.buildIsland(grp);
+    this.buildDrift(grp);
+    this.buildMotes();
+  },
+  // ---------------------------------------------------------------- the island you stand on
+  buildIsland(grp) {
+    const R = RIFT.ISLE_R, N = 56, TAU_ = Math.PI * 2;
+    const rr = []; for (let i = 0; i <= N; i++) { const a = i / N * TAU_; rr.push(R * (1 + 0.05 * Math.sin(a * 3 + 0.4) + 0.035 * Math.sin(a * 7 + 1.3) + 0.02 * Math.sin(a * 13))); }
+    // the top: a flat disc at floor height (centre + three rings), planar uv for the carved texture
+    {
+      const pos = [0, 0, 0], uv = [0.5, 0.5], idx = [], F = [0.4, 0.75, 1];
+      for (const f of F) for (let i = 0; i <= N; i++) { const a = i / N * TAU_, r = rr[i] * f, x = Math.cos(a) * r, z = Math.sin(a) * r; pos.push(x, 0, z); uv.push(0.5 + x / (2 * R * 1.08), 0.5 - z / (2 * R * 1.08)); }
+      for (let i = 0; i < N; i++) idx.push(0, 1 + i + 1, 1 + i);
+      for (let r = 0; r < F.length - 1; r++) for (let i = 0; i < N; i++) { const a = 1 + r * (N + 1) + i, b = a + N + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+      g.computeVertexNormals();
+      this.topTex = this.makeTopTex();
+      const top = new THREE.Mesh(g, CircusShade.material({ map: this.topTex, color: 0xffffff, gloss: 0.55, shine: 26, rim: 0.35, emit: 0.07, vertexColors: false }));
+      grp.add(top);
+    }
+    // the rock under it: a lip, then a craggy cone hanging into the void (vertex-coloured basalt)
+    {
+      const L = [[0, 1.0], [-0.14, 1.02], [-0.55, 0.93], [-1.3, 0.72], [-2.3, 0.45], [-3.3, 0.2], [-4.1, 0.04]];
+      const pos = [], col = [], idx = [], c = new THREE.Color();
+      L.forEach(([y, f], li) => {
+        for (let i = 0; i <= N; i++) {
+          const a = i / N * TAU_, jit = li < 2 ? 0 : (ONoise.n2(i * 0.7 % N, li * 3.1, N) - 0.5) * 0.45 * f;
+          const r = Math.max(0.02, rr[i % N] * f + jit), yy = y + (li > 1 ? (ONoise.n2(i * 1.3, li * 5.7, 64) - 0.5) * 0.35 : 0);
+          pos.push(Math.cos(a) * r, yy, Math.sin(a) * r);
+          const k = (0.55 + 0.45 * ONoise.n2(i * 2.1, li * 1.7 + 9, 64)) * (1 - li * 0.09);
+          c.setRGB(0.11 * k, 0.085 * k, 0.15 * k); if (li === 1) c.setRGB(0.2, 0.15, 0.28);
+          col.push(c.r, c.g, c.b);
+        }
+      });
+      for (let l = 0; l < L.length - 1; l++) for (let i = 0; i < N; i++) { const a = l * (N + 1) + i, b = a + N + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+      g.computeVertexNormals();
+      grp.add(new THREE.Mesh(g, CircusShade.material({ color: 0xffffff, gloss: 0.4, shine: 18, rim: 0.7, emit: 0.04, vertexColors: true })));
+    }
+    // the soul sigil and its rune ring, glowing in the stone (additive, breathing)
+    this.sigilTex = this.makeSigilTex();
+    this.sigilMat = new THREE.MeshBasicMaterial({ map: this.sigilTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0x9a7cff });
+    const sig = new THREE.Mesh(new THREE.PlaneGeometry(2 * R * 1.08, 2 * R * 1.08), this.sigilMat);
+    sig.rotation.x = -Math.PI / 2; sig.position.y = 0.004; sig.renderOrder = 2; grp.add(sig);
+    // crystals round the rim
+    const NC = 16;
+    this.crystals = new THREE.InstancedMesh(new THREE.OctahedronGeometry(1, 0), CircusShade.material({ color: 0xffffff, gloss: 1.5, shine: 80, rim: 1.0, emit: 0.85, vertexColors: false }), NC);
+    this.crystalTips = [];
+    const cc = [0x2affd5, 0xb48cff, 0xff4fc8];
+    for (let i = 0; i < NC; i++) {
+      const a = (i + 0.35 * Math.sin(i * 7.1)) / NC * TAU_, r = R * (0.93 + 0.04 * Math.sin(i * 3.3)), h = 0.14 + 0.12 * ((i * 37) % 5) / 4;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      _q1.setFromEuler(new THREE.Euler(Math.sin(i * 1.7) * 0.25, a, Math.cos(i * 2.3) * 0.25 + 0.15));
+      _m1.compose(_v1.set(x, h * 0.6, z), _q1, _v2.set(0.05 + 0.02 * (i % 3), h, 0.05 + 0.02 * ((i + 1) % 3)));
+      this.crystals.setMatrixAt(i, _m1); this.crystals.setColorAt(i, _c1.setHex(cc[i % 3]));
+      this.crystalTips.push({ x, y: h * 1.5, z, c: cc[i % 3], ph: i * 1.37 });
+    }
+    this.crystals.instanceMatrix.needsUpdate = true; this.crystals.instanceColor.needsUpdate = true;
+    grp.add(this.crystals);
+    // rocks floating round and under the island
+    const NR = 7, rock = new THREE.IcosahedronGeometry(1, 1), P = rock.attributes.position;
+    for (let i = 0; i < P.count; i++) { _v1.fromBufferAttribute(P, i); _v1.multiplyScalar(0.8 + 0.4 * ONoise.n3(_v1.x * 1.7 + 3, _v1.y * 1.7, _v1.z * 1.7, 64)); P.setXYZ(i, _v1.x, _v1.y * 0.8, _v1.z); }
+    rock.computeVertexNormals();
+    this.rocks = new THREE.InstancedMesh(rock, CircusShade.material({ color: 0x2c2338, gloss: 0.45, shine: 20, rim: 0.75, emit: 0.05, vertexColors: false, haze: true }), NR);
+    this.rockP = [];
+    for (let i = 0; i < NR; i++) this.rockP.push({ a: i / NR * TAU_ + 0.4, r: 4.2 + (i * 1.9) % 5, y: -2.6 - (i * 1.3) % 3.4, s: 0.25 + ((i * 0.37) % 0.7), w: (i % 2 ? 1 : -1) * (0.012 + 0.004 * i), ph: i * 2.1 });
+    grp.add(this.rocks);
+  },
+  makeTopTex() {
+    const S = 512, R = S / 2 / 1.08;
+    // stone: fbm speckle and ridged cracks on a small canvas, scaled up under the carvings
+    const small = document.createElement('canvas'); small.width = small.height = 192;
+    pixelFill(small.getContext('2d'), 192, 192, (x, y) => {
+      const n = ONoise.fbm2(x / 24, y / 24, 4, 8), cr = ONoise.ridge2(x / 40 + 7, y / 40, 3, 5);
+      const k = 0.55 + 0.45 * n - (cr > 0.86 ? (cr - 0.86) * 3.5 : 0);
+      return [Math.round(30 * k), Math.round(24 * k), Math.round(44 * k), 255];
+    });
+    return softTex(S, S, (g) => {
+      g.imageSmoothingEnabled = true; g.drawImage(small, 0, 0, S, S);
+      const cx = S / 2, cy = S / 2;
+      // the carved channels: a rune ring, an inner ring, the heart
+      g.strokeStyle = 'rgba(8,4,14,0.85)';
+      for (const [r, w] of [[0.80, 7], [0.70, 4], [0.36, 5]]) { g.lineWidth = w; g.beginPath(); g.arc(cx, cy, R * r, 0, Math.PI * 2); g.stroke(); }
+      this.runes(g, cx, cy, R * 0.75, 'rgba(8,4,14,0.9)');
+      g.save(); g.translate(cx - 35, cy - 30); for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) if (PixelFont.icons.heart[r][c]) { g.fillStyle = 'rgba(10,4,16,0.9)'; g.fillRect(c * 10, r * 10, 10, 10); } g.restore();
+      // the worn rim
+      const gr = g.createRadialGradient(cx, cy, R * 0.86, cx, cy, R * 1.05); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.55)');
+      g.fillStyle = gr; g.fillRect(0, 0, S, S);
+    });
+  },
+  // pixel runes round a ring (the letters of SOULRIFT and the game's symbols), each turned to face out
+  runes(g, cx, cy, r, col) {
+    const set = 'SOULRIFT★♪●', n = 30;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
+      g.save(); g.translate(cx + Math.cos(a) * r, cy + Math.sin(a) * r); g.rotate(a + Math.PI / 2);
+      PixelFont.draw(g, set[(i * 7) % set.length], -7, -10, 3, col); g.restore();
+    }
+  },
+  makeSigilTex() {
+    const S = 512, R = S / 2 / 1.08, cx = S / 2, cy = S / 2;
+    return softTex(S, S, (g) => {
+      g.clearRect(0, 0, S, S);
+      g.shadowColor = '#ffffff'; g.shadowBlur = 8;
+      g.strokeStyle = 'rgba(255,255,255,0.9)';
+      for (const [r, w] of [[0.80, 2.5], [0.70, 1.5], [0.36, 2]]) { g.lineWidth = w; g.beginPath(); g.arc(cx, cy, R * r, 0, Math.PI * 2); g.stroke(); }
+      this.runes(g, cx, cy, R * 0.75, 'rgba(255,255,255,0.85)');
+      g.save(); g.translate(cx - 35, cy - 30); for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) if (PixelFont.icons.heart[r][c]) { g.fillStyle = 'rgba(255,90,140,0.95)'; g.fillRect(c * 10 + 1, r * 10 + 1, 8, 8); } g.restore();
+      // hairline cracks of light running out from the sigil
+      g.lineWidth = 1.2; g.strokeStyle = 'rgba(255,255,255,0.55)';
+      for (let k = 0; k < 9; k++) {
+        let a = k / 9 * Math.PI * 2 + 0.3, r = R * 0.38; g.beginPath(); g.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+        for (let s = 0; s < 6; s++) { a += Math.sin(k * 3.1 + s * 1.7) * 0.07; r += R * 0.05; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+        g.stroke();
+      }
+    }, { mipmaps: true });
+  },
+  // ---------------------------------------------------------------- the worlds drifting round the rift
+  buildDrift(grp) {
+    this.atlas = this.makeAtlas();
+    const mat = CircusShade.material({ map: this.atlas, color: 0xffffff, gloss: 0.9, shine: 40, rim: 0.7, emit: 0.16, vertexColors: false, haze: true });
+    // atlas regions in canvas px [x0, y0, x1, y1]
+    const REG = { damask: [0, 0, 256, 256], rack: [256, 0, 512, 32], stripes: [0, 256, 256, 512], sand: [256, 256, 384, 384], record: [384, 256, 512, 384],
+      gold: [264, 392, 312, 440], steel: [328, 392, 376, 440], black: [392, 392, 440, 440], violet: [456, 392, 504, 440] };
+    const remap = (g, pick) => {   // move each vertex's uv into the region its face should show
+      const U = g.attributes.uv, N = g.attributes.normal;
+      for (let i = 0; i < U.count; i++) {
+        const r = REG[pick(i, N.getX(i), N.getY(i), N.getZ(i))];
+        U.setXY(i, (r[0] + U.getX(i) * (r[2] - r[0])) / 512, 1 - (r[3] - U.getY(i) * (r[3] - r[1])) / 512);
+      }
+      return g;
+    };
+    const types = [
+      // the manor: a torn-off piece of damask wall in its gilt frame
+      { geo: remap(new THREE.BoxGeometry(0.8, 1.2, 0.08), (i, x, y, z) => (Math.abs(z) > 0.5 ? 'damask' : 'gold')), n: 4, s: [0.8, 1.3] },
+      // the server: a rack blade with its LEDs
+      { geo: remap(new THREE.BoxGeometry(1.2, 0.2, 0.7), (i, x, y, z) => (z > 0.5 ? 'rack' : 'steel')), n: 4, s: [0.8, 1.3] },
+      // the big top: a scrap of striped tent canvas
+      { geo: remap(new THREE.BoxGeometry(1.0, 1.0, 0.04), (i, x, y, z) => (Math.abs(z) > 0.5 ? 'stripes' : 'gold')), n: 3, s: [0.8, 1.4] },
+      // the frontier: banded sandstone
+      { geo: (() => { const g = new THREE.IcosahedronGeometry(0.5, 1), P = g.attributes.position; for (let i = 0; i < P.count; i++) { _v1.fromBufferAttribute(P, i); _v1.multiplyScalar(0.8 + 0.35 * ONoise.n3(_v1.x * 2 + 1, _v1.y * 2, _v1.z * 2, 64)); P.setXYZ(i, _v1.x, _v1.y, _v1.z); } g.computeVertexNormals(); return remap(g, () => 'sand'); })(), n: 5, s: [0.7, 1.6] },
+      // KNOBS' SHOP: records
+      { geo: remap(new THREE.CylinderGeometry(0.38, 0.38, 0.016, 28), (i, x, y, z) => (Math.abs(y) > 0.5 ? 'record' : 'black')), n: 3, s: [0.9, 1.2] },
+    ];
+    this.drift = [];
+    let seed = 1;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (const T of types) {
+      const m = new THREE.InstancedMesh(T.geo, mat, T.n); m.frustumCulled = false; grp.add(m);
+      const P = [];
+      for (let i = 0; i < T.n; i++) {
+        let a = rnd() * Math.PI * 2;
+        const y = -5 + rnd() * 17;
+        if (Math.sin(a) < -0.85 && y > -1 && y < 6) a += 0.7;   // keep the column between you and the rift clear behind the logo
+        P.push({ a, r: 8 + rnd() * 15, y, w: (rnd() < 0.5 ? -1 : 1) * (0.006 + rnd() * 0.014), s: T.s[0] + rnd() * (T.s[1] - T.s[0]),
+          ax: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), sp: 0.04 + rnd() * 0.16, ph: rnd() * 10 });
+      }
+      this.drift.push({ m, P });
+    }
+  },
+  makeAtlas() {
+    return softTex(512, 512, (g) => {
+      // damask: plum ground, gold lozenges and fleurons, a gilt band round it
+      g.fillStyle = '#3a1640'; g.fillRect(0, 0, 256, 256);
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+        const cx = x * 32 + (y % 2) * 16 + 16, cy = y * 32 + 16;
+        g.fillStyle = 'rgba(214,170,90,0.55)'; g.beginPath(); g.moveTo(cx, cy - 10); g.lineTo(cx + 7, cy); g.lineTo(cx, cy + 10); g.lineTo(cx - 7, cy); g.closePath(); g.fill();
+        g.fillStyle = 'rgba(120,60,130,0.6)'; g.fillRect(cx - 2, cy - 2, 4, 4);
+      }
+      g.strokeStyle = '#d6aa5a'; g.lineWidth = 12; g.strokeRect(6, 6, 244, 244);
+      // a rack blade: dark steel, a vent, LEDs
+      g.fillStyle = '#1b1f27'; g.fillRect(256, 0, 256, 256);
+      for (let r = 0; r < 8; r++) {
+        const y0 = r * 32;
+        g.fillStyle = '#12151b'; g.fillRect(262, y0 + 4, 244, 24);
+        for (let k = 0; k < 18; k++) { g.fillStyle = '#0a0c10'; g.fillRect(270 + k * 7, y0 + 9, 4, 14); }
+        for (let k = 0; k < 6; k++) { g.fillStyle = ['#3cff6e', '#2affd5', '#ffb347', '#3cff6e', '#ff3c5a', '#2affd5'][(k + r) % 6]; g.fillRect(410 + k * 14, y0 + 13, 6, 6); }
+      }
+      // tent canvas: red and cream stripes over a gold scallop
+      for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#f2e6c8' : '#c8283a'; g.fillRect(k * 32, 256, 32, 256); }
+      g.fillStyle = '#d6aa5a'; for (let k = 0; k < 8; k++) { g.beginPath(); g.arc(k * 32 + 16, 486, 16, 0, Math.PI); g.fill(); } g.fillRect(0, 470, 256, 16);
+      // sandstone bands
+      for (let y = 0; y < 128; y++) { const k = 0.5 + 0.5 * Math.sin(y * 0.31) * Math.sin(y * 0.07 + 1.3); g.fillStyle = `rgb(${Math.round(150 + 70 * k)},${Math.round(70 + 45 * k)},${Math.round(40 + 25 * k)})`; g.fillRect(256, 256 + y, 128, 1); }
+      // a record: grooves and a magenta label
+      g.fillStyle = '#050508'; g.fillRect(384, 256, 128, 128);
+      for (let r = 62; r > 22; r -= 3) { g.strokeStyle = r % 2 ? '#1c1c24' : '#101016'; g.lineWidth = 1.5; g.beginPath(); g.arc(448, 320, r, 0, Math.PI * 2); g.stroke(); }
+      g.fillStyle = '#ff3cc8'; g.beginPath(); g.arc(448, 320, 20, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#050508'; g.beginPath(); g.arc(448, 320, 3, 0, Math.PI * 2); g.fill();
+      // plain swatches for the sides
+      g.fillStyle = '#c8a050'; g.fillRect(256, 384, 64, 64); g.fillStyle = '#4a505c'; g.fillRect(320, 384, 64, 64);
+      g.fillStyle = '#08080c'; g.fillRect(384, 384, 64, 64); g.fillStyle = '#3a2a5a'; g.fillRect(448, 384, 64, 64);
+    });
+  },
+  // ---------------------------------------------------------------- soul motes rising into the rift
+  buildMotes() {
+    this.motes = [];
+    for (let i = 0; i < 64; i++) this.motes.push(this.newMote({}, Math.random()));
+  },
+  newMote(m, u0 = 0) {
+    const a = Math.random() * Math.PI * 2, r = RIFT.ISLE_R * (0.4 + 0.6 * Math.random());
+    m.p0 = [Math.cos(a) * r, 0.1 + Math.random() * 0.4, Math.sin(a) * r];
+    m.p2 = [(Math.random() - 0.5) * 1.6, RIFT.Y + (Math.random() - 0.5) * RIFT.H * 0.6, RIFT.Z + 0.5];
+    m.p1 = [m.p0[0] * 2.2 + (Math.random() - 0.5) * 6, 4 + Math.random() * 6, (m.p0[2] + m.p2[2]) * 0.45];
+    m.u = u0; m.life = 16 + Math.random() * 12; m.size = 0.04 + Math.random() * 0.07;
+    const k = Math.random(); m.c = k < 0.1 ? [1, 0.2, 0.32] : k < 0.5 ? [0.72, 0.5, 1] : k < 0.85 ? [0.3, 1, 0.88] : [1, 0.95, 1];
+    return m;
+  },
+  // ---------------------------------------------------------------- showing it / leaving it
+  show(on) {
+    if (on) {
+      this.init();
+      if (!this.on) { this.saveLight(); this.on = true; this.openT = 0; this.open = 0.04; this.surge = 0; }
+      this.group.visible = true;
+    } else if (this.on) {
+      this.on = false; this.group.visible = false; this.surge = 0;
+      this.restoreLight();
+    }
+  },
+  // the light block as it was before the title took it over (bosses that only set part of it, like the
+  // big top's key direction, carry on from exactly where they would have)
+  LIGHT_KEYS: ['uKeyDir', 'uKeyCol', 'uSky', 'uGround', 'uRimCol', 'uHaze', 'uHaze2', 'uPtN', 'uPtPos', 'uPtCol', 'uSpN', 'uSpPos', 'uSpDir', 'uSpCol'],
+  saveLight() {
+    const U = CircusShade.uniforms(), s = this.saved = {};
+    for (const k of this.LIGHT_KEYS) { const v = U[k].value; s[k] = typeof v === 'number' ? v : Array.isArray(v) ? v.map((x) => x.clone()) : v.clone(); }
+  },
+  restoreLight() {
+    const U = CircusShade.uniforms(), s = this.saved; if (!s) return;
+    for (const k of this.LIGHT_KEYS) { const v = U[k].value; if (typeof v === 'number') U[k].value = s[k]; else if (Array.isArray(v)) v.forEach((x, i) => x.copy(s[k][i])); else v.copy(s[k]); }
+    this.saved = null;
+  },
+  // the rift's own light: it is the key (in front, a little above), a soft soul light from where you
+  // stand fills the logo and the menus, the sigil glows on the stone round your feet
+  applyLight(dim) {
+    const U = CircusShade.uniforms(), o = this.open * dim, b = this.breath, sg = 1 + this.surge;
+    U.uKeyDir.value.set(0, 0.32, -1).normalize();
+    U.uKeyCol.value.set(0.7, 0.58, 1.0).multiplyScalar((0.72 + 0.12 * b) * o * sg);
+    U.uSky.value.set(0.1, 0.08, 0.2).multiplyScalar(dim); U.uGround.value.set(0.035, 0.02, 0.06).multiplyScalar(dim); U.uRimCol.value.set(0.58, 0.42, 1.0).multiplyScalar(dim);
+    U.uHaze.value.set(0.035, 0.018, 0.07, 0.03); U.uHaze2.value.set(0, 0, 0.85, 0);
+    U.uPtPos.value[0].set(0, 2.0, 0.3, 7); U.uPtCol.value[0].set(0.5, 0.42, 0.78).multiplyScalar(0.55 * dim);
+    U.uPtPos.value[1].set(0, 0.35, 0, 3.4); U.uPtCol.value[1].set(0.3, 0.42, 0.9).multiplyScalar((0.55 + 0.25 * b) * dim);
+    U.uPtN.value = 2; U.uSpN.value = 0;
+  },
+  // a fight starts: the rift flares and pulls you in (a violet fade; softer and slower in Reduced flashing)
+  plunge(then) {
+    this.surgeT = Flash.reduced ? 0.85 : 0.6;
+    G.audio.sfx.digiWhoosh();
+    G.fx.fadeTo(1, Flash.reduced ? 3.2 : 5.5, 0x140826);
+    G.battle.afterIn(G.battle.state, this.surgeT, () => { G.fx.fadeTo(0, 4); then(); });
+  },
+  update(dt, t, dim) {
+    if (!this.on) return;
+    const red = Flash.reduced;
+    this.openT += dt;
+    this.open = 0.04 + 0.96 * easeOut(clamp(this.openT / (red ? 2.4 : 1.6), 0, 1));
+    this.breath = Math.sin(t * 0.75) * (red ? 0.5 : 1);
+    this.surge = damp(this.surge, this.surgeT > 0 ? 1 : 0, this.surgeT > 0 ? 3 : 2, dt); this.surgeT = Math.max(0, (this.surgeT || 0) - dt);
+    // behind a panel (SAVE FILES, SETTINGS, HOW TO PLAY, the warning) the rift settles so the text in front reads; it flares back on the title
+    this.focus = damp(this.focus, G.battle.state === 'TITLE' || this.surgeT > 0 ? 1 : 0.5, 2.5, dt);
+    const su = this.su, tu = this.tu;
+    su.uTime.value = t; su.uDim.value = dim; su.uOpen.value = this.open; su.uBreath.value = this.breath;
+    tu.uTime.value = t; tu.uDim.value = dim * this.focus; tu.uOpen.value = this.open * (0.75 + 0.25 * this.focus); tu.uBreath.value = this.breath; tu.uCalm.value = red ? 1 : 0; tu.uSurge.value = this.surge * (red ? 0.6 : 1);
+    this.sigilMat.color.setRGB(0.5 + 0.12 * this.breath, 0.42 + 0.1 * this.breath, 0.95).multiplyScalar((0.6 + 0.12 * this.breath) * dim);
+    this.applyLight(dim);
+    // the worlds drift round, turning slowly
+    for (const D of this.drift) {
+      D.P.forEach((p, i) => {
+        p.a += p.w * dt;
+        _v1.set(Math.cos(p.a) * p.r, p.y + Math.sin(t * 0.21 + p.ph) * 0.35, Math.sin(p.a) * p.r);
+        _q1.setFromAxisAngle(p.ax, t * p.sp + p.ph);
+        _m1.compose(_v1, _q1, _v2.setScalar(p.s)); D.m.setMatrixAt(i, _m1);
+      });
+      D.m.instanceMatrix.needsUpdate = true;
+    }
+    this.rockP.forEach((p, i) => {
+      p.a += p.w * dt;
+      _v1.set(Math.cos(p.a) * p.r, p.y + Math.sin(t * 0.33 + p.ph) * 0.18, Math.sin(p.a) * p.r);
+      _q1.setFromEuler(_e1.set(p.ph, t * 0.05 + p.ph, 0));
+      _m1.compose(_v1, _q1, _v2.setScalar(p.s)); this.rocks.setMatrixAt(i, _m1);
+    });
+    this.rocks.instanceMatrix.needsUpdate = true;
+    // glows: crystal tips, soul motes (they rush in when the rift pulls)
+    const glow = G.fx.glow;
+    for (const c of this.crystalTips) {
+      const k = (0.55 + 0.3 * Math.sin(t * 1.3 + c.ph) * (red ? 0.5 : 1)) * dim;
+      _c1.setHex(c.c); glow.add(c.x, c.y, c.z, 0.22, _c1.r * k, _c1.g * k, _c1.b * k, 0.6, 0);
+    }
+    const sp = 1 + this.surge * 7;
+    for (const m of this.motes) {
+      m.u += dt / m.life * sp;
+      if (m.u >= 1) this.newMote(m);
+      const u = m.u, v = 1 - u;
+      const x = v * v * m.p0[0] + 2 * v * u * m.p1[0] + u * u * m.p2[0], y = v * v * m.p0[1] + 2 * v * u * m.p1[1] + u * u * m.p2[1], z = v * v * m.p0[2] + 2 * v * u * m.p1[2] + u * u * m.p2[2];
+      const a = Math.min(1, u * 8) * Math.min(1, (1 - u) * 5) * dim;
+      glow.add(x, y, z, m.size * (1 + u * 3), m.c[0] * a, m.c[1] * a, m.c[2] * a, 0.9 * a, 0);
+    }
+  },
+};
+
+// ============================================================================
+//  SoulLogo - the SoulRift logo: the name in the game's pixel font, built from lit voxel blocks. The O is
+//  your SOUL (a red heart that beats), and the rift tears the word in two between SOUL and RIFT: the
+//  halves lean apart and light spills out of the crack. A soft magenta / teal glow sits behind it (the
+//  old title's RGB split, gentler, and steady in Reduced flashing).
+// ============================================================================
+const LOGO_CRACK_FS = `uniform float uTime; uniform float uCalm; varying vec2 vUv;
+  void main(){
+    float x = abs(vUv.x - 0.5) * 2.0;
+    float ends = smoothstep(0.0, 0.14, vUv.y) * smoothstep(1.0, 0.86, vUv.y);
+    float core = exp(-x * 9.0), glow = exp(-x * 2.6) * 0.45;
+    float fl = uCalm > 0.5 ? 1.0 : 0.85 + 0.15 * sin(uTime * 23.0 + vUv.y * 40.0);
+    vec3 edge = mix(vec3(1.0, 0.3, 0.85), vec3(0.2, 1.0, 0.86), step(0.5, vUv.x));
+    gl_FragColor = vec4((vec3(1.0, 0.95, 1.0) * core + edge * glow) * ends * fl, 1.0);
+    #include <colorspace_fragment>
+  }`;
+const SoulLogo = {
+  V: 0.066, D: 0.1, COLS: 51,
+  // S ♥ U L | R I F T: the first column of each glyph (the ♥ is 7 wide; a 3-column gap for the tear)
+  WORD: [['S', 0], ['♥', 6], ['U', 14], ['L', 20], ['R', 28], ['I', 34], ['F', 40], ['T', 46]],
+  cells(ch) {   // the lit pixels of a glyph, [column, row] (row 0 at the top)
+    const out = [];
+    if (ch === '♥') { const ic = PixelFont.icons.heart; for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) if (ic[r][c]) out.push([c, r]); return out; }
+    const g = PixelFont.glyphs[ch];
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) if (g[r] & (16 >> c)) out.push([c, r]);
+    return out;
+  },
+  build() {
+    const V = this.V, D = this.D, half = this.COLS / 2, root = this.root = new THREE.Group();
+    const box = new THREE.BoxGeometry(V * 0.92, V * 0.92, D);
+    const parts = { soul: [], rift: [], heart: [] };
+    const col = (hi, lo, r) => new THREE.Color().setRGB(lerp(hi[0], lo[0], r / 6), lerp(hi[1], lo[1], r / 6), lerp(hi[2], lo[2], r / 6), THREE.SRGBColorSpace);
+    const HC = 9;   // the heart's centre column (it beats round its own middle)
+    for (const [ch, c0] of this.WORD) {
+      const isHeart = ch === '♥', isRift = c0 >= 28;
+      for (const [c, r] of this.cells(ch)) {
+        const cc = c0 + c;
+        if (isHeart) parts.heart.push({ geo: box, matrix: M4((cc - HC) * V, (3 - r) * V, 0), color: col([1, 0.32, 0.42], [0.82, 0.02, 0.16], r) });
+        else parts[isRift ? 'rift' : 'soul'].push({ geo: box, matrix: M4((cc - half + 0.5) * V, (3 - r) * V, 0),
+          color: isRift ? col([0.92, 1, 1], [0.36, 0.95, 0.9], r) : col([1, 0.93, 1], [0.8, 0.5, 1], r) });
+      }
+    }
+    const mat = this.mat = CircusShade.material({ color: 0xffffff, gloss: 1.3, shine: 60, rim: 0.9, emit: 0.45, vertexColors: true });
+    this.soul = new THREE.Group(); this.riftG = new THREE.Group(); root.add(this.soul, this.riftG);
+    this.soul.add(new THREE.Mesh(mergeGeos(parts.soul), mat));
+    this.heart = new THREE.Mesh(mergeGeos(parts.heart), mat);
+    this.heart.position.set((HC - half + 0.5) * V, 0, 0);
+    this.soul.add(this.heart);
+    this.riftG.add(new THREE.Mesh(mergeGeos(parts.rift), mat));
+    box.dispose();
+    // the halves lean apart round the tear
+    this.soul.rotation.z = 0.02; this.soul.position.set(-0.012, 0.014, 0);
+    this.riftG.rotation.z = -0.032; this.riftG.position.set(0.02, -0.03, 0);
+    // the tear: a zigzag ribbon of light down the gap, past the letters at both ends
+    {
+      const cx = (26 - half + 0.5) * V, K = 10, w = 0.17, pos = [], uv = [], idx = [];
+      const pts = []; for (let k = 0; k <= K; k++) pts.push([cx + (k % 2 ? 0.6 : -0.6) * V * (k > 0 && k < K ? 1 : 0.3), 0.36 - 0.72 * k / K]);
+      for (let k = 0; k <= K; k++) {
+        const a = pts[Math.max(0, k - 1)], b = pts[Math.min(K, k + 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+        const nx = -dy / l * w / 2, ny = dx / l * w / 2, [x, y] = pts[k];
+        pos.push(x - nx, y - ny, 0, x + nx, y + ny, 0); uv.push(0, 1 - k / K, 1, 1 - k / K);
+        if (k < K) { const i = k * 2; idx.push(i, i + 2, i + 1, i + 1, i + 2, i + 3); }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+      this.crackU = { uTime: { value: 0 }, uCalm: { value: 0 } };
+      this.crack = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: this.crackU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+        vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`, fragmentShader: LOGO_CRACK_FS }));
+      this.crack.renderOrder = 11; root.add(this.crack);
+    }
+    // the glow behind: the word's silhouette, blurred, once in magenta and once in teal
+    const px = 8, cw = 480, ch = 128, ox = (cw - this.COLS * px) / 2, oy = (ch - 7 * px) / 2;
+    const crisp = document.createElement('canvas'); crisp.width = cw; crisp.height = ch;
+    const cg = crisp.getContext('2d'); cg.fillStyle = '#ffffff';
+    for (const [chr, c0] of this.WORD) for (const [c, r] of this.cells(chr)) cg.fillRect(ox + (c0 + c) * px, oy + r * px, px, px);
+    this.glowTex = softTex(cw, ch, (g) => {
+      if ('filter' in g) { g.filter = 'blur(7px)'; g.drawImage(crisp, 0, 0); g.filter = 'none'; g.globalAlpha = 0.5; g.filter = 'blur(16px)'; g.drawImage(crisp, 0, 0); g.filter = 'none'; g.globalAlpha = 1; }
+      else { g.shadowColor = '#ffffff'; g.shadowBlur = 14; g.drawImage(crisp, 0, 0); }
+    }, { mipmaps: false });
+    const gw = cw / px * V, gh = ch / px * V;
+    const glowMat = (c) => new THREE.MeshBasicMaterial({ map: this.glowTex, color: c, transparent: true, opacity: 0.42, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.glowA = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), glowMat(0xff3cd8)); this.glowB = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), glowMat(0x2affd5));
+    this.glowA.renderOrder = 9; this.glowB.renderOrder = 9; root.add(this.glowA, this.glowB);
+    return root;
+  },
+  update(dt, t) {
+    if (!this.root) return;
+    // the heart beats: lub-dub
+    const ph = (t % 0.95) / 0.95, e = (x) => Math.exp(-x * x / 0.002);
+    const beat = e(ph) + 0.6 * e(ph - 0.17) + e(ph - 1);
+    this.heart.scale.setScalar(1 + 0.07 * beat);
+    // the RGB split behind it (a calmer jitter than the old title's; steady in Reduced flashing)
+    const gl = (0.4 + G.audio.treble) * Flash.glitchMul, j = Math.sin(t * 17) > 0.86 ? 0.02 : 0.006;
+    this.glowA.position.set(-0.03 - j * gl, 0.008, -0.07); this.glowB.position.set(0.03 + j * gl, -0.008, -0.075);
+    this.crackU.uTime.value = t; this.crackU.uCalm.value = Flash.reduced ? 1 : 0;
+    // the soul's red glow, and sparks drifting off the tear now and then
+    this.heart.getWorldPosition(_v1);
+    const k = 0.35 + 0.35 * beat;
+    G.fx.glow.add(_v1.x, _v1.y, _v1.z + 0.06, 0.42 * (1 + 0.15 * beat), k, 0.12 * k, 0.25 * k, 0.6, 0);
+    if (!Flash.reduced && chance(dt * 3)) {
+      this.crack.getWorldPosition(_v2);
+      const m = chance(0.5);
+      G.fx.parts.emit(_v2.x + rand(-0.03, 0.03), _v2.y + rand(-0.3, 0.3), _v2.z + 0.05, rand(-0.05, 0.05), rand(0.05, 0.2), rand(0, 0.1), rand(0.6, 1.2), 0.025, m ? 1 : 0.3, m ? 0.4 : 1, 0.9, 1.2, 0, 1);
+    }
+  },
+};
+// the start page's logo: the same S♥ULRIFT, torn between SOUL and RIFT, with the RGB split
+function drawSoulRiftLogo(g, W, H) {
+  const s = 8, x0 = Math.round((W - SoulLogo.COLS * s) / 2), y0 = Math.round((H - 7 * s) / 2) - 2;
+  g.clearRect(0, 0, W, H);
+  const j = Math.random() < 0.15 ? randi(2, 4) : 1;
+  const paint = (dx, cS, cR, cH) => {
+    for (const [ch, c0] of SoulLogo.WORD) {
+      const isH = ch === '♥', isR = c0 >= 28;
+      g.fillStyle = isH ? cH : isR ? cR : cS;
+      for (const [c, r] of SoulLogo.cells(ch)) g.fillRect(x0 + (c0 + c) * s + dx + (isR ? 2 : 0), y0 + r * s + (isR ? 3 : 0), s - 1, s - 1);
+    }
+  };
+  g.globalCompositeOperation = 'lighter';
+  paint(-j * 2, '#c23cff', '#c23cff', '#c23cff'); paint(j * 2, '#2affd5', '#2affd5', '#2affd5');
+  g.globalCompositeOperation = 'source-over';
+  paint(0, '#f4ecff', '#e4fffb', '#ff3355');
+  const cx = x0 + 26 * s + s / 2;
+  g.save(); g.shadowColor = '#c9a8ff'; g.shadowBlur = 10; g.strokeStyle = '#ffffff'; g.lineWidth = 2;
+  g.beginPath();
+  for (let k = 0; k <= 8; k++) { const y = y0 - 10 + k * (7 * s + 22) / 8, x = cx + (k > 0 && k < 8 ? (k % 2 ? 4 : -4) : 0); if (k) g.lineTo(x, y); else g.moveTo(x, y); }
+  g.stroke(); g.restore();
+}
+
+// ============================================================================
 //  boot: build every system
 // ============================================================================
 G.def = BOSSES.proprietor;        // active boss definition (switched by Battle.loadBoss)
@@ -27613,7 +28149,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit }, camera };
+window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)
@@ -27771,17 +28307,7 @@ Settings.listeners.push((k, v) => {
 });
 // animated pixel title on the page
 const tcv = document.getElementById('titleCanvas'), tctx = tcv.getContext('2d');
-function drawOverlayTitle() {
-  const W = tcv.width, H = tcv.height, t = 'S O U L R I F T', s = 3;
-  tctx.clearRect(0, 0, W, H);
-  const w = PixelFont.width(t, s), x = Math.round((W - w) / 2), y = Math.round((H - 7 * s) / 2);
-  const j = Math.random() < 0.15 ? randi(2, 5) : 1;
-  tctx.globalCompositeOperation = 'lighter';
-  PixelFont.draw(tctx, t, x - j, y, s, '#c23cff', { glitch: Math.random() < 0.1 ? 0.06 : 0 });
-  PixelFont.draw(tctx, t, x + j, y, s, '#2affd5');
-  tctx.globalCompositeOperation = 'source-over';
-  PixelFont.draw(tctx, t, x, y, s, '#ffffff');
-}
+function drawOverlayTitle() { drawSoulRiftLogo(tctx, tcv.width, tcv.height); }
 drawOverlayTitle();
 setInterval(() => { if (!overlay.classList.contains('hidden')) drawOverlayTitle(); }, 110);
 
@@ -27886,7 +28412,9 @@ function frame(t) {
   }
   renderer.render(scene, camera);
 }
-G.ui.showTitle(true);
+// behind the start page: the rift alone (the page has its own logo; the 3D one comes up with the world)
+G.bg.setTheme('rift'); G.arena.visible = false;
+G.ui.showTitle(false);
 G.audio.drone(true);
 buildOverlayMusic();
 updateStatus();
