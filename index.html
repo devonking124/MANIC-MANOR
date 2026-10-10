@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#000000">
-<title>M4N1C M4N0R - a WebXR soul battle</title>
+<title>SoulRift - a WebXR soul battle</title>
 <style>
   :root { --red:#ff0033; --mag:#c23cff; --teal:#2affd5; --gold:#ffd23c; --orange:#ff9d1a; --blue:#2ab6ff; }
   * { box-sizing: border-box; }
@@ -4249,7 +4249,7 @@ class UI {
     scene.add(this.big.mesh); this.big.mesh.visible = false;
     this.bigTW = new Typewriter(this.big);
     // ---- title (RGB split) ----
-    this.titleTex = canvasTex(400, 40, (g) => { const t = 'M A N I C   M A N O R', s = 2; PixelFont.draw(g, t, Math.round((400 - PixelFont.width(t, s)) / 2), 6, s, '#ffffff'); });
+    this.titleTex = canvasTex(400, 40, (g) => { const t = 'S O U L R I F T', s = 2; PixelFont.draw(g, t, Math.round((400 - PixelFont.width(t, s)) / 2), 6, s, '#ffffff'); });
     this.title = new THREE.Group();
     this.titleLayers = [CONFIG.COL.magenta, CONFIG.COL.teal, 0xffffff].map((c, i) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.36), new THREE.MeshBasicMaterial({ map: this.titleTex, color: c, transparent: true, depthWrite: false, blending: i < 2 ? THREE.AdditiveBlending : THREE.NormalBlending }));
@@ -27772,7 +27772,7 @@ Settings.listeners.push((k, v) => {
 // animated pixel title on the page
 const tcv = document.getElementById('titleCanvas'), tctx = tcv.getContext('2d');
 function drawOverlayTitle() {
-  const W = tcv.width, H = tcv.height, t = 'M A N I C   M A N O R', s = 3;
+  const W = tcv.width, H = tcv.height, t = 'S O U L R I F T', s = 3;
   tctx.clearRect(0, 0, W, H);
   const w = PixelFont.width(t, s), x = Math.round((W - w) / 2), y = Math.round((H - 7 * s) / 2);
   const j = Math.random() < 0.15 ? randi(2, 5) : 1;
@@ -27840,7 +27840,7 @@ function debugUpdate(rdt) {
 function debugLogMemory(tag) {
   if (!(G.debug.stats || G.debug.god || G.debug.hitboxes)) return;
   const m = renderer.info.memory;
-  console.log(`[MANIC MANOR] ${tag}: renderer.info.memory geometries=${m.geometries} textures=${m.textures} programs=${renderer.info.programs ? renderer.info.programs.length : '?'}`);
+  console.log(`[SoulRift] ${tag}: renderer.info.memory geometries=${m.geometries} textures=${m.textures} programs=${renderer.info.programs ? renderer.info.programs.length : '?'}`);
 }
 
 // ============================================================================
@@ -27882,7 +27882,7 @@ function frame(t) {
     debugUpdate(rdt);
     G.input.endFrame();
   } catch (e) {
-    if (!errLogged) { errLogged = true; console.error('[MANIC MANOR] frame error', e); }
+    if (!errLogged) { errLogged = true; console.error('[SoulRift] frame error', e); }
   }
   renderer.render(scene, camera);
 }

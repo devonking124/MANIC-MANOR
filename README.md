@@ -1,4 +1,6 @@
-# M4N1C M4N0R
+# SoulRift
+
+*(formerly M4N1C M4N0R; boss 1's song keeps that name.)*
 
 A WebXR soul-battle game in a single `index.html`: Undertale/Deltarune-style turn-based
 boss fights built for the Meta Quest 3S, with grab-and-pull locomotion. Everything
