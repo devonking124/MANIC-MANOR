@@ -4288,9 +4288,9 @@ class UI {
   buildScreens() {
     const B = G.battle;
     this.titleMenu = new Menu([
-      { label: 'START', icon: 'play', style: 'rift', scale: 4, onPress: () => B.titleStart() },
-      { label: 'SETTINGS', icon: 'gear', style: 'rift', scale: 4, onPress: () => B.openSettings('title') },
-      { label: 'HOW TO PLAY', icon: 'book', style: 'rift', scale: 4, onPress: () => B.openHowTo() },
+      { label: 'START', icon: 'play', style: 'rift', scale: 4, size: 0.8, onPress: () => B.titleStart() },
+      { label: 'SETTINGS', icon: 'gear', style: 'rift', scale: 4, size: 0.8, onPress: () => B.openSettings('title') },
+      { label: 'HOW TO PLAY', icon: 'book', style: 'rift', scale: 4, size: 0.8, onPress: () => B.openHowTo() },
     ], { yOff: -0.42 });
     // SAVE FILES: Undertale-style file cards (pixel font, box outline)
     const card = (id) => ({ face: { cw: 330, ch: 168, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, size: 0.82, style: 'rift', onPress: () => B.chooseFile(id) });
