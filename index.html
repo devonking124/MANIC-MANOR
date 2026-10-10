@@ -13,20 +13,20 @@
   canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
   #overlay { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center;
     justify-content: flex-start; gap: 14px; padding: 28px 16px 40px; overflow-y: auto;
-    background: radial-gradient(ellipse at 50% 40%, rgba(50,0,70,0.45), rgba(0,0,0,0.88) 70%); }
+    background: radial-gradient(ellipse at 50% 34%, rgba(70,30,130,0.30), rgba(3,1,12,0.84) 72%); }
   #overlay.hidden { display: none; }
   #titleCanvas { image-rendering: pixelated; image-rendering: crisp-edges; width: min(94vw, 960px); height: auto; margin-top: 8px; }
-  .sub { font-size: 14px; letter-spacing: 3px; color: #bbb; text-align: center; }
+  .sub { font-size: 14px; letter-spacing: 3px; color: #b8a8d8; text-align: center; }
   .sub .warn { color: var(--gold); }
   .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-  .btn { font: bold 19px/1 "Courier New", monospace; letter-spacing: 2px; color: var(--orange); background: #000;
-    border: 4px solid var(--orange); padding: 14px 20px; cursor: pointer; text-transform: uppercase; min-width: 240px; }
-  .btn:hover, .btn:focus-visible { color: var(--gold); border-color: var(--gold); outline: none; }
+  .btn { font: bold 19px/1 "Courier New", monospace; letter-spacing: 2px; color: #f0e8ff; background: linear-gradient(#1b1032, #07040f);
+    border: 4px solid #9a6cff; box-shadow: 0 0 14px rgba(154,108,255,0.35); padding: 14px 20px; cursor: pointer; text-transform: uppercase; min-width: 240px; }
+  .btn:hover, .btn:focus-visible { color: var(--gold); border-color: var(--teal); box-shadow: 0 0 18px rgba(42,255,213,0.45); outline: none; }
   .btn.big { font-size: 24px; padding: 18px 26px; min-width: 320px; }
   .btn .ok { color: #3cff6e; display: none; margin-left: 8px; }
   .btn .ok.on { display: inline; }
-  .btn.secondary { color: #fff; border-color: #fff; }
-  .btn.secondary:hover { color: var(--gold); border-color: var(--gold); }
+  .btn.secondary { color: #d8cff0; border-color: #5a4a7a; box-shadow: none; }
+  .btn.secondary:hover { color: var(--gold); border-color: var(--teal); }
   #vrSlot button, #vrSlot a { position: static !important; transform: none !important; left: auto !important; bottom: auto !important;
     font: bold 24px/1 "Courier New", monospace !important; letter-spacing: 2px; color: var(--red) !important;
     background: #000 !important; border: 4px solid var(--red) !important; border-radius: 0 !important;
@@ -34,7 +34,7 @@
   #vrSlot button:hover { color: var(--gold) !important; border-color: var(--gold) !important; }
   #status { font-size: 15px; color: #ccc; text-align: center; max-width: 760px; line-height: 1.55; min-height: 2.5em; }
   #status b { color: var(--gold); }
-  .panel { display: none; width: min(760px, 94vw); border: 4px solid #fff; background: #000; padding: 16px 20px;
+  .panel { display: none; width: min(760px, 94vw); border: 4px solid #9a6cff; background: rgba(8,4,20,0.95); padding: 16px 20px;
     font-size: 15px; line-height: 1.55; }
   .panel.show { display: block; }
   .panel h3 { margin: 0 0 10px; color: var(--gold); letter-spacing: 3px; font-size: 18px; }
@@ -3783,7 +3783,8 @@ class Typewriter {
 class Button3D {
   constructor(o) {
     this.label = o.label || ''; this.icon = o.icon || null; this.onPress = o.onPress || null; this.data = o.data;
-    this.scale = o.scale || 3; this.colorN = o.color || '#ff9d1a'; this.colorH = o.hoverColor || '#ffe600';
+    this.scale = o.scale || 3; this.style = o.style || null;   // style 'rift': the SoulRift title's glass buttons (RiftUI)
+    this.colorN = o.color || (this.style === 'rift' ? '#f0e8ff' : '#ff9d1a'); this.colorH = o.hoverColor || '#ffe600';
     this.face_ = o.face || null; this.quiet = !!o.quiet;
     const s = this.scale, pad = 3 * s;
     const textW = Math.max(PixelFont.width(this.label, s), o.minChars ? PixelFont.width('M'.repeat(o.minChars), s) : 0);
@@ -3800,6 +3801,7 @@ class Button3D {
     this.face = new THREE.Mesh(UNIT_PLANE, new THREE.MeshBasicMaterial({ map: this.tex, transparent: true }));
     this.face.scale.set(this.w, this.h, 1);
     this.root.add(this.body, this.face);
+    if (this.style === 'rift') RiftUI.dress(this);
     this.hover = false; this.disabled = false; this.flash = 0; this.pokeNear = false; this.pokeDepth = 0;
     this.armed = [true, true]; this.prevZ = [1, 1]; this.keyHL = false;
     this.draw();
@@ -3810,6 +3812,7 @@ class Button3D {
   draw() {
     const g = this.g, W = this.cw, H = this.ch, s = this.scale;
     if (this.face_) { this.face_.draw(g, W, H, this); this.tex.needsUpdate = true; return; }
+    if (this.style === 'rift') { RiftUI.drawButton(this, g, W, H); this.tex.needsUpdate = true; return; }
     const col = this.disabled ? '#5a5a5a' : this.hover ? this.colorH : this.colorN;
     g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
     const b = Math.max(2, s - 1);
@@ -4285,21 +4288,21 @@ class UI {
   buildScreens() {
     const B = G.battle;
     this.titleMenu = new Menu([
-      { label: 'START', icon: 'play', onPress: () => B.titleStart() },
-      { label: 'SETTINGS', icon: 'gear', onPress: () => B.openSettings('title') },
-      { label: 'HOW TO PLAY', icon: 'book', onPress: () => B.openHowTo() },
+      { label: 'START', icon: 'play', style: 'rift', scale: 4, onPress: () => B.titleStart() },
+      { label: 'SETTINGS', icon: 'gear', style: 'rift', scale: 4, onPress: () => B.openSettings('title') },
+      { label: 'HOW TO PLAY', icon: 'book', style: 'rift', scale: 4, onPress: () => B.openHowTo() },
     ], { yOff: -0.42 });
     // SAVE FILES: Undertale-style file cards (pixel font, box outline)
-    const card = (id) => ({ face: { cw: 330, ch: 168, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, size: 0.82, onPress: () => B.chooseFile(id) });
+    const card = (id) => ({ face: { cw: 330, ch: 168, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, size: 0.82, style: 'rift', onPress: () => B.chooseFile(id) });
     // the file cards on top; KNOBS' door ("open late") and BACK below
     const files = Object.keys(BOSSES).map(card);
     this.saveMenu = new Menu(files.concat([
-      { face: { cw: 330, ch: 120, draw: (g, W, H, b) => this.drawShopDoor(g, W, H, b) }, size: 0.82, onPress: () => B.openShop('files') },
-      { label: 'BACK', icon: 'back', onPress: () => B.closeSaveFiles() },
+      { face: { cw: 330, ch: 120, draw: (g, W, H, b) => this.drawShopDoor(g, W, H, b) }, size: 0.82, style: 'rift', onPress: () => B.openShop('files') },
+      { label: 'BACK', icon: 'back', style: 'rift', onPress: () => B.closeSaveFiles() },
     ]), { yOff: -0.26, radius: 1.0, deskR: 2.05, gap: 0.04, split: files.length });
     this.safetyMenu = new Menu([
-      { label: 'REDUCED FLASHING (RECOMMENDED)', onPress: () => B.chooseFlashing('reduced'), color: '#2affd5' },
-      { label: 'FULL EFFECTS', onPress: () => B.chooseFlashing('full') },
+      { label: 'REDUCED FLASHING (RECOMMENDED)', style: 'rift', onPress: () => B.chooseFlashing('reduced'), color: '#2affd5' },
+      { label: 'FULL EFFECTS', style: 'rift', onPress: () => B.chooseFlashing('full') },
     ], { yOff: -0.38, defaultIdx: 0 });
     this.mainMenu = new Menu([
       { label: 'FIGHT', icon: 'fight', onPress: () => B.menuFight() },
@@ -4321,7 +4324,7 @@ class UI {
     ], { yOff: -0.42, gap: 0.06 });
     this.ask = new TextPanel({ w: 0.9, h: 0.11, cw: 450, ch: 55, bg: null, border: null, scale: 3, align: 'center', valign: 'middle', color: '#ffffff', shadow: '#000000', renderOrder: 9 });
     scene.add(this.ask.mesh); this.ask.mesh.visible = false;
-    this.howMenu = new Menu([{ label: 'BACK', icon: 'back', onPress: () => B.closeHowTo() }], { yOff: -0.45 });
+    this.howMenu = new Menu([{ label: 'BACK', icon: 'back', style: 'rift', onPress: () => B.closeHowTo() }], { yOff: -0.45 });
     // settings: a panel with tabs (GAME / COMFORT / AUDIO) + arrow buttons per row (+ REPLACE per track) + action buttons
     this.setPanel = new TextPanel({ w: 1.25, h: 1.06, cw: 500, ch: 424, scale: 2, pad: 14, renderOrder: 8 });
     scene.add(this.setPanel.mesh); this.setPanel.mesh.visible = false;
@@ -4338,9 +4341,9 @@ class UI {
     this.loading = new TextPanel({ w: 0.8, h: 0.24, cw: 400, ch: 120, bg: null, border: null, renderOrder: 60, depthTest: false });
     scene.add(this.loading.mesh); this.loading.mesh.visible = false; this.loadT = 0; this.loadDrawT = 0;
     this.setActions = new Menu([
-      { label: 'RESUME', icon: 'play', onPress: () => B.closeSettings() },
-      { label: 'RECENTER', onPress: () => B.recenter() },
-      { label: 'QUIT TO TITLE', icon: 'back', onPress: () => B.toTitle() },
+      { label: 'RESUME', icon: 'play', style: 'rift', onPress: () => B.closeSettings() },
+      { label: 'RECENTER', style: 'rift', onPress: () => B.recenter() },
+      { label: 'QUIT TO TITLE', icon: 'back', style: 'rift', onPress: () => B.toTitle() },
     ]);
     // how-to animated panel
     this.howPanel = new TextPanel({ w: 1.5, h: 1.0, cw: 480, ch: 320, scale: 2, renderOrder: 8 });
@@ -4394,9 +4397,8 @@ class UI {
   drawFileCard(g, W, H, b, id) {
     const def = BOSSES[id], open = Save.unlocked(id), beat = Save.beaten(id);
     const col = b.hover ? '#ffe600' : '#ffffff';
-    g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-    g.fillStyle = col; g.fillRect(0, 0, W, 4); g.fillRect(0, H - 4, W, 4); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
-    PixelFont.draw(g, `FILE ${def.fileNo}`, 16, 14, 3, col);
+    RiftUI.drawButton({ scale: 4, hover: b.hover, disabled: false, colorN: col, colorH: col, label: '', icon: null }, g, W, H);
+    PixelFont.draw(g, `FILE ${def.fileNo}`, 16, 14, 3, b.hover ? '#ffe600' : '#cbb8ff');
     if (beat) { PixelFont.draw(g, '★', W - 40, 12, 4, '#ffd23c'); PixelFont.draw(g, beat === 'spare' ? 'SPARED' : 'DEFEATED', W - 16 - PixelFont.width(beat === 'spare' ? 'SPARED' : 'DEFEATED', 2), 50, 2, beat === 'spare' ? '#3cff6e' : '#ff4466'); }
     if (open) {
       PixelFont.draw(g, def.fileName, 16, 62, 3, '#ffffff');
@@ -4523,8 +4525,7 @@ class UI {
   drawStats() {
     const P = this.statsPanel, g = P.ctx, W = P.o.cw, H = P.o.ch, D = Save.data;
     g.clearRect(0, 0, W, H);
-    g.fillStyle = 'rgba(0,0,0,0.94)'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#fff'; g.fillRect(0, 0, W, 4); g.fillRect(0, H - 4, W, 4); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
+    RiftUI.frameBg(g, W, H);
     PixelFont.drawIcon(g, 'heart', 14, 16, 3, '#ff0033');
     PixelFont.draw(g, 'SOUL STATS', 44, 16, 3, '#ffffff');
     const rows = [
@@ -4665,6 +4666,7 @@ class UI {
     this.big.mesh.lookAt(Head.pos);
     this.big.o.color = o.color || '#ffffff'; this.big.o.scale = o.scale || 3; this.big.o.glitch = o.glitch || 0;
     this.big.o.border = o.border === undefined ? '#ffffff' : o.border; this.big.o.bg = o.bg === undefined ? 'rgba(0,0,0,0.92)' : o.bg;
+    this.big.o.drawBg = o.frame === 'rift' ? RiftUI.frameBg : null;   // (the title's safety warning)
     if (o.type) this.bigTW.start(text, { voice: o.voice || 'narrator', speed: o.speed || 36 }); else { this.bigTW.done = true; this.big.setText(text); }
     this.big.mesh.visible = true;
   }
@@ -4737,10 +4739,9 @@ class UI {
   drawSettings() {
     const P = this.setPanel, g = P.ctx, W = P.o.cw, H = P.o.ch;
     g.clearRect(0, 0, W, H);
-    g.fillStyle = 'rgba(0,0,0,0.94)'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#fff'; g.fillRect(0, 0, W, 4); g.fillRect(0, H - 4, W, 4); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
+    RiftUI.frameBg(g, W, H);
     PixelFont.draw(g, 'SETTINGS', 18, 16, 3, '#ffd23c');
-    g.fillStyle = '#333'; g.fillRect(14, 50, W - 28, 2);
+    g.fillStyle = '#3a2a5a'; g.fillRect(14, 50, W - 28, 2);
     const cx = Math.round((0.34 / 1.25 + 0.5) * W);
     this.settingsRows(this.setPage).forEach((row, i) => {
       const y = 64 + i * 44;
@@ -4801,8 +4802,8 @@ class UI {
     if (this.howDrawT > 0) return; this.howDrawT = 0.12;
     const page = Math.floor(this.howT / 4.5) % 5;
     const P = this.howPanel, g = P.ctx, W = 480, H = 320, t = this.howT;
-    g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#fff'; g.fillRect(0, 0, W, 4); g.fillRect(0, H - 4, W, 4); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
+    g.clearRect(0, 0, W, H);
+    RiftUI.frameBg(g, W, H);
     const title = ['GRIP + PULL TO FLY', 'POKE THE BUTTONS', 'SLASH ON THE BEAT', 'BULLET COLORS', 'GRAZE FOR TP'][page];
     PixelFont.draw(g, title, Math.round((W - PixelFont.width(title, 3)) / 2), 16, 3, '#ffd23c');
     PixelFont.draw(g, `${page + 1}/5`, W - 50, H - 22, 2, '#777');
@@ -9668,13 +9669,14 @@ class Battle {
     this.pendingBoss = id;
     MusicLibrary.getTrack(id);   // decode its music while the warning is up
     this.setState('SAFETY_WARNING');
-    G.ui.showBig('!  WARNING  !\n\nThis game contains flashing lights\nand strobing effects.\n\nChoose your visual mode.\n(Reduced is recommended and selected.)', { scale: 3, dist: 1.7, y: 0.2, color: '#ffffff' });
+    G.ui.showBig('!  WARNING  !\n\nThis game contains flashing lights\nand strobing effects.\n\nChoose your visual mode.\n(Reduced is recommended and selected.)', { scale: 3, dist: 1.7, y: 0.2, color: '#ffffff', frame: 'rift' });
     G.ui.safetyMenu.showArc({ yOff: -0.45 });
   }
   chooseFlashing(mode) {
     Settings.set('flashing', mode);
     G.ui.safetyMenu.hide(); G.ui.hideBig();
-    this.startBattle(this.pendingBoss || 'proprietor');
+    const go = () => this.startBattle(this.pendingBoss || 'proprietor');
+    if (G.bg.theme === 'rift') RiftKit.plunge(go); else go();
   }
   openSettings() { G.ui.titleMenu.hide(); G.ui.showTitle(false); this.setState('SETTINGS'); G.ui.openSettingsPanel(true); }
   openHowTo() { G.ui.titleMenu.hide(); G.ui.showTitle(false); this.setState('HOW_TO'); G.ui.openHowTo(); }
@@ -28130,6 +28132,74 @@ function drawSoulRiftLogo(g, W, H) {
 }
 
 // ============================================================================
+//  RiftUI - the SoulRift menus: buttons of dark glass in a lit violet bezel (they catch the rift's light,
+//  and the face sinks into the bezel when you poke it), and panels with a glass ground, a violet-to-teal
+//  edge and corner brackets. Opt-in (Button3D style: 'rift'), used by the title's menus; the panels'
+//  frame is shared by SETTINGS / SOUL STATS / HOW TO PLAY and the safety warning.
+// ============================================================================
+const RiftUI = {
+  mats() {
+    if (!this.bodyMat) {
+      this.bodyMat = CircusShade.material({ color: 0x1a1230, gloss: 1.1, shine: 50, rim: 0.6, emit: 0.2, vertexColors: false });
+      this.frameMat = CircusShade.material({ color: 0x8a6cd8, gloss: 1.4, shine: 70, rim: 0.9, emit: 0.3, vertexColors: false });
+    }
+    return this;
+  },
+  // a rounded rectangular ring round a w x h face (b wide), extruded and bevelled
+  frameGeo(w, h, b = 0.012, r = 0.014) {
+    const rr = (s, x0, y0, x1, y1, rad) => {
+      s.moveTo(x0 + rad, y0); s.lineTo(x1 - rad, y0); s.quadraticCurveTo(x1, y0, x1, y0 + rad); s.lineTo(x1, y1 - rad); s.quadraticCurveTo(x1, y1, x1 - rad, y1);
+      s.lineTo(x0 + rad, y1); s.quadraticCurveTo(x0, y1, x0, y1 - rad); s.lineTo(x0, y0 + rad); s.quadraticCurveTo(x0, y0, x0 + rad, y0);
+    };
+    const sh = new THREE.Shape(); rr(sh, -w / 2 - b, -h / 2 - b, w / 2 + b, h / 2 + b, r);
+    const m = 0.003, hole = new THREE.Path(); rr(hole, -w / 2 - m, -h / 2 - m, w / 2 + m, h / 2 + m, Math.min(r * 0.5, w / 4, h / 4)); sh.holes.push(hole);   // (the bevel eats m)
+    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 2, curveSegments: 3 });
+    g.translate(0, 0, -0.004);
+    return g;
+  },
+  // a button's 3D parts: the lit glass body behind the face, the bezel round it
+  dress(b) {
+    this.mats();
+    b.body.material.dispose(); b.body.material = this.bodyMat;
+    b.body.position.z -= b.depth * 0.8;   // room for the face to sink into the bezel when poked
+    b.frame = new THREE.Mesh(this.frameGeo(b.w, b.h), this.frameMat);
+    b.root.add(b.frame);
+  },
+  // a button's face: dark glass, a glowing violet-to-teal inner edge, a sheen across the top
+  drawButton(b, g, W, H) {
+    const s = b.scale, hv = b.hover && !b.disabled;
+    const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, hv ? '#2c1a54' : '#1b1032'); gr.addColorStop(1, hv ? '#130a28' : '#07040f');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    const eg = g.createLinearGradient(0, 0, W, 0); eg.addColorStop(0, hv ? '#ff86e4' : '#9a6cff'); eg.addColorStop(1, hv ? '#7affee' : '#2affd5');
+    const bw = Math.max(2, s - 1);
+    g.fillStyle = eg; g.fillRect(0, 0, W, bw); g.fillRect(0, H - bw, W, bw); g.fillRect(0, 0, bw, H); g.fillRect(W - bw, 0, bw, H);
+    g.fillStyle = hv ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.07)'; g.fillRect(bw, bw, W - 2 * bw, Math.round(H * 0.4));
+    const col = b.disabled ? '#5a5a6a' : hv ? b.colorH : b.colorN;
+    let x = 3 * s + 3;
+    const y = Math.round((H - 7 * s) / 2);
+    if (b.icon) {
+      if (hv) PixelFont.drawIcon(g, 'heart', x, y, s, '#ff2a55');
+      else PixelFont.drawIcon(g, b.icon, x, y, s, b.disabled ? '#5a5a6a' : '#2affd5');
+      x += 9 * s;
+    }
+    const tw = PixelFont.width(b.label, s), avail = W - x - 3 * s - 3;
+    PixelFont.draw(g, b.label, x + Math.max(0, Math.round((avail - tw) / 2)), y, s, col, { shadow: hv ? '#5a2a9a' : null });
+  },
+  // a panel's ground (SETTINGS, SOUL STATS, HOW TO PLAY, the safety warning)
+  frameBg(g, W, H) {
+    const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, 'rgba(24,13,48,0.95)'); gr.addColorStop(1, 'rgba(6,4,16,0.95)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.025)'; for (let y = 0; y < H; y += 4) g.fillRect(0, y, W, 1);
+    const b = 4, eg = g.createLinearGradient(0, 0, W, H); eg.addColorStop(0, '#b48cff'); eg.addColorStop(1, '#2affd5');
+    g.fillStyle = eg; g.fillRect(0, 0, W, b); g.fillRect(0, H - b, W, b); g.fillRect(0, 0, b, H); g.fillRect(W - b, 0, b, H);
+    const L = Math.max(10, Math.round(Math.min(W, H) * 0.07)), m = b + 4;
+    g.fillStyle = '#ffffff';
+    g.fillRect(m, m, L, 2); g.fillRect(m, m, 2, L); g.fillRect(W - m - L, m, L, 2); g.fillRect(W - m - 2, m, 2, L);
+    g.fillRect(m, H - m - 2, L, 2); g.fillRect(m, H - m - L, 2, L); g.fillRect(W - m - L, H - m - 2, L, 2); g.fillRect(W - m - 2, H - m - L, 2, L);
+  },
+};
+
+// ============================================================================
 //  boot: build every system
 // ============================================================================
 G.def = BOSSES.proprietor;        // active boss definition (switched by Battle.loadBoss)
@@ -28149,7 +28219,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo }, camera };
+window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)

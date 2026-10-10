@@ -7,6 +7,9 @@ boss fights built for the Meta Quest 3S, with grab-and-pull locomotion. Everythi
 (models, textures, pixel font, SFX, fallback music) is procedural; three.js r160 from
 unpkg is the only dependency. The soundtrack ships next to it in `music_pack.js`.
 
+The title is THE RIFT: you stand on a floating island in deep space, in front of a tear
+of light where the worlds leak through, and every fight starts by falling into it.
+
 Four bosses, picked from the SAVE FILES screen, and a shop between them:
 
 - **FILE 1 - THE MANOR**: THE PROPRIETOR, a haunted mansion in a butler's body.
