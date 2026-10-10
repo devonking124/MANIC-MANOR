@@ -12808,7 +12808,7 @@ class StackOverflow extends Pattern {
     if (this.ai < this.adds.length && n >= this.adds[this.ai][0]) this.addLayer();
     const sadAt = this.beats - 16;
     if (n === sadAt) {
-      this.sad = true; if (G.boss && G.boss.setSad) G.boss.setSad(true);
+      this.sad = true; if (G.boss && G.boss.setSad) G.boss.setSad(true); DataKit.setSad(true);
       kidChat('why does nobody ever stay online with me', 'sad', 6.5);
       G.fx.glitchBase = 0.15;
     }
@@ -12881,6 +12881,7 @@ class StackOverflow extends Pattern {
   onEnd() {
     KidKit.nest.count = 0; KidKit.glassDone(0);
     if (G.boss && G.boss.setSad) G.boss.setSad(false);
+    if (DataKit.sad) DataKit.setSad(false);
   }
 }
 
@@ -12931,6 +12932,7 @@ class DisconnectSeq extends Pattern {
     w.glitch = 0.05;
     kidChat('WAIT NO MY WIFI', 'angry', 4.5);
     if (G.boss && G.boss.setScreen) G.boss.setScreen('loading');
+    DataKit.blackout(true);
     if (G.boss) G.boss.glitchBurst();
   }
   explode(when) {
@@ -12943,6 +12945,7 @@ class DisconnectSeq extends Pattern {
       b.beh = BEH.LINEAR; b.owner = null; b.acc.set(0, 0, 0); b.vel.copy(_v1.normalize()).multiplyScalar(3.0); b.life = b.age + 2.2; b.bounds = true;
     }
     const w = KidKit.sys; w.drawBody = null; w.close(true);
+    DataKit.blackout(false);
     G.audio.sfx.bassHit(when); G.audio.sfx.glitch(); G.fx.glitchSpike = 1;
     G.ui.hideBubble();
     G.ui.showPrompt('RECONNECTED', 1.2, '#2affd5');
@@ -12962,7 +12965,7 @@ class DisconnectSeq extends Pattern {
     }
   }
   isIdle() { return true; }
-  onEnd() { G.bullets.frozen = false; const w = KidKit.sys; w.drawBody = null; w.close(); }
+  onEnd() { G.bullets.frozen = false; const w = KidKit.sys; w.drawBody = null; w.close(); if (DataKit.mode === 3) DataKit.blackout(false); }
 }
 
 // ---------------------------------------------------------------------------
@@ -13010,6 +13013,7 @@ class CrashSeq extends Pattern {
     kidChat('no no no no no NO NO NO', 'angry', 3.4);
     G.fx.glitchSpike = Math.max(G.fx.glitchSpike, 0.8);
     if (G.boss) { G.boss.glitchBurst(); if (G.boss.setScreen) G.boss.setScreen('error'); }
+    DataKit.freeze(true);
   }
   startReboot(h, when) {
     G.bullets.frozen = false; G.bullets.clear(true);
@@ -13018,12 +13022,13 @@ class CrashSeq extends Pattern {
     const r = this.reboot = new RebootPattern({ intensity: this.intensity, speedMul: this.speedMul, bars: 8, dmg: this.dmg, lastSpawn: this.gap3 - this.cH / 2 - 3, inSeq: true });
     r.startBeat = this.startBeat + h / 2; r.started = true; r.onStart();
     if (G.boss && G.boss.setScreen) G.boss.setScreen('boot');
+    DataKit.reboot();
   }
   sudo(when) {
     if (this.reboot) { this.reboot.end(); this.reboot = null; }
     G.bullets.clear(false); G.tele.clear();
     G.arena.setTheme('void', Flash.reduced ? 0.6 : 0);
-    G.bg.dim = 0.15;
+    G.bg.dim = 0.15; DataKit.sudo(true);
     Head.update();
     const P = KidKit.sudo; P.mesh.position.copy(Head.rel(_v1, 0, 0.05, 1.7)); P.mesh.lookAt(Head.pos);
     P.mesh.visible = true; P.setText('', 0); this.sudoT = 0;
@@ -13031,7 +13036,7 @@ class CrashSeq extends Pattern {
   }
   transform(when) {
     KidKit.sudo.mesh.visible = false; this.sudoT = -1;
-    G.bg.dim = 1; G.bg.setRed(true);
+    G.bg.dim = 1; G.bg.setRed(true); DataKit.sudo(false);
     G.arena.setTheme('admin', Flash.reduced ? 1.0 : 0.15);
     if (G.boss && G.boss.transform) G.boss.transform();
     G.audio.sfx.bassHit(when); G.audio.sfx.digiWhoosh(); G.audio.sfx.crash(when);
@@ -13061,6 +13066,8 @@ class CrashSeq extends Pattern {
     G.bullets.frozen = false;
     KidKit.sudo.mesh.visible = false;
     for (const w of KidKit.errs) w.close();
+    if (DataKit.frozen) DataKit.freeze(false);
+    if (DataKit.sudoK > 0) DataKit.sudo(false);
   }
 }
 
@@ -14274,6 +14281,7 @@ BOSSES.kiddie = {
       G.clock.setRate(0.15, 1.6);
       B.after(1.7, () => G.clock.stop(0.8));
       G.boss.defeat();
+      B.after(0.9, () => DataKit.lightsOut());
       G.fx.glitchBase = 0; G.fx.glitchSpike = 0.6;
       B.after(1.6, () => { G.bg.dim = 0.4; G.arena.opacity = 0.35; });
       B.afterIn('VICTORY_FIGHT', 2.4, () => G.ui.say('gg i guess', { mood: 'sad', speed: 6 }));
@@ -14285,6 +14293,7 @@ BOSSES.kiddie = {
       G.audio.setLowpass(1400, 2.5); G.clock.setRate(0.9, 2.0);
       G.fx.glitchBase = 0; G.boss.setSad(false); G.boss.tired = false;
       G.boss.helloWorld(true); G.boss.setMood('happy'); G.boss.setScreen('hello', 999);
+      DataKit.warm();
       G.ui.chat.setStatus('online');
       G.audio.sfx.chimes();
       B.narrate('* You spared SCR1PT_K1DD1E.', () => B.talk(KLINES.spare, () => BOSSES.kiddie.friendRequest(B)));
@@ -14901,25 +14910,62 @@ function buildProprietorMini() {
   return g;
 }
 function buildKiddieMini() {
+  // a little SCR1PT_K1DD1E for the cameos (boss 3's front row, boss 4's campfire): the oversized hoodie with
+  // glowing code on it, hood up over the dark void with his teal eyes, the headset, a laptop on his lap, the cursor tail
   const root = new THREE.Group();
-  const screenTex = canvasTex(32, 20, (g) => { g.fillStyle = '#04120a'; g.fillRect(0, 0, 32, 20); g.fillStyle = '#3cff6e'; for (let y = 3; y < 18; y += 4) g.fillRect(3, y, randi(8, 26), 2); });
-  const body = new THREE.Mesh(mergeGeos([
-    { geo: new THREE.BoxGeometry(0.36, 0.34, 0.26), matrix: M4(0, 0.17, 0), color: 0x14303a },
-    { geo: new THREE.SphereGeometry(0.15, 10, 8), matrix: M4(0, 0.47, 0), color: 0x14303a },
-    { geo: new THREE.SphereGeometry(0.11, 10, 8), matrix: M4(0, 0.46, 0.06), color: 0x050608 },
-    { geo: new THREE.BoxGeometry(0.26, 0.015, 0.18), matrix: M4(0, 0.2, 0.2), color: 0x30343c },
-  ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.15), new THREE.MeshBasicMaterial({ map: screenTex }));
-  screen.position.set(0, 0.28, 0.12); screen.rotation.x = -0.35;
-  const eyes = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.04), new THREE.MeshBasicMaterial({ color: 0x2affd5 }));
-  eyes.position.set(0, 0.47, 0.172);
-  body.add(screen, eyes); root.add(body);
+  const HOOD = 0x1b3654, DARK = 0x16304c, JEANS = 0x2f4f86, SHOE = 0xf2f2f2, KIT = 0x1a1a22, TEAL = 0x2affd5;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const lathe = new THREE.LatheGeometry([[0, 0.05], [0.13, 0.05], [0.15, 0.13], [0.145, 0.2], [0.12, 0.26], [0.07, 0.3], [0, 0.31]].map(([r, y]) => new THREE.Vector2(r, y)), 14);
+  lathe.scale(1.1, 1, 0.82);
+  const P = [
+    { geo: lathe, color: HOOD },
+    { geo: new THREE.SphereGeometry(0.115, 14, 10), matrix: M4(0, 0.4, 0, 0, 0, 0, 1, 1.08, 0.96), color: HOOD },
+    { geo: new THREE.ConeGeometry(0.05, 0.1, 8), matrix: M4(0, 0.47, -0.09, -1.1, 0, 0), color: HOOD },
+    { geo: new THREE.CircleGeometry(0.082, 18), matrix: M4(0, 0.395, 0.112, 0, 0, 0, 0.9, 1.1, 1), color: 0x020406 },
+    { geo: new THREE.TorusGeometry(0.084, 0.013, 6, 18), matrix: M4(0, 0.395, 0.108, 0, 0, 0, 0.9, 1.1, 1), color: DARK },
+    { geo: new THREE.TorusGeometry(0.128, 0.008, 4, 14, Math.PI), matrix: M4(0, 0.41, 0), color: KIT },
+    { geo: new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10), matrix: M4(-0.125, 0.395, 0, 0, 0, Math.PI / 2), color: KIT },
+    { geo: new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10), matrix: M4(0.125, 0.395, 0, 0, 0, Math.PI / 2), color: KIT },
+    // the code on his hoodie, the kangaroo pocket
+    { geo: new THREE.BoxGeometry(0.09, 0.012, 0.004), matrix: M4(-0.02, 0.22, 0.122), color: 0x3cff6e },
+    { geo: new THREE.BoxGeometry(0.06, 0.012, 0.004), matrix: M4(0.015, 0.2, 0.124), color: TEAL },
+    { geo: new THREE.BoxGeometry(0.1, 0.012, 0.004), matrix: M4(-0.01, 0.18, 0.125), color: 0x3cff6e },
+    { geo: new THREE.SphereGeometry(0.07, 10, 6), matrix: M4(0, 0.11, 0.1, 0, 0, 0, 1.15, 0.55, 0.32), color: DARK },
+  ];
+  // cross-legged jeans, chunky white sneakers
+  for (const s of [-1, 1]) {
+    const hip = V(s * 0.05, 0.06, 0.0), knee = V(s * 0.14, 0.05, 0.09), ankle = V(-s * 0.05, s < 0 ? 0.035 : 0.045, s < 0 ? 0.15 : 0.12);
+    P.push(Object.assign(kidLimb(hip, knee, 0.035), { color: JEANS }), Object.assign(kidLimb(knee, ankle, 0.03), { color: JEANS }));
+    P.push({ geo: new THREE.BoxGeometry(0.1, 0.035, 0.05), matrix: M4(ankle.x - s * 0.03, ankle.y - 0.01, ankle.z, 0, -s * 0.25, 0), color: SHOE });
+  }
+  // arms reaching to the laptop, the cursor tail with its arrow
+  for (const s of [-1, 1]) P.push(Object.assign(kidLimb(V(s * 0.14, 0.25, 0), V(s * 0.09, 0.13, 0.12), 0.034), { color: HOOD }));
+  P.push({ geo: new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(0, 0.08, -0.09), V(0.13, 0.04, -0.2), V(0.3, 0.11, -0.19), V(0.37, 0.26, -0.08)]), 14, 0.01, 5, false), color: 0x3a3a46 });
+  const arrow = kidArrowGeo(); P.push({ geo: arrow, matrix: M4(0.37, 0.27, -0.08, 0.2, -0.6, 0.4, 0.09, 0.09, 0.09), color: 0xffffff });
+  // the laptop: base and lid (its screen is its own mesh)
+  P.push({ geo: new THREE.BoxGeometry(0.2, 0.012, 0.13), matrix: M4(0, 0.1, 0.17), color: 0x30343c });
+  P.push({ geo: new THREE.BoxGeometry(0.2, 0.13, 0.01), matrix: M4(0, 0.165, 0.235, -0.3, 0, 0), color: 0x30343c });
+  P.push({ geo: new THREE.BoxGeometry(0.06, 0.04, 0.004), matrix: M4(0.03, 0.17, 0.243, -0.3, 0, 0.2), color: 0xff3cc8 });   // a sticker on the lid
+  const body = new THREE.Mesh(mergeGeos(P), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  arrow.dispose();
+  root.add(body);
+  const draw = (c) => { c.fillStyle = '#04120a'; c.fillRect(0, 0, 32, 20); c.fillStyle = '#3cff6e'; for (let y = 3; y < 18; y += 4) c.fillRect(3, y, randi(8, 26), 2); };
+  const screenTex = canvasTex(32, 20, draw);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.11), new THREE.MeshBasicMaterial({ map: screenTex }));
+  screen.position.set(0, 0.165, 0.229); screen.rotation.set(-0.3, Math.PI, 0);
+  body.add(screen);
   const g = { root, body, screen, kind: 'kiddie' };
   g.update = (dt) => {
     g.cheerT = Math.max(0, (g.cheerT || 0) - dt);
-    body.position.y = g.cheerT > 0 ? Math.abs(Math.sin(G.time * 10)) * 0.06 : 0;
-    screen.material.color.setScalar(g.cheerT > 0 ? 1.6 : 1);
-    if (chance(dt * 1.5)) { const c = screenTex.userData.ctx; c.fillStyle = '#04120a'; c.fillRect(0, 0, 32, 20); c.fillStyle = '#3cff6e'; for (let y = 3; y < 18; y += 4) c.fillRect(3, y, randi(8, 26), 2); screenTex.needsUpdate = true; }
+    body.position.y = g.cheerT > 0 ? Math.abs(Math.sin(G.time * 10)) * 0.06 : Math.sin(G.time * 1.6) * 0.008;
+    screen.material.color.setScalar(g.cheerT > 0 ? 1.6 : 1.15);
+    if (chance(dt * 1.5)) { draw(screenTex.userData.ctx); screenTex.needsUpdate = true; }
+    // his eyes in the hood, the headset's LED rings
+    root.updateMatrixWorld(true);
+    for (const ex of [-0.032, 0.032]) { _v6.set(ex, 0.4 + body.position.y, 0.12).applyMatrix4(root.matrixWorld); G.fx.glow.add(_v6.x, _v6.y, _v6.z, 0.05, 0.16, 1, 0.84, 0.9, 1); }
+    for (const s of [-1, 1]) { _v6.set(s * 0.145, 0.395 + body.position.y, 0).applyMatrix4(root.matrixWorld); _c1.setHSL((G.time * 0.15 + (s > 0 ? 0.5 : 0)) % 1, 1, 0.55); G.fx.glow.add(_v6.x, _v6.y, _v6.z, 0.06, _c1.r, _c1.g, _c1.b, 0.5, 0); }
+    _v6.set(0, 0.25 + body.position.y, 0.18).applyMatrix4(root.matrixWorld); G.fx.glow.add(_v6.x, _v6.y, _v6.z, 0.16, 0.24, 1, 0.43, 0.25 * (g.cheerT > 0 ? 1.6 : 1), 0);   // the laptop's light on his face
+    if (g.cheerT > 0 && chance(dt * 16)) { root.getWorldPosition(_v6); G.fx.glyphs.emit(_v6.x, _v6.y + 0.5, _v6.z, rand(-0.3, 0.3), rand(0.5, 1.0), rand(-0.3, 0.3), 0.9, 0.05, 0.24, 1, 0.43, GlyphAtlas.hex(), -0.3, 0.6); }
   };
   return g;
 }
