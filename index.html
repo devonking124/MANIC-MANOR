@@ -3917,16 +3917,16 @@ class Menu {
 //  and by attacks (pop-up ads, code blocks, NOT RESPONDING).
 // ============================================================================
 const WINDOWS = [];   // every Window3D (animated from UI.update)
-const WIN_STYLES = {
-  default: { bar: '#2a2f8a', barText: '#ffffff', body: '#0a0c18', border: '#c8d0ff', text: '#e8ecff' },
-  ad:      { bar: '#ff3cc8', barText: '#ffffff', body: '#fff3b0', border: '#ff3cc8', text: '#1a1020' },
-  error:   { bar: '#ff2a4a', barText: '#ffffff', body: '#160206', border: '#ff2a4a', text: '#ffd0d6' },
-  chat:    { bar: '#0d3640', barText: '#2affd5', body: '#05060f', border: '#2affd5', text: '#3cff6e' },
+const WIN_STYLES = {   // bezel: the plastic frame's colour (windows made with bezel: true)
+  default: { bar: '#2a2f8a', barText: '#ffffff', body: '#0a0c18', border: '#c8d0ff', text: '#e8ecff', bezel: 0x2a2e3a },
+  ad:      { bar: '#ff3cc8', barText: '#ffffff', body: '#fff3b0', border: '#ff3cc8', text: '#1a1020', bezel: 0xe02aa8 },
+  error:   { bar: '#ff2a4a', barText: '#ffffff', body: '#160206', border: '#ff2a4a', text: '#ffd0d6', bezel: 0xb81830 },
+  chat:    { bar: '#0d3640', barText: '#2affd5', body: '#05060f', border: '#2affd5', text: '#3cff6e', bezel: 0x123a44 },
   angry:   { bar: '#ff2a4a', barText: '#ffffff', body: '#2a0008', border: '#ff2a4a', text: '#ff9aa8' },
   sad:     { bar: '#343a52', barText: '#c0c6e0', body: '#0c0e18', border: '#8088a8', text: '#aab2d2' },
-  cozy:    { bar: '#ffb36b', barText: '#3a1d10', body: '#2a1a12', border: '#ffd8a0', text: '#ffe8c8' },
+  cozy:    { bar: '#ffb36b', barText: '#3a1d10', body: '#2a1a12', border: '#ffd8a0', text: '#ffe8c8', bezel: 0xc87a3c },
   code:    { bar: '#14301a', barText: '#3cff6e', body: '#040a05', border: '#3cff6e', text: '#3cff6e' },
-  sys:     { bar: '#1a2a6a', barText: '#ffffff', body: '#c8c8c8', border: '#ffffff', text: '#101010' },
+  sys:     { bar: '#1a2a6a', barText: '#ffffff', body: '#c8c8c8', border: '#ffffff', text: '#101010', bezel: 0xb8b8c0 },
   term:    { bar: '#000000', barText: '#ff2a4a', body: '#000000', border: '#ff2a4a', text: '#ff2a4a' },
 };
 // height drawWrapped would use for this text (canvas px)
@@ -3956,6 +3956,16 @@ class Window3D {
     this.panel = new THREE.Mesh(UNIT_PLANE, this.mat); this.panel.scale.set(O.w, O.h, 1); this.panel.renderOrder = 12;
     this.back = new THREE.Mesh(UNIT_BOX, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true }));
     this.back.scale.set(O.w, O.h, 0.012); this.back.position.z = -0.008;
+    if (O.bezel) {
+      // a rounded, beveled plastic frame behind the panel, lit by the scene (its colour follows the style)
+      const sh = new THREE.Shape(), bw = O.w + 0.04, bh = O.h + 0.04, r = 0.022, b = 0.008;
+      const pts = []; for (const [cx, cy, a0] of [[bw / 2 - r, bh / 2 - r, 0], [-bw / 2 + r, bh / 2 - r, Math.PI / 2], [-bw / 2 + r, -bh / 2 + r, Math.PI], [bw / 2 - r, -bh / 2 + r, Math.PI * 1.5]]) for (let k = 0; k <= 4; k++) { const a = a0 + k / 4 * Math.PI / 2; pts.push([cx + Math.cos(a) * (r - b), cy + Math.sin(a) * (r - b)]); }
+      pts.forEach(([x, y], i) => (i ? sh.lineTo(x, y) : sh.moveTo(x, y)));
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 0.012, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 3 });
+      g.translate(0, 0, -0.012 - b - 0.003);
+      this.back.material.dispose(); this.back.geometry = g; this.back.scale.set(1, 1, 1); this.back.position.z = 0;
+      this.back.material = CircusShade.material({ gloss: 1.3, shine: 70, rim: 0.7, emit: 0.3, transparent: true, vertexColors: false });
+    }
     this.root.add(this.back, this.panel);
     const defs = [];
     if (O.closable) defs.push({ label: 'X', scale: 3, color: '#ffffff', hoverColor: '#ffe600', size: 0.95, quiet: true, onPress: () => this.pressX() });
@@ -3982,7 +3992,7 @@ class Window3D {
     if (face) this.root.lookAt(face);
     this.root.visible = true; this.isOpen = true; this.popT = 0; this.fadeT = 0;
     this.root.scale.setScalar(0.01);
-    this.mat.opacity = 1; this.back.material.opacity = 1;
+    this.setAlpha(1);
     if (o.interactive !== false) this.menu.open(); else this.menu.hide();
     this.root.updateMatrixWorld(true);
     this.draw();
@@ -3995,10 +4005,13 @@ class Window3D {
     this.isOpen = false; this.root.visible = false;
   }
   pressX() { if (!this.isOpen) return; const f = this.onClose; this.close(); if (f) f(this); }
+  // panel + back plate opacity (a bezel's lit material keeps it in a uniform)
+  setAlpha(a) { this.mat.opacity = a; const m = this.back.material; m.opacity = a; if (m.uniforms) m.uniforms.uOpacity.value = a; }
   draw() {
     const g = this.g, W = this.cw, H = this.ch, S = WIN_STYLES[this.style] || WIN_STYLES.default, bp = this.barPx;
     g.fillStyle = S.body; g.fillRect(0, 0, W, H);
     g.fillStyle = S.bar; g.fillRect(0, 0, W, bp);
+    if (this.back.material.uniforms) this.back.material.uniforms.uColor.value.setHex(S.bezel !== undefined ? S.bezel : 0x2a2e3a);
     const ts = Math.max(1, Math.floor((bp - 4) / 7));
     PixelFont.draw(g, this.title, 6 + (this.dot ? bp : 0), Math.round((bp - 7 * ts) / 2), ts, S.barText, this.glitch ? { glitch: this.glitch * Flash.glitchMul } : undefined);
     if (this.dot) { g.fillStyle = this.dot; const r = Math.round(bp * 0.28); g.beginPath(); g.arc(6 + bp / 2, bp / 2, r, 0, TAU); g.fill(); }
@@ -4014,7 +4027,7 @@ class Window3D {
     if (this.popT < 1) { this.popT = Math.min(1, this.popT + dt / 0.13); this.root.scale.setScalar(this.sizeK * Math.max(0.01, easeOut(this.popT))); }
     if (this.fadeT > 0) {
       this.fadeT += dt / 0.25;
-      const a = Math.max(0, 1 - this.fadeT); this.mat.opacity = a; this.back.material.opacity = a; this.root.scale.setScalar(this.sizeK * (0.6 + 0.4 * a));
+      const a = Math.max(0, 1 - this.fadeT); this.setAlpha(a); this.root.scale.setScalar(this.sizeK * (0.6 + 0.4 * a));
       if (this.fadeT >= 1) { this.root.visible = false; this.fadeT = 0; }
     }
     if (this.glitch > 0 && this.isOpen) { this.redrawT -= dt; if (this.redrawT <= 0) { this.redrawT = Flash.reduced ? 0.34 : 0.2; this.draw(); } }
@@ -4068,7 +4081,7 @@ class ChatTypewriter {
 // the boss-2 dialogue window: lowercase chat with a status dot (busy / online / offline)
 class ChatBox {
   constructor() {
-    this.win = new Window3D({ w: 1.4, h: 1.4 * 258 / 690, ppm: 690 / 1.4, title: 'SCR1PT_K1DD1E', closable: false, style: 'chat', barPx: 34 });
+    this.win = new Window3D({ w: 1.4, h: 1.4 * 258 / 690, ppm: 690 / 1.4, title: 'SCR1PT_K1DD1E', closable: false, style: 'chat', barPx: 34, bezel: true });
     this.win.drawBody = (g, x, y, w, h, win, S) => this.drawBody(g, x, y, w, h, S);
     this.win.panel.renderOrder = 2; this.win.back.renderOrder = 1;   // a solid sign: see UI.updateTalk
     this.tw = new ChatTypewriter(this);
@@ -4093,7 +4106,7 @@ class ChatBox {
     this.win.style = mood === 'angry' ? 'angry' : mood === 'sad' ? 'sad' : mood === 'cozy' ? 'cozy' : 'chat';
     if (this.tw.final) this.prev = this.tw.final;
     const speed = o.speed || (mood === 'sad' ? 9 : mood === 'angry' ? 34 : 28);
-    if (!this.win.root.visible) { this.win.root.visible = true; this.win.popT = 0; this.win.root.scale.setScalar(0.01); this.win.mat.opacity = 1; this.win.back.material.opacity = 1; this.win.fadeT = 0; this.fresh = true; }
+    if (!this.win.root.visible) { this.win.root.visible = true; this.win.popT = 0; this.win.root.scale.setScalar(0.01); this.win.setAlpha(1); this.win.fadeT = 0; this.fresh = true; }
     this.tw.start(text, { speed });
     if (G.boss && G.boss.setMood) G.boss.setMood(mood);
     this.redraw();
@@ -5064,6 +5077,95 @@ class GlyphPool extends BulletPool {
     this.glyphArr = arr; this.glyphAttr = attr;
   }
 }
+// voxel bullets (boss 2's viruses and packets): the 7 x 7 icons from the glyph atlas, extruded two voxels deep.
+// One geometry holds every frame (each voxel knows which frames it is in); the bullet's glyph picks the frame.
+const VOX_FRAMES = ['virusA', 'virusB', 'shield', 'packet'];
+class VoxPool extends BulletPool {
+  constructor(name, def, cap) {
+    const pos = [], nor = [], msk = [], loc = [], idx = [];
+    const box = new THREE.BoxGeometry(1 / 7, 1 / 7, 2 / 7), BP = box.attributes.position, BN = box.attributes.normal, BI = box.index;
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) {
+      let m = 0; VOX_FRAMES.forEach((f, k) => { if (GlyphAtlas.ICONS[f][r][c] === '#') m += 1 << k; });
+      if (!m) continue;
+      const cx = (c - 3) / 7, cy = (3 - r) / 7, base = pos.length / 3;
+      for (let i = 0; i < BP.count; i++) {
+        pos.push(BP.getX(i) + cx, BP.getY(i) + cy, BP.getZ(i)); nor.push(BN.getX(i), BN.getY(i), BN.getZ(i));
+        msk.push(m); loc.push(BP.getX(i) * 7, BP.getY(i) * 7, BP.getZ(i) * 3.5);
+      }
+      for (let i = 0; i < BI.count; i++) idx.push(BI.getX(i) + base);
+    }
+    box.dispose();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('aMask', new THREE.Float32BufferAttribute(msk, 1)); geo.setAttribute('aLoc', new THREE.Float32BufferAttribute(loc, 3)); geo.setIndex(idx);
+    const arr = new Float32Array(cap), attr = new THREE.InstancedBufferAttribute(arr, 1);
+    attr.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('aGlyph', attr);
+    GlyphAtlas.build();
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uIdx: { value: new THREE.Vector4(...VOX_FRAMES.map((f) => GlyphAtlas.idx[f])) } },
+      vertexShader: `attribute float aMask; attribute float aGlyph; attribute vec3 aLoc; uniform vec4 uIdx; varying vec3 vN; varying vec3 vL; varying vec3 vCol;
+        void main(){
+          float f = aGlyph == uIdx.x ? 1.0 : aGlyph == uIdx.y ? 2.0 : aGlyph == uIdx.z ? 4.0 : 8.0;
+          float on = mod(floor(aMask / f + 0.01), 2.0);
+          vec4 lp = vec4(position * on, 1.0); vec3 n = normal;
+          #ifdef USE_INSTANCING
+            lp = instanceMatrix * lp; n = mat3(instanceMatrix) * n;
+          #endif
+          vN = normalize(mat3(modelMatrix) * n); vL = aLoc;
+          #ifdef USE_INSTANCING_COLOR
+            vCol = instanceColor;
+          #else
+            vCol = vec3(1.0);
+          #endif
+          gl_Position = projectionMatrix * modelViewMatrix * lp;
+        }`,
+      fragmentShader: `varying vec3 vN; varying vec3 vL; varying vec3 vCol;
+        void main(){
+          vec3 a = abs(vL) * 2.0; float mx = max(a.x, max(a.y, a.z)), mn = min(a.x, min(a.y, a.z)), md = a.x + a.y + a.z - mx - mn;
+          float edge = smoothstep(0.7, 0.92, md);
+          float sh = 0.55 + 0.45 * max(dot(normalize(vN), normalize(vec3(0.35, 0.8, 0.5))), 0.0);
+          vec3 c = mix(vCol * sh * 0.8, mix(vCol, vec3(1.0), 0.45) * 1.2, edge);
+          gl_FragColor = vec4(c, 1.0);
+          #include <colorspace_fragment>
+        }`,
+    });
+    super(name, def, geo, cap, mat);
+    this.glyphArr = arr; this.glyphAttr = attr;
+  }
+}
+// the pellet's looks, picked by each boss's palette (pelletLook): 'ico' (the default) or 'bit' (boss 2: a little
+// voxel of data with bright edges; same size and hitbox)
+const PelletLooks = {
+  bit() {
+    return {
+      geo: new THREE.BoxGeometry(1.4, 1.4, 1.4),
+      mat: new THREE.ShaderMaterial({
+        vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vCol;
+          void main(){ vP = position; vN = normal;
+            #ifdef USE_INSTANCING_COLOR
+              vCol = instanceColor;
+            #else
+              vCol = vec3(1.0);
+            #endif
+            vec4 lp = vec4(position, 1.0);
+            #ifdef USE_INSTANCING
+              lp = instanceMatrix * lp;
+            #endif
+            gl_Position = projectionMatrix * modelViewMatrix * lp; }`,
+        fragmentShader: `varying vec3 vP; varying vec3 vN; varying vec3 vCol;
+          void main(){
+            vec3 a = abs(vP) / 0.7; float mx = max(a.x, max(a.y, a.z)), mn = min(a.x, min(a.y, a.z)), md = a.x + a.y + a.z - mx - mn;
+            float edge = smoothstep(0.66, 0.9, md), core = 1.0 - smoothstep(0.0, 0.45, max(a.x + a.y + a.z - mx, 0.0) * 0.6);
+            float sh = 0.6 + 0.4 * max(dot(normalize(vN), normalize(vec3(0.4, 0.8, 0.5))), 0.0);
+            vec3 c = vCol * sh * 0.78 + vCol * core * 0.25;
+            c = mix(c, mix(vCol, vec3(1.0), 0.6) * 1.25, edge);
+            gl_FragColor = vec4(c, 1.0);
+            #include <colorspace_fragment>
+          }`,
+      }),
+    };
+  },
+};
 // a juggling pin (white club with red bands), 2 units tall: bullets, JUGGLE STRIKE, the ringmaster's hands
 function makePinGeo(seg = 9) {
   const pts = [[0, -1], [0.13, -1], [0.15, -0.94], [0.1, -0.62], [0.13, -0.25], [0.3, 0.3], [0.34, 0.58], [0.25, 0.86], [0.1, 0.99], [0, 1]].map(([x, y]) => new THREE.Vector2(x, y));
@@ -5087,6 +5189,8 @@ class BulletPools {
       // boss 1 (lit, the manor's light): crystal drops, skeleton keys, mirrorballs, party ghosts, candlesticks, tears
       tear: new BulletPool('tear', { r: 0.05, scale: 0.045, glow: 0.2, glowColor: C.sad, glowA: 0.4, color: C.sad }, ManorBullets.tear(), 160, ManorBullets.mat('tear')),
       glyph: new GlyphPool('glyph', { r: 0.06, scale: 0.13, glow: 0.2, glowA: 0.35 }, 320),
+      // boss 2: the 7 x 7 icons as voxels (viruses, shields, packets)
+      vox: new VoxPool('vox', { r: 0.09, scale: 0.2, glow: 0.22, glowA: 0.4 }, 40),
       // boss 3 (lit by CircusShade): juggling / clown balls (tinted, white band), pins, throwing knives,
       // petals, confetti paper, raindrops, thread spools. Empty pools are hidden, so nothing compiles before boss 3.
       ball: new BulletPool('ball', { r: 0.09, scale: 0.09, glow: 0.24, glowA: 0.42, spin: 3 }, CircusGeo.ball(), 140, CircusShade.material({ gloss: 0.9, shine: 60, rim: 0.55, emit: 0.42, decor: true })),
@@ -5114,8 +5218,14 @@ class BulletPools {
     this.shootables = [];     // bullets the YELLOW soul can shoot (rebuilt each frame)
   }
   get count() { let n = 0; for (const p of this.list) n += p.active.length; return n; }
-  // per-boss bullet tint (from the active boss definition's palette)
+  // per-boss bullet tint and pellet look (from the active boss definition's palette)
   setPalette(P) {
+    const look = P.pelletLook || 'ico', pp = this.pools.pellet;
+    if (look !== this.pelletLook) {
+      if (!this.looks) this.looks = { ico: { geo: pp.mesh.geometry, mat: pp.mat } };
+      if (!this.looks[look]) this.looks[look] = PelletLooks[look]();
+      pp.mesh.geometry = this.looks[look].geo; pp.mesh.material = this.looks[look].mat; this.pelletLook = look;
+    }
     this.pools.pellet.def.glowColor = P.pelletGlow !== undefined ? P.pelletGlow : 0xffffff;
     this.pools.glyph.def.color = P.glyph !== undefined ? P.glyph : 0xffffff;
     this.pools.glyph.def.glowColor = P.glyph !== undefined ? P.glyph : 0xffffff;
@@ -10530,6 +10640,14 @@ function kidHard(p) {
   const pos = G.clock.posOfBeat(p.startBeat);
   return pos >= t.marks.B2_START - 0.1 && pos < (t.marks.GAP2 !== undefined ? t.marks.GAP2 : 1e9);
 }
+// a voxel bullet (viruses, packets): faces the soul, its glyph picks the frame
+function voxBullet(ch, x, y, z, col, scale) {
+  const b = G.bullets.spawn('vox', x, y, z); if (!b) return null;
+  b.glyph = GlyphAtlas.of(ch); b.faceSoul = true;
+  if (col !== undefined) { b.color.setHex(col); b.glowCol.setHex(col); }
+  if (scale) { b.scale = scale; b.r = scale * 0.45; }
+  return b;
+}
 function glyphBullet(ch, x, y, z, col, scale) {
   const b = G.bullets.spawn('glyph', x, y, z); if (!b) return null;
   b.glyph = typeof ch === 'number' ? ch : GlyphAtlas.of(ch);
@@ -11250,6 +11368,8 @@ const DataKit = {
     const run = (o) => { try { if (par) renderer.compileAsync(o, camera, scene).catch(() => {}); else renderer.compile(o, camera, scene); } catch { /* a shader that cannot prewarm compiles on first use */ } };
     const was = this.dissolving;
     run(this.root); this.setDissolve(!was); run(this.root); this.setDissolve(was);
+    // his attack kit, his voxel bullets and the pellets' look
+    for (const o of KidKit.prewarmList().concat([G.bullets.pools.vox.mesh, G.bullets.pools.pellet.mesh])) run(o);
   },
   // the lit surfaces take their dissolving twins (phase III) and back
   setDissolve(on) {
@@ -11422,52 +11542,150 @@ registerKit(DataKit, function () {
 });
 // @@/SERVER
 
+// ---------------------------------------------------------------------------
+//  KidKit: his attack props. Pop-up windows with plastic bezels, the CONNECTION LOST / error windows, the
+//  sudo text, the framed loading bar with its spinners and its shockwave, keycaps riding light bars for
+//  KEYSTROKE RAIN, the FIREWALL, a circuit board under the CYAN soul's wires, CRT walls for REBOOT,
+//  nested glass boxes for STACK OVERFLOW, and voxels for everything that gets deleted. Lit by the hall.
+// ---------------------------------------------------------------------------
+// a light bar: two crossed ribbons (instanced), a white core in a coloured halo (additive)
+const KID_BEAM_VS = `varying float vX; varying vec3 vTint;
+  void main(){ vX = uv.x * 2.0 - 1.0; vTint = vec3(1.0);
+    #ifdef USE_INSTANCING_COLOR
+      vTint = instanceColor;
+    #endif
+    vec4 lp = vec4(position, 1.0);
+    #ifdef USE_INSTANCING
+      lp = instanceMatrix * lp;
+    #endif
+    gl_Position = projectionMatrix * modelViewMatrix * lp; }`;
+const KID_BEAM_FS = `uniform float uA; varying float vX; varying vec3 vTint;
+  void main(){ float d = abs(vX), core = smoothstep(0.3, 0.0, d), halo = (1.0 - d) * (1.0 - d);
+    gl_FragColor = vec4((vTint * halo * 0.8 + mix(vTint, vec3(1.0), 0.65) * core * 1.3) * uA, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// a glowing shell (the ORANGE shockwave, the glass boxes): fresnel rim + a grid where the surface cuts it
+const KID_SHELL_VS = `varying vec3 vP; varying vec3 vN; varying vec3 vV; varying vec3 vTint;
+  void main(){ vP = position; vTint = vec3(1.0);
+    #ifdef USE_INSTANCING_COLOR
+      vTint = instanceColor;
+    #endif
+    vec4 lp = vec4(position, 1.0); vec3 n = normal;
+    #ifdef USE_INSTANCING
+      lp = instanceMatrix * lp; n = mat3(instanceMatrix) * n;
+    #endif
+    vec4 mv = modelViewMatrix * lp; vV = -mv.xyz; vN = normalize(normalMatrix * n); gl_Position = projectionMatrix * mv; }`;
+const KID_SHELL_FS = `uniform float uA; uniform float uGrid; uniform float uFill; uniform float uRim; uniform vec3 uCol; varying vec3 vP; varying vec3 vN; varying vec3 vV; varying vec3 vTint;
+  void main(){
+    float fr = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+    vec3 g = abs(fract(vP * uGrid) - 0.5); float line = uGrid > 0.0 ? smoothstep(0.44, 0.5, max(g.x, max(g.y, g.z))) : 0.0;
+    float a = uFill + pow(fr, 2.5) * uRim + line * 0.35;
+    gl_FragColor = vec4(uCol * vTint * a * uA, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// the REBOOT walls: the canvas on a CRT (scanlines, RGB fringes, phosphor bloom, a little roll and flicker)
+// (the RGB fringe never grows past ~1.5 px, and a wall passing through your head thins out so it never fills your eyes)
+const KID_CRT_FS = `uniform sampler2D uMap; uniform float uA; uniform float uTime; uniform vec2 uRep; uniform float uScroll; uniform float uAdd; varying vec2 vUv; varying vec3 vW;
+  void main(){
+    vec2 uv = vUv * uRep + vec2(0.0, uScroll);
+    float o = min(0.0016, fwidth(uv.x) * 1.5);
+    vec4 t = texture2D(uMap, uv);
+    vec3 c = vec3(texture2D(uMap, uv + vec2(o, 0.0)).r, t.g, texture2D(uMap, uv - vec2(o, 0.0)).b);
+    c *= (0.75 + 0.25 * step(0.5, fract(vUv.y * 160.0))) * (0.95 + 0.05 * sin(uTime * 53.0)) * 1.1;
+    c += c * c * 0.25;
+    float roll = smoothstep(0.0, 0.04, abs(fract(vUv.y * 0.5 - uTime * 0.25) - 0.5) - 0.44);
+    c *= 1.0 + 0.2 * (1.0 - roll);
+    float near = mix(0.35, 1.0, smoothstep(0.1, 0.5, distance(vW, cameraPosition)));
+    gl_FragColor = uAdd > 0.5 ? vec4(c * uA * near, 1.0) : vec4(c, t.a * uA * near);
+    #include <colorspace_fragment>
+  }`;
+// the FIREWALL: a hologram of a brick wall with flames licking up it, on the far wall of the box
+const KID_FWALL_FS = `uniform float uA; uniform float uTime; varying vec2 vUv;
+  float h1(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h1(i), h1(i + vec2(1.0, 0.0)), f.x), mix(h1(i + vec2(0.0, 1.0)), h1(i + 1.0), f.x), f.y); }
+  void main(){
+    vec2 b = vUv * vec2(9.0, 7.0); b.x += step(1.0, mod(b.y, 2.0)) * 0.5;
+    vec2 f = fract(b); float mortar = 1.0 - step(0.06, f.x) * step(0.1, f.y);
+    float fl = n2(vec2(vUv.x * 7.0, vUv.y * 3.0 - uTime * 1.6)) * 0.6 + n2(vec2(vUv.x * 15.0, vUv.y * 6.0 - uTime * 2.6)) * 0.4;
+    fl = smoothstep(0.35, 0.95, fl * (1.15 - vUv.y * 1.1));
+    vec3 col = vec3(1.0, 0.35, 0.1) * mortar * 0.3 * (1.0 - vUv.y * 0.6) + mix(vec3(1.0, 0.25, 0.05), vec3(1.0, 0.85, 0.3), fl) * fl * 0.9;
+    float edge = smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x) * smoothstep(1.0, 0.85, vUv.y);
+    gl_FragColor = vec4(col * edge * uA, 1.0);
+    #include <colorspace_fragment>
+  }`;
 const KidKit = {
   ready: false, chatT: 0,
   init() {
     if (this.ready) return; this.ready = true;
-    // pop-up ads (never more than 4 open)
+    this.extra = [];
+    const add = (o) => { scene.add(o); this.extra.push(o); return o; };
+    // pop-up ads (never more than 4 open), in glossy plastic bezels
     this.ads = [];
-    for (let i = 0; i < 4; i++) this.ads.push(new Window3D({ w: 0.44, h: 0.3, ppm: 700, title: 'FREE!!!', style: 'ad', closable: true, barPx: 34, textScale: 4, grabbable: true }));
+    for (let i = 0; i < 4; i++) this.ads.push(new Window3D({ w: 0.44, h: 0.3, ppm: 700, title: 'FREE!!!', style: 'ad', closable: true, barPx: 34, textScale: 4, grabbable: true, bezel: true }));
     // system windows: CONNECTION LOST spinner, antivirus, restored from backup
-    this.sys = new Window3D({ w: 1.25, h: 0.46, ppm: 420, title: 'NETWORK', style: 'sys', closable: false, barPx: 30, textScale: 3 });
+    this.sys = new Window3D({ w: 1.25, h: 0.46, ppm: 420, title: 'NETWORK', style: 'sys', closable: false, barPx: 30, textScale: 3, bezel: true });
     // error windows: FATAL ERROR, NOT RESPONDING
     this.errs = [];
-    for (let i = 0; i < 3; i++) this.errs.push(new Window3D({ w: 0.95, h: 0.38, ppm: 460, title: 'ERROR', style: 'error', closable: false, barPx: 28, textScale: 3 }));
+    for (let i = 0; i < 3; i++) this.errs.push(new Window3D({ w: 0.95, h: 0.38, ppm: 460, title: 'ERROR', style: 'error', closable: false, barPx: 28, textScale: 3, bezel: true }));
     // big text in the void (sudo su)
     this.sudo = new TextPanel({ w: 1.8, h: 0.34, cw: 720, bg: null, border: null, scale: 7, align: 'center', valign: 'middle', color: '#ff2a4a', renderOrder: 50, depthTest: false });
     this.sudo.mesh.visible = false; scene.add(this.sudo.mesh);
-    // giant loading bar above the box
+    // giant loading bar above the box, on a dark plastic frame
     this.load = new TextPanel({ w: 2.7, h: 0.46, cw: 810, ch: 138, bg: null, border: null, renderOrder: 6 });
     this.load.mesh.visible = false; scene.add(this.load.mesh);
-    // KEYSTROKE RAIN: one bar of light per falling key
-    this.keyBeams = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 24);
-    this.keyBeams.frustumCulled = false; this.keyBeams.count = 0; this.keyBeams.count0 = 24; this.keyBeams.setColorAt(0, _c1.setRGB(1, 1, 1)); scene.add(this.keyBeams);
-    // backspace laser
-    this.laser = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: KC.err, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
-    this.laser.visible = false; scene.add(this.laser);
-    // orange shockwave shell
-    this.wave = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshBasicMaterial({ color: KC.orange, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, wireframe: true }));
-    this.wave.visible = false; scene.add(this.wave);
-    // cable network (CYAN soul)
-    this.cables = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 48);
-    this.cables.frustumCulled = false; this.cables.count = 0; this.cables.setColorAt(0, _c1.setRGB(1, 1, 1)); scene.add(this.cables);
-    // nested boxes (STACK OVERFLOW): up to 3 inner layers x 12 edges
-    this.nest = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 36);
-    this.nest.frustumCulled = false; this.nest.count = 0; this.nest.setColorAt(0, _c1.setRGB(1, 1, 1)); scene.add(this.nest);
-    // REBOOT: BIOS text scrolling up all six walls + text-line bullet walls
+    this.loadFrame = add(new THREE.Mesh(kidPanel(2.86, 0.6, 0.08, 0.03, 0.014), CircusShade.material({ color: 0x14161c, gloss: 1.2, shine: 60, rim: 0.7, emit: 0.06, vertexColors: false })));
+    this.loadFrame.visible = false;
+    // KEYSTROKE RAIN: one light bar per falling key, a keycap riding it; BACKSPACE: a red laser bar
+    const beamGeo = mergeGeos([{ geo: new THREE.PlaneGeometry(1, 1), matrix: M4(0, 0, 0, -Math.PI / 2, 0, 0) }, { geo: new THREE.PlaneGeometry(1, 1), matrix: M4(0, 0, 0, -Math.PI / 2, 0, Math.PI / 2) }]);
+    const beamMat = (a) => new THREE.ShaderMaterial({ uniforms: { uA: { value: a } }, vertexShader: KID_BEAM_VS, fragmentShader: KID_BEAM_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    this.keyBeams = add(new THREE.InstancedMesh(beamGeo, beamMat(1), 24));
+    this.keyBeams.frustumCulled = false; this.keyBeams.count = 0; this.keyBeams.count0 = 24; this.keyBeams.setColorAt(0, _c1.setRGB(1, 1, 1));
+    this.laser = add(new THREE.InstancedMesh(beamGeo, beamMat(1.2), 1));
+    this.laser.setColorAt(0, _c1.setHex(KC.err)); this.laser.visible = false; this.laser.frustumCulled = false;
+    const capGeo = mergeGeos([{ geo: new THREE.CylinderGeometry(0.36, 0.5, 0.42, 4, 1), matrix: M4(0, 0, 0, Math.PI / 2, Math.PI / 4, 0) }, { geo: new THREE.BoxGeometry(0.52, 0.52, 0.06), matrix: M4(0, 0, 0.215), color: 0xdcdcdc }]);
+    this.caps = add(new THREE.InstancedMesh(capGeo, CircusShade.material({ gloss: 1.1, shine: 60, rim: 0.6, emit: 0.35 }), 26));
+    this.caps.frustumCulled = false; this.caps.count = 0; this.caps.setColorAt(0, _c1.setRGB(1, 1, 1)); this.caps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // LOADING BAR: the ORANGE shockwave shell, a loading spinner round each BLUE wheel
+    this.waveU = { uA: { value: 0.32 }, uGrid: { value: 3.0 }, uFill: { value: 0.06 }, uRim: { value: 0.9 }, uCol: { value: new THREE.Color(KC.orange) } };
+    this.wave = add(new THREE.Mesh(new THREE.SphereGeometry(1, 40, 24), new THREE.ShaderMaterial({ uniforms: this.waveU, vertexShader: KID_SHELL_VS, fragmentShader: KID_SHELL_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })));
+    this.wave.visible = false;
+    this.spin = add(new THREE.InstancedMesh(new THREE.RingGeometry(0.9, 1.0, 40, 1, 0, Math.PI * 1.5), new THREE.MeshBasicMaterial({ color: 0x2ab6ff, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 3));
+    this.spin.frustumCulled = false; this.spin.count = 0; this.spin.visible = false; this.spin.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // FIREWALL: the wall of fire on the far side of the box
+    this.fwallU = { uA: { value: 0 }, uTime: { value: 0 } };
+    this.fwall = add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({ uniforms: this.fwallU, vertexShader: MANOR_WV_VS, fragmentShader: KID_FWALL_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })));
+    this.fwall.visible = false; this.fwallK = 0; this.fwallOn = false;
+    // cable network (CYAN soul): glowing wires over a circuit board
+    this.cables = add(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1).rotateX(Math.PI / 2), CircusShade.material({ gloss: 1.2, shine: 70, rim: 0.9, emit: 0.85, vertexColors: false }), 48));
+    this.cables.frustumCulled = false; this.cables.count = 0; this.cables.setColorAt(0, _c1.setRGB(1, 1, 1));
+    this.boardTex = softTex(512, 256, null, { mipmaps: true });
+    this.board = add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), CircusShade.material({ map: this.boardTex, gloss: 1.0, shine: 50, rim: 0.3, emit: 0.55, transparent: true, opacity: 0.7, depthWrite: false, vertexColors: false })));
+    this.board.visible = false; this.board.renderOrder = -1;
+    this.pads = add(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.035, 0.035, 0.012, 14).rotateX(Math.PI / 2), CircusShade.material({ color: 0xd8b048, gloss: 2.0, shine: 120, rim: 0.8, emit: 0.3, vertexColors: false }), 12));
+    this.pads.frustumCulled = false; this.pads.visible = false;
+    // nested boxes (STACK OVERFLOW): up to 3 inner layers x 12 edges, and their glass
+    this.nest = add(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), CircusShade.material({ gloss: 1.4, shine: 80, rim: 0.8, emit: 0.9, vertexColors: false }), 36));
+    this.nest.frustumCulled = false; this.nest.count = 0; this.nest.setColorAt(0, _c1.setRGB(1, 1, 1));
+    this.glassU = { uA: { value: 1 }, uGrid: { value: 0 }, uFill: { value: 0.012 }, uRim: { value: 0.3 }, uCol: { value: new THREE.Color(0.5, 0.5, 0.5) } };
+    this.glass = add(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({ uniforms: this.glassU, vertexShader: KID_SHELL_VS, fragmentShader: KID_SHELL_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }), 3));
+    this.glass.frustumCulled = false; this.glass.count = 0; this.glass.visible = false; this.glass.setColorAt(0, _c1.setRGB(1, 1, 1));
+    // REBOOT: BIOS text scrolling up all six walls + text-line bullet walls, on CRT glass
     this.bootTex = canvasTex(256, 256, (g) => this.drawBoot(g), { repeat: true });
-    this.bootTex.repeat.set(2, 2);
-    this.bootBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ map: this.bootTex, transparent: true, opacity: 0.55, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-    this.bootBox.visible = false; scene.add(this.bootBox);
+    const crt = (map, add2, extra) => new THREE.ShaderMaterial(Object.assign({ uniforms: { uMap: { value: map }, uA: { value: 0 }, uTime: { value: 0 }, uRep: { value: new THREE.Vector2(add2 ? 2 : 1, add2 ? 2 : 1) }, uScroll: { value: 0 }, uAdd: { value: add2 ? 1 : 0 } }, vertexShader: MANOR_WV_VS, fragmentShader: KID_CRT_FS }, extra));
+    this.bootBox = add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), crt(this.bootTex, true, { transparent: true, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending })));
+    this.bootBox.visible = false;
     this.rebootTex = [];
     for (let ok = 0; ok < 6; ok++) this.rebootTex.push(canvasTex(512, 240, (g) => this.drawRebootWall(g, ok)));
     this.rebootWalls = [];
     for (let i = 0; i < 4; i++) {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: this.rebootTex[0], transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false }));
-      m.visible = false; m.renderOrder = 11; scene.add(m);
+      const m = add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), crt(this.rebootTex[0], false, { transparent: true, side: THREE.DoubleSide, depthWrite: false })));
+      m.material.uniforms.uA.value = 0.92; m.visible = false; m.renderOrder = 11;
       this.rebootWalls.push({ m, on: false, ok: 0, t0: 0, z0: 0, z1: 0, key: { grazed: false, used: false } });
     }
+    // voxels: whatever gets deleted or shot falls apart into these
+    this.vox = add(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), CircusShade.material({ gloss: 1.0, shine: 50, rim: 0.7, emit: 0.4, vertexColors: false }), 160));
+    this.vox.frustumCulled = false; this.vox.count = 0; this.vox.visible = false; this.vox.setColorAt(0, _c1.setRGB(1, 1, 1)); this.vox.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.voxels = [];
   },
   drawBoot(g) {
     g.fillStyle = '#000000'; g.fillRect(0, 0, 256, 256);
@@ -11492,13 +11710,107 @@ const KidKit = {
       }
     }
   },
+  // ---------------------------------------------------------------- the attacks' visual hooks
+  // a keycap riding light bar `i` (sc: the key's size); dim green while it hangs at the ceiling, white when live
+  keycap(i, x, y, z, sc, live, f) {
+    _v1.set(x, y, z); _s1.set(sc * 0.8, sc * 0.8, sc * 0.8); _m1.compose(_v1, _q1.identity(), _s1); this.caps.setMatrixAt(i, _m1);
+    if (live) this.caps.setColorAt(i, _c1.setRGB(0.85, 1, 0.9)); else this.caps.setColorAt(i, _c1.setRGB(0.24 * f + 0.1, f + 0.1, 0.43 * f + 0.1));
+  },
+  // BACKSPACE's key (wide, red) riding the laser
+  bksp(i, x, y, z) {
+    _v1.set(x, y, z); _m1.compose(_v1, _q1.identity(), _s1.set(0.5, 0.2, 0.2)); this.caps.setMatrixAt(i, _m1); this.caps.setColorAt(i, _c1.setRGB(1, 0.3, 0.38));
+  },
+  keycapsDone(n) { const C = this.caps; C.count = n; C.visible = n > 0; if (n) { C.instanceMatrix.needsUpdate = true; if (C.instanceColor) C.instanceColor.needsUpdate = true; } },
+  // the loading bar's frame follows its panel
+  frameLoad(on) {
+    const F = this.loadFrame, P = this.load.mesh; F.visible = on; if (!on) return;
+    F.position.copy(P.position); F.quaternion.copy(P.quaternion); F.translateZ(-0.03);
+  },
+  // a loading spinner in a BLUE wheel's plane (centre c, axes a1 / a2, radius R)
+  spinner(i, c, a1, a2, R) {
+    const n = _v3.crossVectors(a1, a2).normalize();
+    _m1.makeBasis(a1, a2, n); _q1.setFromRotationMatrix(_m1); _q2.setFromAxisAngle(_v4.set(0, 0, 1), -G.time * 6); _q1.multiply(_q2);
+    _m1.compose(c, _q1, _s1.set(R + 0.05, R + 0.05, R + 0.05)); this.spin.setMatrixAt(i, _m1);
+  },
+  spinnersDone(n) { const S = this.spin; S.count = n; S.visible = n > 0; if (n) S.instanceMatrix.needsUpdate = true; },
+  // LAG SPIKE: a buffering spinner (eight dots chasing round, facing you) where a frozen bullet will pop to
+  buffering(p, size = 0.1) {
+    const e = camera.matrixWorld.elements, t = Math.floor(G.time * (Flash.reduced ? 5 : 9));
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * TAU, c = Math.cos(a) * size, s = Math.sin(a) * size, k = (((i + t) % 8) + 8) % 8 / 7;
+      G.fx.glow.add(p.x + e[0] * c + e[4] * s, p.y + e[1] * c + e[5] * s, p.z + e[2] * c + e[6] * s, 0.035, 1, 0.3, 0.45, 0.2 + 0.7 * k, 0);
+    }
+  },
+  // the FIREWALL hologram on the box's far wall (fades in / out)
+  firewall(on) { this.fwallOn = on; },
+  // a circuit board under the CYAN soul's wires: pads at every junction, traces, chips, silkscreen
+  showBoard(net) {
+    const A = G.arena, W = net.sx * (NET_COLS - 1) + 0.44, H = net.sy * (NET_ROWS - 1) + 0.34;
+    const g = this.boardTex.userData.ctx, CW = 512, CH = 256, px = (x) => (x / W + 0.5) * CW, py = (y) => (0.5 - y / H) * CH;
+    g.fillStyle = '#04261a'; g.fillRect(0, 0, CW, CH);
+    for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '60,255,140'},${(Math.random() * 0.06).toFixed(3)})`; g.fillRect(Math.random() * CW, Math.random() * CH, 2, 2); }
+    g.strokeStyle = 'rgba(200,170,70,0.55)'; g.lineWidth = 2;
+    for (let i = 0; i < 26; i++) {
+      // decorative traces: right-angled runs, each ending on a via
+      let x = Math.random() * CW, y = Math.random() * CH; g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 3; k++) { if (k % 2) y += (Math.random() - 0.5) * 120; else x += (Math.random() - 0.5) * 200; g.lineTo(x, y); }
+      g.stroke(); g.fillStyle = '#c8a040'; g.beginPath(); g.arc(x, y, 3, 0, TAU); g.fill(); g.fillStyle = '#04261a'; g.beginPath(); g.arc(x, y, 1.2, 0, TAU); g.fill();
+    }
+    // the grid's own traces under the wires
+    g.strokeStyle = 'rgba(220,190,90,0.7)'; g.lineWidth = 6;
+    for (let r = 0; r < NET_ROWS; r++) { const y = py((r - (NET_ROWS - 1) / 2) * net.sy); g.beginPath(); g.moveTo(px(-(NET_COLS - 1) / 2 * net.sx), y); g.lineTo(px((NET_COLS - 1) / 2 * net.sx), y); g.stroke(); }
+    for (let k = 0; k < NET_COLS; k++) { const x = px((k - (NET_COLS - 1) / 2) * net.sx); g.beginPath(); g.moveTo(x, py(-(NET_ROWS - 1) / 2 * net.sy)); g.lineTo(x, py((NET_ROWS - 1) / 2 * net.sy)); g.stroke(); }
+    // chips between the junctions, labels
+    for (let k = 0; k < NET_COLS - 1; k++) for (let r = 0; r < NET_ROWS - 1; r++) {
+      if ((k + r) % 2) continue;
+      const cx = px((k + 0.5 - (NET_COLS - 1) / 2) * net.sx), cy = py((r + 0.5 - (NET_ROWS - 1) / 2) * net.sy);
+      g.fillStyle = '#101014'; g.fillRect(cx - 26, cy - 16, 52, 32); g.fillStyle = '#c8c8c8';
+      for (let p = 0; p < 6; p++) { g.fillRect(cx - 22 + p * 8, cy - 20, 3, 4); g.fillRect(cx - 22 + p * 8, cy + 16, 3, 4); }
+      PixelFont.draw(g, 'U' + (k * 3 + r + 1), cx - 10, cy - 4, 1, '#9a9aa0');
+    }
+    PixelFont.draw(g, 'K1DD1E-NET REV 0.1', 10, CH - 14, 1, '#e8e8e0'); PixelFont.draw(g, 'DO NOT LICK', CW - 80, 8, 1, '#e8e8e0');
+    this.boardTex.needsUpdate = true;
+    // the board just behind the wires, facing you
+    const B = this.board; B.position.copy(net.center).addScaledVector(net.fwd, 0.05); B.lookAt(_v1.copy(B.position).sub(net.fwd)); B.scale.set(W, H, 1); B.visible = true;
+    const Pd = this.pads;
+    for (let i = 0; i < net.nodes.length; i++) { _v1.copy(net.nodes[i]).addScaledVector(net.fwd, 0.035); _m1.compose(_v1, B.quaternion, _s1.set(1, 1, 1)); Pd.setMatrixAt(i, _m1); }
+    Pd.count = net.nodes.length; Pd.instanceMatrix.needsUpdate = true; Pd.visible = true;
+    void A;
+  },
+  hideBoard() { if (!this.ready) return; this.board.visible = false; this.pads.visible = false; },
+  // STACK OVERFLOW: layer k's glass (centre c, size sx / sy / sz)
+  glassBox(k, c, sx, sy, sz, admin, f) {
+    _m1.compose(c, _q1.identity(), _s1.set(sx, sy, sz)); this.glass.setMatrixAt(k, _m1);
+    this.glass.setColorAt(k, admin ? _c1.setRGB(1, 0.2, 0.3).multiplyScalar(f) : _c1.setRGB(0.2, 1, 0.85).multiplyScalar(f));
+  },
+  glassDone(n) { const Gm = this.glass; Gm.count = n; Gm.visible = n > 0; if (n) { Gm.instanceMatrix.needsUpdate = true; if (Gm.instanceColor) Gm.instanceColor.needsUpdate = true; } },
+  // REBOOT: the walls' text, the box's BIOS scroll and its fade
+  wallTex(W, ok) { W.m.material.uniforms.uMap.value = this.rebootTex[ok]; },
+  bootFade(a, dt) { const u = this.bootBox.material.uniforms; u.uA.value = a; u.uScroll.value = (u.uScroll.value + dt * 0.1) % 1; },
+  // voxels: a burst at p (shot viruses, unplugged wires) / the faces of a deleted slab of the box
+  voxBurst(p, col, n, sp = 1.4) {
+    for (let i = 0; i < n && this.voxels.length < 160; i++) this.voxels.push({ p: p.clone(), v: new THREE.Vector3(rand(-1, 1), rand(-0.2, 1.2), rand(-1, 1)).multiplyScalar(sp), w: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(), sp: rand(3, 9), s: rand(0.02, 0.045), life: 0, max: rand(0.6, 1.1), col: new THREE.Color(col) });
+  },
+  // (never right by the soul, dim, falling away quickly: debris must not read as bullets)
+  voxSlab(mn, mx, ax, side, col) {
+    const s = G.soul.pos;
+    for (let i = 0, n = 0; i < 80 && n < 40 && this.voxels.length < 160; i++) {
+      const p = new THREE.Vector3(rand(mn.x, mx.x), rand(mn.y, mx.y), rand(mn.z, mx.z)); p[ax] = side < 0 ? mn[ax] : mx[ax];
+      if (p.distanceTo(s) < 0.7) continue;
+      const v = new THREE.Vector3(rand(-0.3, 0.3), rand(-0.1, 0.3), rand(-0.3, 0.3)); v[ax] = (side < 0 ? -1 : 1) * rand(0.4, 1.1);
+      this.voxels.push({ p, v, w: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(), sp: rand(2, 6), s: rand(0.03, 0.065), life: 0, max: rand(0.9, 1.5), col: new THREE.Color(col !== undefined ? col : chance(0.75) ? 0x8a1a2a : 0x2a5a60) });
+      n++;
+    }
+  },
   closeAll() {
     if (!this.ready) return;
     for (const w of this.ads) { w.onClose = null; w.close(); }
     this.sys.close(); for (const w of this.errs) w.close();
-    this.sudo.mesh.visible = false; this.load.mesh.visible = false; this.laser.visible = false; this.wave.visible = false;
-    this.cables.count = 0; this.nest.count = 0; this.bootBox.visible = false; this.keyBeams.count = 0;
+    this.sudo.mesh.visible = false; this.load.mesh.visible = false; this.loadFrame.visible = false; this.laser.visible = false; this.wave.visible = false;
+    this.cables.count = 0; this.nest.count = 0; this.bootBox.visible = false; this.keyBeams.count = 0; this.keycapsDone(0); this.spinnersDone(0); this.glassDone(0);
+    this.fwallOn = false; this.fwallK = 0; this.fwall.visible = false; this.hideBoard();
     for (const w of this.rebootWalls) { w.on = false; w.m.visible = false; }
+    this.voxels.length = 0; this.vox.count = 0; this.vox.visible = false;
   },
   // leaving boss 2: free every window, canvas, geometry and material (init() rebuilds on the next visit)
   dispose() {
@@ -11506,17 +11818,35 @@ const KidKit = {
     this.closeAll();
     for (const w of [...this.ads, this.sys, ...this.errs]) w.dispose();
     this.sudo.dispose(); this.load.dispose();
-    for (const m of [this.keyBeams, this.laser, this.wave, this.cables, this.nest, this.bootBox]) disposeObject(m);
-    for (const w of this.rebootWalls) disposeObject(w.m);
+    for (const m of this.extra) disposeObject(m);
     for (const t of this.rebootTex) t.dispose();
-    this.ads = this.errs = this.rebootWalls = this.rebootTex = null;
+    this.bootTex.dispose(); this.boardTex.dispose();
+    this.ads = this.errs = this.rebootWalls = this.rebootTex = this.extra = this.voxels = null;
     this.sys = this.sudo = this.load = this.keyBeams = this.laser = this.wave = this.cables = this.nest = this.bootBox = this.bootTex = null;
+    this.loadFrame = this.caps = this.spin = this.fwall = this.board = this.boardTex = this.pads = this.glass = this.vox = null;
     this.ready = false; this.chatT = 0;
   },
-  // per-frame (from the boss definition): auto-hide mid-attack chat
+  // per-frame (from the boss definition): auto-hide mid-attack chat; the firewall, the CRT walls, the voxels
   update(dt) {
     if (this.chatT > 0) { this.chatT -= dt; if (this.chatT <= 0 && G.battle && G.battle.state === 'BOSS_ATTACK') G.ui.hideBubble(); }
+    if (!this.ready) return;
+    this.fwallK = damp(this.fwallK, this.fwallOn ? 1 : 0, 3, dt);
+    const F = this.fwall; F.visible = this.fwallK > 0.01;
+    if (F.visible) { const A = G.arena; F.position.set(A.center.x, A.center.y, A.min.z + 0.015); F.scale.set(A.size.x, A.size.y, 1); this.fwallU.uA.value = 0.22 * this.fwallK * (Flash.reduced ? 0.7 : 1); this.fwallU.uTime.value = G.time * (Flash.reduced ? 0.5 : 1); }
+    if (this.bootBox.visible) this.bootBox.material.uniforms.uTime.value = G.time;
+    for (const W of this.rebootWalls) if (W.on) W.m.material.uniforms.uTime.value = G.time;
+    const V = this.vox; let n = 0;
+    for (let i = 0; i < this.voxels.length; i++) {
+      const q = this.voxels[i]; q.life += dt;
+      if (q.life > q.max) { this.voxels.splice(i, 1); i--; continue; }
+      q.v.y -= 4.5 * dt; q.p.addScaledVector(q.v, dt);
+      const sc = q.s * Math.min(1, (q.max - q.life) / 0.35);
+      _q1.setFromAxisAngle(q.w, q.life * q.sp); _m1.compose(q.p, _q1, _s1.set(sc, sc, sc)); V.setMatrixAt(n, _m1); V.setColorAt(n, q.col); n++;
+    }
+    V.count = n; V.visible = n > 0; if (n) { V.instanceMatrix.needsUpdate = true; if (V.instanceColor) V.instanceColor.needsUpdate = true; }
   },
+  // compile its shaders during the intro (with the hall's)
+  prewarmList() { return this.ready ? this.extra.concat([this.ads[0].root, this.sys.root, this.load.mesh, this.sudo.mesh]) : []; },
 };
 KITS.push(KidKit);
 
@@ -11635,7 +11965,7 @@ class KeystrokeRain extends Pattern {
   // one key = a bar of light across the full depth of the box, carrying its letter
   drop(c, beat) {
     const A = G.arena, g = GlyphAtlas.of(c.ch), sc = clamp(c.w * 1.1, 0.13, 0.26);
-    const k = { x: c.x, t0: beat, y: A.max.y - 0.07, key: { grazed: false }, bs: [], done: false, live: false };
+    const k = { x: c.x, t0: beat, y: A.max.y - 0.07, key: { grazed: false }, bs: [], done: false, live: false, sc };
     for (const dz of [0.28, 1.05]) {
       const b = glyphBullet(g, c.x, k.y, A.min.z + dz, KC.term, sc); if (!b) continue;
       b.beh = BEH.OWNER; b.owner = this; b.collide = false; b.bounds = false; b.life = 40; b.tag = 0; b.ring = k;
@@ -11682,20 +12012,23 @@ class KeystrokeRain extends Pattern {
         }
       }
       if (nb < KB.count0) {
-        _v3.set(k.x, k.y, A.center.z); _s1.set(0.028, 0.028, A.size.z - 0.08);
+        _v3.set(k.x, k.y, A.center.z); _s1.set(0.11, 0.11, A.size.z - 0.08);
         _m1.compose(_v3, _q1.identity(), _s1); KB.setMatrixAt(nb, _m1);
         if (k.live) KB.setColorAt(nb, _c1.setRGB(0.85, 1, 0.9)); else { const f = 0.3 + 0.3 * Math.cos(e * TAU * (Flash.reduced ? 1 : 2)); KB.setColorAt(nb, _c1.setRGB(0.24 * f, f, 0.43 * f)); }
+        KidKit.keycap(nb, k.x, k.y, A.min.z + 0.2, k.sc, k.live, 0.6 + 0.4 * Math.cos(e * TAU * (Flash.reduced ? 1 : 2)));
         nb++;
       }
     }
     KB.count = nb; KB.visible = nb > 0; if (nb) { KB.instanceMatrix.needsUpdate = true; if (KB.instanceColor) KB.instanceColor.needsUpdate = true; }
+    KidKit.keycapsDone(nb);
     if (this.keys.length > 40) this.keys = this.keys.filter((k) => !k.done);
     const L = this.laser, las = KidKit.laser;
     if (L && pb >= L.k0) {
       const k = (pb - L.k0) / 1.0;
       if (k > 1) { this.laser = null; las.visible = false; return; }
       const x = lerp(A.max.x, A.min.x, k);
-      las.visible = true; las.position.set(x, L.y, A.center.z); las.scale.set(0.05, 0.05, A.size.z);
+      las.visible = true; las.position.set(x, L.y, A.center.z); las.scale.set(0.17, 0.17, A.size.z);
+      KidKit.bksp(nb, x, L.y, A.min.z + 0.2); KidKit.keycapsDone(nb + 1);
       _v1.set(x, L.y, A.min.z); _v2.set(x, L.y, A.max.z);
       Haz.segment(_v1, _v2, 0.05, RULE.WHITE, this.dmg, this.laserKey); Haz.debugSeg(_v1, _v2, 0.05);
       G.fx.glow.add(x, L.y, G.soul.pos.z, 0.35, 1, 0.16, 0.29, 0.8, 0);
@@ -11705,7 +12038,7 @@ class KeystrokeRain extends Pattern {
   }
   isIdle() { return !this.laser && !this.keys.some((k) => !k.done); }
   onEnd() {
-    KidKit.laser.visible = false; KidKit.keyBeams.count = 0; KidKit.keyBeams.visible = false; this.laser = null;
+    KidKit.laser.visible = false; KidKit.keyBeams.count = 0; KidKit.keyBeams.visible = false; KidKit.keycapsDone(0); this.laser = null;
     for (const b of G.bullets.pools.glyph.active) if (b.owner === this) { b.die(); b.collide = false; }
   }
 }
@@ -11723,7 +12056,7 @@ class LoadingBar extends Pattern {
     if (this.hard) this.intensity = Math.max(this.intensity, 1.6);
     const A = G.arena, P = KidKit.load;
     P.mesh.visible = true; P.mesh.position.set(A.center.x, A.max.y + 0.08, A.min.z - 0.1);
-    P.mesh.lookAt(A.center.x, A.center.y + 0.3, A.center.z + 2.5);
+    P.mesh.lookAt(A.center.x, A.center.y + 0.3, A.center.z + 2.5); KidKit.frameLoad(true);
     this.pct = 0; this.shown = 0; this.label = 'LOADING UR DOOM...'; this.fake = false; this.lastFake = false;
     this.rings = []; this.waves = [];
     this.cycle0 = 0; this.waveBeat = 8;                  // the real shockwave lands on this (down)beat
@@ -11742,6 +12075,7 @@ class LoadingBar extends Pattern {
     const f = Math.round((bw - 16) * this.shown / 100);
     for (let x = 0; x < f; x += 22) { g.fillStyle = red ? '#ff2a4a' : '#3cff6e'; g.fillRect(bx + 8 + x, by + 8, Math.min(18, f - x), bh - 16); }
     P.tex.needsUpdate = true;
+    DataKit.setLoad(Math.max(0.002, this.shown / 100));
   }
   spawnRings(n) {
     const count = this.hard ? 3 : 2;
@@ -11824,15 +12158,24 @@ class LoadingBar extends Pattern {
       const r = w.inward ? lerp(maxR, 0.05, k) : lerp(0.05, maxR, k);
       any = true;
       W.visible = true; W.position.copy(A.center); W.scale.setScalar(r);
-      W.material.opacity = 0.32 * (1 - k * 0.5);
+      KidKit.waveU.uA.value = 0.32 * (1 - k * 0.5);
       Haz.resolve(Math.abs(G.soul.pos.distanceTo(A.center) - r) - 0.06, RULE.ORANGE, this.dmg, w.key, null);
     }
     if (!any) W.visible = false;
     // ring glow cue: each wheel brightens as it closes in
-    for (const r of this.rings) G.fx.glow.add(r.c.x, r.c.y, r.c.z, 0.5, 0.16, 0.7, 1, 0.25, 3);
+    let ns = 0;
+    for (const r of this.rings) {
+      G.fx.glow.add(r.c.x, r.c.y, r.c.z, 0.5, 0.16, 0.7, 1, 0.25, 3);
+      if (ns < 3) {
+        const ph = (pb - r.n0 - 2) / this.period, R = 0.07 + 0.48 * (ph < -0.5 ? 1 : Math.abs(Math.sin(Math.PI * ph)));
+        _v1.set(Math.cos(r.a), 0, Math.sin(r.a)); _v2.set(-Math.sin(r.a) * Math.cos(r.tilt), Math.sin(r.tilt), Math.cos(r.a) * Math.cos(r.tilt));
+        KidKit.spinner(ns++, r.c, _v1, _v2, R);
+      }
+    }
+    KidKit.spinnersDone(ns);
   }
   isIdle() { return this.waves.length === 0; }
-  onEnd() { this.killRings(); KidKit.load.mesh.visible = false; KidKit.wave.visible = false; }
+  onEnd() { this.killRings(); KidKit.load.mesh.visible = false; KidKit.wave.visible = false; KidKit.frameLoad(false); KidKit.spinnersDone(0); DataKit.setLoad(0); }
 }
 
 // ---------------------------------------------------------------------------
@@ -11851,13 +12194,13 @@ class Firewall extends Pattern {
     this.maxAlive = this.hard ? 5 : this.intensity >= 1.3 ? 4 : 3;
     this.shieldP = this.hard ? 0.25 : this.intensity >= 1.3 ? 0.12 : 0;
     this.leapSpeed = (this.hard ? 1.8 : this.intensity >= 1.3 ? 1.5 : 1.3) * this.speedMul;
-    G.soul.setMode('yellow'); G.shooter.enabled = true;
+    G.soul.setMode('yellow'); G.shooter.enabled = true; KidKit.init(); KidKit.firewall(true);
     G.ui.showPrompt('* Your SOUL is now in FIREWALL mode.', 2.8, '#ffe14a');
     const B = G.battle;
     if (B && !B.taught.shoot) { B.taught.shoot = true; this.tipT = 3.0; }
     this.kills = 0;
   }
-  mine() { return G.bullets.pools.glyph.active.filter((b) => b.owner === this && !b.dying); }
+  mine() { return G.bullets.pools.vox.active.filter((b) => b.owner === this && !b.dying); }
   onBeat(n, when) {
     // wound-up viruses leap on the beat
     for (const b of this.mine()) if (b.p1 === 1 && n >= b.p4) this.leap(b);
@@ -11886,7 +12229,7 @@ class Firewall extends Pattern {
   spawnVirus() {
     const d = this.spawnSpot(_v4, _v1);
     if (d < FW_LEAP_FROM) return;                         // no room in front of you right now
-    const b = glyphBullet('virusA', _v4.x, _v4.y, _v4.z, KC.term, 0.2); if (!b) return;
+    const b = voxBullet('virusA', _v4.x, _v4.y, _v4.z, KC.term, 0.2); if (!b) return;
     b.beh = BEH.OWNER; b.owner = this; b.life = 12; b.bounds = false; b.collide = false;
     b.shootable = true; b.hp = this.hard && chance(0.2) ? 2 : 1; b.r = 0.09;
     b.shield = chance(this.shieldP);
@@ -11929,19 +12272,19 @@ class Firewall extends Pattern {
     const soul = G.soul;
     if (b.p1 === 2 && soul.active && soul.alive && b.pos.distanceTo(s) < soul.hitR + b.r) {
       if (soul.hurt(this.dmg)) { for (let k = 0; k < 3; k++) setTimeout(() => G.input.pulseAll(0.9, 25), k * 55); }
-      G.audio.sfx.splat(); G.fx.burst(b.pos, 8, 0.24, 1, 0.43, 1.2, 0.05);
+      G.audio.sfx.splat(); G.fx.burst(b.pos, 8, 0.24, 1, 0.43, 1.2, 0.05); KidKit.voxBurst(b.pos, 0xff7a2a, 8);
       b.die(); b.shootable = false;
     }
   }
-  onShot(b) { this.kills++; G.audio.sfx.splat(); G.fx.burst(b.pos, 10, 0.24, 1, 0.43, 1.3, 0.05); G.fx.glyphs.burst(b.pos, 4, 0.24, 1, 0.43, 1.0, 0.06); G.soul.addTP(1); }
+  onShot(b) { this.kills++; G.audio.sfx.splat(); G.fx.burst(b.pos, 10, 0.24, 1, 0.43, 1.3, 0.05); G.fx.glyphs.burst(b.pos, 4, 0.24, 1, 0.43, 1.0, 0.06); KidKit.voxBurst(b.pos, KC.term, 12); G.soul.addTP(1); }
   update(dt) {
     super.update(dt);
     if (this.tipT > 0) { this.tipT -= dt; if (this.tipT <= 0) G.ui.showPrompt(G.xr ? 'HOLD TRIGGER TO SHOOT WHERE YOU POINT' : 'HOLD CLICK TO SHOOT', 2.6, '#ffe14a'); }
   }
-  isIdle() { return !G.bullets.pools.glyph.active.some((b) => b.owner === this && !b.dying); }
+  isIdle() { return !G.bullets.pools.vox.active.some((b) => b.owner === this && !b.dying); }
   onEnd() {
-    G.soul.setMode('red', true); G.shooter.enabled = false; G.shooter.clear();
-    for (const b of G.bullets.pools.glyph.active) if (b.owner === this) { b.die(); b.collide = false; b.shootable = false; }
+    G.soul.setMode('red', true); G.shooter.enabled = false; G.shooter.clear(); KidKit.firewall(false);
+    for (const b of G.bullets.pools.vox.active) if (b.owner === this) { b.die(); b.collide = false; b.shootable = false; }
     if (this.kills) G.ui.showPrompt(`FIREWALL: ${this.kills} VIRUSES DELETED`, 1.8, '#3cff6e');
   }
 }
@@ -12037,7 +12380,7 @@ class PacketRouting extends Pattern {
     KidKit.init();
     this.hard = kidHard(this);
     const s = G.soul;
-    this.net = new CableNet();
+    this.net = new CableNet(); KidKit.showBoard(this.net);
     s.setMode('cyan'); s.attachWire(this.net.rider);
     G.loco.setMode('locked');
     this.say('* Your SOUL is now WIRED.', 2.4, '#2affd5');
@@ -12086,7 +12429,7 @@ class PacketRouting extends Pattern {
     for (let k = 0; k < 3; k++) {
       const u0 = -0.09 * k;
       this.net.lanePoint(t.kind, t.lane, t.dir > 0 ? u0 : 1 - u0, _v1);
-      const b = glyphBullet('packet', _v1.x, _v1.y, _v1.z, 0xd8fff6, 0.15); if (!b) break;
+      const b = voxBullet('packet', _v1.x, _v1.y, _v1.z, 0xd8fff6, 0.15); if (!b) break;
       b.beh = BEH.OWNER; b.owner = this; b.bounds = false; b.r = 0.07; b.collide = true;
       b.life = (this.cross + 2) * G.clock.beatDur / Math.min(1, this.speedMul);
       b.p0 = t.dir; b.p1 = u0; b.p2 = t.kind === 'row' ? 0 : 1; b.p3 = t.lane; b.p4 = t.fireAt;
@@ -12119,7 +12462,7 @@ class PacketRouting extends Pattern {
     const net = this.net, E = net.edges[u.e], R = net.rider;
     E.alive = false; E.warn = -1; E.deadUntil = Math.floor(this.pb) + 4;
     _v1.lerpVectors(net.nodes[E.a], net.nodes[E.b], 0.5);
-    G.audio.sfx.spark(); G.fx.burst(_v1, 14, 1, 0.9, 0.4, 2.2, 0.05);
+    G.audio.sfx.spark(); G.fx.burst(_v1, 14, 1, 0.9, 0.4, 2.2, 0.05); KidKit.voxBurst(_v1, 0xffd23c, 8, 1.0);
     if (net.atNode() < 0 && R.e === u.e) {
       // still on it: zapped, and bumped to the nearest junction
       G.soul.hurt(this.dmg);
@@ -12189,13 +12532,13 @@ class PacketRouting extends Pattern {
     for (let i = 0; i < net.nodes.length; i++) { const p = net.nodes[i]; G.fx.glow.add(p.x, p.y, p.z, i === at ? 0.12 : 0.09, 0.16, 1, 0.84, 0.5, 1); }
     const P = G.soul.pos; G.fx.glow.add(P.x, P.y, P.z, 0.26, 1, 1, 1, 0.5, 0);   // white halo: where your heart is
   }
-  isIdle() { return !G.bullets.pools.glyph.active.some((b) => b.owner === this && !b.dying); }
+  isIdle() { return !G.bullets.pools.vox.active.some((b) => b.owner === this && !b.dying); }
   onEnd() {
     const s = G.soul;
     s.detachWire(); s.setMode('red', true);
     G.loco.setMode('free');
-    KidKit.cables.count = 0;
-    for (const b of G.bullets.pools.glyph.active) if (b.owner === this) { b.die(); b.collide = false; }
+    KidKit.cables.count = 0; KidKit.hideBoard();
+    for (const b of G.bullets.pools.vox.active) if (b.owner === this) { b.die(); b.collide = false; }
   }
 }
 
@@ -12239,7 +12582,7 @@ class LagSpike extends Pattern {
     if ((k - b.p0) % 2 === 1 || (k - b.p0) % 2 === -1) {
       this.truePos(b, k, b.pos);                                   // frozen ("lagging")
       this.truePos(b, k + 1, _v3);                                 // where it will pop to
-      G.fx.glow.add(_v3.x, _v3.y, _v3.z, 0.2, 1, 0.3, 0.45, 0.85, 3);
+      G.fx.glow.add(_v3.x, _v3.y, _v3.z, 0.2, 1, 0.3, 0.45, 0.85, 3); KidKit.buffering(_v3);
     } else this.truePos(b, x, b.pos);
     if (!G.arena.contains(b.pos, 0.6)) b.age = b.life + 1;
   }
@@ -12267,7 +12610,7 @@ class RebootPattern extends Pattern {
     const A = G.arena;
     A.setTheme('boot', Flash.reduced ? 1.0 : 0.2);
     const bb = KidKit.bootBox; bb.visible = true; bb.position.copy(A.center); bb.scale.copy(A.size).multiplyScalar(0.995);
-    bb.material.opacity = 0;
+    KidKit.bootFade(0, 0);
     this.ok = clamp(Math.floor((G.soul.pos.y - A.min.y) / (A.size.y / 6)), 0, 5);
     this.lastSpawn = this.o.lastSpawn !== undefined ? this.o.lastSpawn : this.beats - 3;
     this.travel = 2.8;
@@ -12280,14 +12623,13 @@ class RebootPattern extends Pattern {
     const W = KidKit.rebootWalls.find((w) => !w.on); if (!W) return;
     this.ok = clamp(this.ok + pick([-1, 0, 0, 1]), 0, 5);
     W.on = true; W.ok = this.ok; W.t0 = n; W.key = { grazed: false, used: false };
-    W.m.material.map = KidKit.rebootTex[this.ok]; W.m.visible = true;
+    KidKit.wallTex(W, this.ok); W.m.visible = true;
   }
   update(dt) {
     super.update(dt);
     const A = G.arena, pb = this.pb, s = G.soul, bb = KidKit.bootBox;
     this.bootIn = Math.min(1, this.bootIn + dt / (Flash.reduced ? 1.0 : 0.3));
-    bb.material.opacity = 0.55 * this.bootIn; bb.position.copy(A.center); bb.scale.copy(A.size).multiplyScalar(0.995);
-    KidKit.bootTex.offset.y = (KidKit.bootTex.offset.y + dt * 0.1) % 1;   // scrolls up the walls
+    KidKit.bootFade(0.55 * this.bootIn, dt); bb.position.copy(A.center); bb.scale.copy(A.size).multiplyScalar(0.995);   // the BIOS scrolls up the walls
     const rh = A.size.y / 6;
     for (const W of KidKit.rebootWalls) {
       if (!W.on) continue;
@@ -12349,7 +12691,7 @@ class RmRf extends Pattern {
   del(when) {
     const st = this.steps[this.si++], [ax, side, d] = st;
     this.slab(st, _v1, _v2);
-    G.fx.glyphs.rain(_v1, _v2, 52, 1, 0.16, 0.29);
+    G.fx.glyphs.rain(_v1, _v2, 52, 1, 0.16, 0.29); KidKit.voxSlab(_v1, _v2, ax, side);
     if (side < 0) this.bmin[ax] += d; else this.bmax[ax] -= d;
     _v3.addVectors(this.bmin, this.bmax).multiplyScalar(0.5); _v4.subVectors(this.bmax, this.bmin);
     G.arena.setBox(_v4, _v3, 0.25);
@@ -12516,7 +12858,7 @@ class StackOverflow extends Pattern {
     if (this.sad) this.slow = damp(this.slow, 0.3, 0.8, dt);
     // draw the nested boxes
     const N = KidKit.nest, admin = G.arena.themeName === 'admin';
-    let n = 0;
+    let n = 0, ng = 0;
     for (let k = 1; k < this.layers.length; k++) {
       const grow = easeOut(clamp((pb - this.appear[k - 1]) / 1.0, 0, 1));
       const shrink = this.sad ? clamp((this.beats - pb) / 4, 0, 1) : 1;
@@ -12524,6 +12866,7 @@ class StackOverflow extends Pattern {
       if (f < 0.01) continue;
       const sx = A.size.x * f, sy = A.size.y * f, sz = A.size.z * f, c = A.center;
       const pul = 0.6 + 0.4 * G.fx.beatPulse;
+      KidKit.glassBox(ng++, c, sx, sy, sz, admin, pul * (this.sad ? 0.5 : 1));
       for (let a = -1; a <= 1; a += 2) for (let bb = -1; bb <= 1; bb += 2) {
         const put = (x, y, z, w, h, d) => { _v1.set(x, y, z); _s1.set(w, h, d); _m1.compose(_v1, _q1.identity(), _s1); N.setMatrixAt(n, _m1); N.setColorAt(n, admin ? _c1.setRGB(1, 0.16 + 0.1 * k, 0.29).multiplyScalar(pul) : _c1.setRGB(0.16, 1, 0.84).multiplyScalar(pul)); n++; };
         put(c.x, c.y + a * sy / 2, c.z + bb * sz / 2, sx + t, t, t);
@@ -12532,10 +12875,11 @@ class StackOverflow extends Pattern {
       }
     }
     N.count = n; N.instanceMatrix.needsUpdate = true; if (N.instanceColor) N.instanceColor.needsUpdate = true;
+    KidKit.glassDone(ng);
   }
   isIdle() { return true; }
   onEnd() {
-    KidKit.nest.count = 0;
+    KidKit.nest.count = 0; KidKit.glassDone(0);
     if (G.boss && G.boss.setSad) G.boss.setSad(false);
   }
 }
@@ -13451,17 +13795,17 @@ const TYPE_LETTERS = 'ASDFJKLQWERTYUIOZXCVM';   // no debug keys (H G N B P)
 class TypeUI {
   constructor() {
     this.group = new THREE.Group(); this.group.visible = false; scene.add(this.group);
-    this.board = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.24), new THREE.MeshBasicMaterial({ color: 0x1a1a22 }));
+    this.board = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.24), CircusShade.material({ color: 0x24242c, gloss: 1.2, shine: 60, rim: 0.6, emit: 0.12, vertexColors: false }));
     this.group.add(this.board);
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.012, 0.26), new THREE.MeshBasicMaterial({ color: CONFIG.COL.cyan }));
     edge.position.y = -0.026; this.group.add(edge);
     this.keys = [];
     for (let i = 0; i < 6; i++) {
       const g = new THREE.Group(); g.position.set(-0.27 + i * 0.108, 0.04, 0); this.group.add(g);
-      const capMat = new THREE.MeshBasicMaterial({ color: 0xd8d8d8 });
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.04, 0.088), capMat); g.add(cap);
+      const capMat = CircusShade.material({ color: 0xd8d8d8, gloss: 1.1, shine: 60, rim: 0.5, emit: 0.42, vertexColors: false }); capMat.color = capMat.uniforms.uColor.value;
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.062, 0.04, 4, 1).rotateY(Math.PI / 4), capMat); g.add(cap);
       const tex = canvasTex(32, 32);
-      const top = new THREE.Mesh(new THREE.PlaneGeometry(0.078, 0.078), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+      const top = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.06), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
       top.rotation.x = -Math.PI / 2; top.position.y = 0.0205; g.add(top);
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; ring.visible = false; g.add(ring);
@@ -13599,7 +13943,7 @@ BOSSES.kiddie = {
   kits: [DataKit, KidKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit],   // the hall, his own kit + the boss 1 kits his copy-paste attacks borrow
   musicSlot: 'MUSIC_KIDDIE', dataUri: MUSIC_DATA_URI_KIDDIE, musicUrl: MUSIC_URL_KIDDIE,
   fallbackMusic() { return synthKiddieFallback(117.5); },   // the brief's fallback spec: 117.5 BPM, D minor
-  palette: { name: '#2affd5', spareName: '#ffe14a', hp: '#3cff6e', hpBack: '#3a0010', accent: '#ff3cc8', pelletGlow: 0xc8fff4, glyph: 0x3cff6e },
+  palette: { name: '#2affd5', spareName: '#ffe14a', hp: '#3cff6e', hpBack: '#3a0010', accent: '#ff3cc8', pelletGlow: 0xc8fff4, glyph: 0x3cff6e, pelletLook: 'bit' },
   arenaTheme: 'server', bgTheme: 'server',
   dialogue: KLINES, flavorText: KFLAVOR, dialogueStyle: 'chat',
   attacks: Object.assign({ popups_tut: { cls: PopupSpam, bars: 6, name: 'POP-UP SPAM', intensity: 1, dmg: 3, opts: { tutorial: true } } }, KIDDIE_PATTERNS),
@@ -13948,7 +14292,7 @@ BOSSES.kiddie = {
   },
   friendRequest(B) {
     B.setState('FRIEND_REQUEST');
-    if (!this.friendWin) this.friendWin = new Window3D({ w: 0.78, h: 0.4, ppm: 520, title: 'FRIEND REQUEST', style: 'chat', closable: false, barPx: 30, textScale: 3,
+    if (!this.friendWin) this.friendWin = new Window3D({ w: 0.78, h: 0.4, ppm: 520, title: 'FRIEND REQUEST', style: 'chat', closable: false, barPx: 30, textScale: 3, bezel: true,
       buttons: [{ label: 'ACCEPT', color: '#3cff6e', hoverColor: '#ffffff', size: 1.1, onPress: () => this.accept(G.battle) }] });
     Head.update();
     this.friendWin.open(Head.rel(_v1, 0, G.xr ? -0.05 : 0.05, G.xr ? 0.7 : 1.35), Head.pos, { text: 'SCR1PT_K1DD1E wants to be your friend!' });
@@ -13963,7 +14307,7 @@ BOSSES.kiddie = {
     // the battle box becomes a cozy chat window
     B.setState('COZY');
     if (!this.cozyWin) {
-      this.cozyWin = new Window3D({ w: 2.4, h: 1.1, ppm: 300, title: 'chat - SCR1PT_K1DD1E', style: 'cozy', closable: false, barPx: 34 });
+      this.cozyWin = new Window3D({ w: 2.4, h: 1.1, ppm: 300, title: 'chat - SCR1PT_K1DD1E', style: 'cozy', closable: false, barPx: 34, bezel: true });
       this.cozyWin.drawBody = (g, x, y, w, h, win, S) => {
         let yy = y + 4;
         yy += drawWrapped(g, '> u: gg', x, yy, w, 3, '#ffd8a0') + 10;
