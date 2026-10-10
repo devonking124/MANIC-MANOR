@@ -11595,7 +11595,7 @@ const KID_CRT_FS = `uniform sampler2D uMap; uniform float uA; uniform float uTim
     c += c * c * 0.25;
     float roll = smoothstep(0.0, 0.04, abs(fract(vUv.y * 0.5 - uTime * 0.25) - 0.5) - 0.44);
     c *= 1.0 + 0.2 * (1.0 - roll);
-    float near = mix(0.35, 1.0, smoothstep(0.1, 0.5, distance(vW, cameraPosition)));
+    float near = mix(0.15, 1.0, smoothstep(0.15, 0.6, distance(vW, cameraPosition)));
     gl_FragColor = uAdd > 0.5 ? vec4(c * uA * near, 1.0) : vec4(c, t.a * uA * near);
     #include <colorspace_fragment>
   }`;
