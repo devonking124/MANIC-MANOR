@@ -4354,7 +4354,7 @@ class UI {
     const A = G.arena;
     this.status.mesh.position.set(A.center.x, A.min.y - 0.12, A.min.z + 0.25);
     this.status.mesh.rotation.set(-0.5, 0, 0);
-    this.bossBar.mesh.position.set(A.center.x, A.max.y + 0.3, A.min.z - 0.05);
+    this.bossBar.mesh.position.set(A.center.x, A.max.y + ((G.def && G.def.bossBarY) || 0.3), A.min.z - 0.05);
     this.flavor.mesh.position.set(A.center.x, A.center.y + 0.05, A.min.z + 0.03);
     // (the boss's dialogue box places itself: updateTalk)
   }
@@ -5545,6 +5545,9 @@ const CIRCUS_SHADE_FS = `
     vec3 base = vCol * mix(uColor * vTint, vec3(1.0), vDecor);
     #ifdef HAS_MAP
       vec4 tx = texture2D(uMap, vUv);
+      #ifdef MAP_CUTOUT
+        if (tx.a < 0.5) discard;
+      #endif
       #ifdef MAP_MASK
         base = mix(base, vec3(1.0), tx.r * (1.0 - vDecor));
       #else
@@ -5619,7 +5622,8 @@ const CircusShade = {
   //      emit (self-light floor), wrap, glow (added self-light), opacity, transparent, side, decor, vertexColors,
   //      tri / triTop (world-space detail textures, grey 0.5 = neutral) + triST [side scale, top scale, strength],
   //      haze (fades into the shared uHaze colour with distance), clip (clipping planes, e.g. the arena box's),
-  //      dissolve (comes apart in chunks by the shared uDis / uDis2: boss 2's hall in phase III) }
+  //      dissolve (comes apart in chunks by the shared uDis / uDis2: boss 2's hall in phase III),
+  //      cutout (the map's alpha below 0.5 is cut away: boss 3's mask, torn canvas and valance) }
   material(o = {}) {
     const u = Object.assign({}, this.uniforms(), {
       uColor: { value: new THREE.Color(o.color !== undefined ? o.color : 0xffffff) },
@@ -5629,7 +5633,7 @@ const CircusShade = {
       uWrap: { value: o.wrap !== undefined ? o.wrap : 0.4 }, uOpacity: { value: o.opacity !== undefined ? o.opacity : 1 },
     });
     const defines = {};
-    if (o.map) { u.uMap = { value: o.map }; u.uMapST = { value: new THREE.Vector4(...(o.mapST || [1, 1, 0, 0])) }; defines.HAS_MAP = ''; if (o.mask) defines.MAP_MASK = ''; }
+    if (o.map) { u.uMap = { value: o.map }; u.uMapST = { value: new THREE.Vector4(...(o.mapST || [1, 1, 0, 0])) }; defines.HAS_MAP = ''; if (o.mask) defines.MAP_MASK = ''; if (o.cutout) defines.MAP_CUTOUT = ''; }
     if (o.decor) defines.HAS_DECOR = '';
     if (o.tri) { u.uTri = { value: o.tri }; u.uTriTop = { value: o.triTop || o.tri }; u.uTriST = { value: new THREE.Vector4(...(o.triST || [0.5, 0.5, 0.8, 0])) }; defines.HAS_TRI = ''; }
     if (o.haze) defines.HAS_HAZE = '';
@@ -9577,7 +9581,7 @@ class Battle {
     if (G.boss) { G.boss.dispose(); G.boss = null; G.bossId = null; }
     if (this.def && this.def.onUnload) this.def.onUnload(this);
     if (this.def) G.ui.disposeBossMenus(this.def.id);
-    disposeKits(); ManorTex.dispose(); DCTex.dispose();
+    disposeKits(); ManorTex.dispose(); DCTex.dispose(); BTTex.dispose();
   }
   // leaving the fight: free everything the boss built, back to the title's rift
   unloadBoss() {
@@ -14369,43 +14373,387 @@ function stripeTex(a, b, n = 8, vertical = true, w = 64, h = 64) {
   }, { repeat: true });
 }
 
+// @@BIGTOP (boss 3, remastered)
+// ============================================================================
+//  THE BIG TOP, remastered (boss 3): a lit circus tent hanging from its lift balloons above a sea of
+//  sunset clouds, with a whole fair floating in the sky around it. You stand in the sawdust ring;
+//  GRANDIOSO stands at the back of the ring in front of the performers' entrance, under his own name in
+//  bulbs, with the steam calliope beside him; the stands curve round behind you, where the audience of
+//  clouds sits. Textures, the light moods, the sky, the tent and its light.
+// ============================================================================
+const BT = {
+  DECK_R: 10.5, RING_R: 2.62, CURB_R: 2.7, ROOF_Y: 9, ROOF_R: 11, APEX: 13.6, OCULUS_R: 0.95, POLE_R: 10.4,
+  SEAT_R: 7.0, PORTAL_Z: -10.15, PORTAL_HW: 3.5, PORTAL_H: 7.6, SIGN_Y: 8.3,
+  CALLIOPE: new THREE.Vector3(-6.3, 0, -5.6), PROPS: new THREE.Vector3(6.2, 0, -5.4),
+  SUN: new THREE.Vector3(0.21, 0.085, -1).normalize(), MOON: new THREE.Vector3(-0.46, 0.3, -0.84).normalize(),
+};
+// the roof's height at radius r: concave like a real big top (steep near the crown, flatter toward the rim)
+function btRoofY(r) { const u = clamp(r / BT.ROOF_R, 0, 1); return BT.ROOF_Y + (BT.APEX - BT.ROOF_Y) * Math.pow(1 - u, 1.45); }
+// a flat disc / annulus whose uv follows world x / z (tiles line up across pieces)
+function btDisc(r0, r1, y, tile, seg = 64) {
+  const g = r0 > 0 ? new THREE.RingGeometry(r0, r1, seg, 2) : new THREE.CircleGeometry(r1, seg);
+  g.rotateX(-Math.PI / 2); g.translate(0, y, 0);
+  const P = g.attributes.position, U = g.attributes.uv;
+  for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) / tile, -P.getZ(i) / tile);
+  return g;
+}
+// a tube along points (ropes, wires, braid)
+function btTube(pts, r, seg = 6, n) { return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), n || Math.max(4, pts.length * 3), r, seg, false); }
+// a hanging catenary-ish curve between two points, sagging by `sag` metres
+function btSag(a, b, sag, n) { const out = []; for (let i = 0; i <= n; i++) { const t = i / n; out.push(new THREE.Vector3().lerpVectors(a, b, t).setY(lerp(a.y, b.y, t) - sag * 4 * t * (1 - t))); } return out; }
+
+// ---------------------------------------------------------------------------
+//  the light moods (linear colours). The house lights (BigTopKit.lightLevel) scale the warm show light;
+//  the sky's night / storm blend between the moods. keyDir points toward the light.
+// ---------------------------------------------------------------------------
+const BT_LOOKS = {
+  sunset: { keyDir: [0.16, 0.86, 0.48], key: [1.0, 0.8, 0.6], sky: [0.4, 0.29, 0.4], ground: [0.33, 0.21, 0.14], rim: [1.0, 0.5, 0.28], haze: [0.66, 0.4, 0.38], hazeK: 0.0065 },
+  night: { keyDir: [-0.34, 0.5, -0.8], key: [0.3, 0.35, 0.62], sky: [0.09, 0.09, 0.19], ground: [0.035, 0.03, 0.055], rim: [0.42, 0.52, 1.0], haze: [0.035, 0.04, 0.09], hazeK: 0.009 },
+  storm: { keyDir: [0.1, 0.9, 0.42], key: [0.88, 0.86, 1.0], sky: [0.28, 0.27, 0.38], ground: [0.15, 0.12, 0.14], rim: [0.6, 0.7, 1.0], haze: [0.17, 0.16, 0.24], hazeK: 0.0085 },
+};
+
+// ---------------------------------------------------------------------------
+//  the big top's textures (canvas, built with the fight, freed on leaving)
+// ---------------------------------------------------------------------------
+const BTTex = {
+  cache: {},
+  get(name) { if (!this.cache[name]) { this.cache[name] = this['make_' + name](); this.cache[name].userData.shared = true; } return this.cache[name]; },
+  dispose() { for (const k in this.cache) this.cache[k].dispose(); this.cache = {}; },
+  hh(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); },
+  // smooth value noise (tiles on per)
+  vn(x, y, per) {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const h = (a, b) => this.hh((((a % per) + per) % per) * 57 + (((b % per) + per) % per) * 113 + 7);
+    return lerp(lerp(h(xi, yi), h(xi + 1, yi), u), lerp(h(xi, yi + 1), h(xi + 1, yi + 1), u), v);
+  },
+  // ---- one roof panel (u across, v from the crown down to the rim): a red stripe and a cream one, twill
+  // weave, seams with double stitching, and the weathering of a canvas that has toured the sky
+  drawCanvas(g, W, H, torn) {
+    const img = g.createImageData(W, H), d = img.data, RED = [208, 36, 54], CREAM = [244, 232, 208];
+    // the tear: a ragged hole in the lower part, burnt brown at its edge
+    const tearX = (y) => 0.5 + 0.34 * Math.sin(y * 0.021) * (y / H) + 0.07 * Math.sin(y * 0.13), tearW = (y) => Math.max(0, (y / H - 0.38) * 0.95) + 0.035 * Math.sin(y * 0.31) * (y > H * 0.4 ? 1 : 0);
+    for (let y = 0; y < H; y++) {
+      const tx = tearX(y) * W, tw = tearW(y) * W * 0.55;
+      for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 4, c = x < W / 2 ? RED : CREAM;
+        const weave = (((x + (y >> 1)) & 3) < 2 ? 1 : -1) * 0.025 + (this.hh(x * 0.91 + y * 1.37) - 0.5) * 0.05;
+        const mottle = (this.vn(x / 22, y / 30, 1e4) - 0.5) * 0.12 + (this.vn(x / 6, y / 90, 1e4) - 0.5) * 0.05;
+        let k = 1 + weave + mottle;
+        // seams: the panel edges and the stripe line are double-stitched and a shade darker
+        const ds = Math.min(x, W - 1 - x, Math.abs(x - W / 2));
+        if (ds < 4) k *= 0.8 + ds * 0.04;
+        const st = Math.abs(ds - 6);
+        if (st < 1 && ((y >> 2) & 1)) k *= 0.72;
+        // grime toward the rim, a sun-bleached band near the crown
+        k *= 1 - 0.12 * Math.pow(y / H, 2) + 0.05 * Math.max(0, 1 - y / (H * 0.3));
+        let a = 255, r = c[0] * k, gg = c[1] * k, b = c[2] * k;
+        if (torn && tw > 0) {
+          const e = Math.abs(x - tx) - tw + (this.hh(x * 3.1 + y * 0.7) - 0.5) * 6;
+          if (e < 0) a = 0;
+          else if (e < 7) { const f = e / 7; r = lerp(52, r, f); gg = lerp(30, gg, f); b = lerp(22, b, f); if (e < 2.2 && this.hh(x + y * 3.7) > 0.5) a = 0; }
+        }
+        d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = a;
+      }
+    }
+    g.putImageData(img, 0, 0);
+  },
+  make_canvas() { return softTex(256, 512, (g, W, H) => this.drawCanvas(g, W, H, false)); },
+  make_canvasTorn() { return softTex(256, 512, (g, W, H) => this.drawCanvas(g, W, H, true)); },
+  // ---- the valance round the roof's rim: scallops of red with a gold border and tasselled fringe
+  make_valance() {
+    return softTex(256, 96, (g, W, H) => {
+      g.clearRect(0, 0, W, H);
+      const sc = 4, sw = W / sc;
+      for (let i = 0; i < sc; i++) {
+        const x0 = i * sw;
+        g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0 + sw, 0); g.lineTo(x0 + sw, 34); g.quadraticCurveTo(x0 + sw / 2, 96, x0, 34); g.closePath();
+        g.fillStyle = '#ffc83c'; g.fill();
+        g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0 + sw, 0); g.lineTo(x0 + sw, 28); g.quadraticCurveTo(x0 + sw / 2, 84, x0, 28); g.closePath();
+        g.fillStyle = i % 2 ? '#f4e8d0' : '#d0243a'; g.fill();
+        // a gold star in each scallop, a tassel at its point
+        g.fillStyle = '#ffd860'; const cx = x0 + sw / 2, cy = 30;
+        g.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? 4 : 9; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); } g.closePath(); g.fill();
+        g.fillStyle = '#e8b030'; g.fillRect(cx - 2, 64, 4, 18); g.beginPath(); g.arc(cx, 64, 4, 0, TAU); g.fill();
+      }
+      g.fillStyle = '#ffc83c'; g.fillRect(0, 0, W, 7); g.fillStyle = '#b07818'; g.fillRect(0, 7, W, 2);
+    }, { repeat: true });
+  },
+  // ---- the deck: honey-coloured planks with grain, staggered joints and nail heads
+  make_wood() {
+    return softTex(512, 512, (g, W, H) => {
+      const img = g.createImageData(W, H), d = img.data, PH = 64;
+      for (let y = 0; y < H; y++) {
+        const p = Math.floor(y / PH), py = y - p * PH, tone = 0.82 + 0.3 * this.hh(p * 7.3), joint = Math.floor(this.hh(p * 3.9) * W);
+        for (let x = 0; x < W; x++) {
+          const o = (y * W + x) * 4;
+          const gr = Math.sin((y + this.vn(x / 40, p * 3, 1e4) * 18) * 0.9 + p * 4) * 0.5 + 0.5;
+          let k = tone * (0.86 + 0.14 * gr) * (0.9 + 0.2 * this.vn(x / 9, y / 3, 1e4));
+          if (py < 2 || py > PH - 2) k *= 0.45;                                    // the gap between planks
+          const dj = Math.abs(((x - joint + W) % W) - W / 2);
+          if (dj > W / 2 - 1.5) k *= 0.5;                                           // a butt joint
+          const nail = (dx, dy) => (dx * dx + dy * dy < 5 ? 1 : 0);
+          if (nail(((x - joint + W) % W) - 6, py - 12) || nail(((x - joint + W) % W) - 6, py - PH + 12)) k *= 0.35;
+          d[o] = 168 * k; d[o + 1] = 108 * k; d[o + 2] = 58 * k; d[o + 3] = 255;
+        }
+      }
+      g.putImageData(img, 0, 0);
+    }, { repeat: true });
+  },
+  // ---- the ring: sawdust raked in circles round a faded painted star (the whole disc, not tiled)
+  make_ring() {
+    return softTex(512, 512, (g, W, H) => {
+      const img = g.createImageData(W, H), d = img.data, c = W / 2;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 4, dx = (x - c) / c, dy = (y - c) / c, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+        let k = 0.9 + 0.2 * this.hh(x * 1.7 + y * 2.3) + 0.08 * (this.vn(x / 14, y / 14, 1e4) - 0.5);
+        k *= 0.93 + 0.07 * Math.sin(r * 150 + this.vn(x / 30, y / 30, 1e4) * 3);   // the rake marks
+        let R = 206 * k, G2 = 158 * k, B = 100 * k;
+        // the painted star (eight points), worn by many shows
+        const sa = ((a / TAU * 8) % 1 + 1) % 1, star = 0.42 + 0.3 * Math.pow(Math.abs(sa - 0.5) * 2, 1.4);
+        const wear = 0.55 + 0.45 * this.vn(x / 20, y / 20, 1e4);
+        if (r < star && r > star - 0.03) { R = lerp(R, 150, 0.6 * wear); G2 = lerp(G2, 28, 0.6 * wear); B = lerp(B, 38, 0.6 * wear); }
+        else if (r < star - 0.03) { R = lerp(R, 232, 0.35 * wear); G2 = lerp(G2, 176, 0.35 * wear); B = lerp(B, 62, 0.35 * wear); }
+        if (Math.abs(r - 0.93) < 0.012) { R = lerp(R, 245, 0.5); G2 = lerp(G2, 230, 0.5); B = lerp(B, 200, 0.5); }   // the ring line
+        if (r > 0.985) { R *= 0.7; G2 *= 0.7; B *= 0.7; }
+        d[o] = R; d[o + 1] = G2; d[o + 2] = B; d[o + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+    });
+  },
+  // ---- crimson velvet in deep folds (the curtains, the curb's padding)
+  make_velvet() {
+    return softTex(128, 256, (g, W, H) => {
+      const img = g.createImageData(W, H), d = img.data;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 4, f = x / W * 4 + 0.08 * Math.sin(y / H * TAU * 2);
+        const fold = Math.pow(Math.abs(Math.sin(f * Math.PI)), 0.55), sheen = Math.pow(Math.max(0, Math.sin(f * Math.PI * 2 + 0.6)), 6);
+        const k = (0.4 + 0.6 * fold) * (0.94 + 0.12 * this.hh(x * 1.3 + y * 0.7)) + sheen * 0.25;
+        d[o] = 170 * k + 30 * sheen; d[o + 1] = 16 * k + 10 * sheen; d[o + 2] = 34 * k + 12 * sheen; d[o + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+    }, { repeat: true });
+  },
+  // ---- the ring curb's padding: velvet with gold stars and gold piping (x round the ring, y up the profile)
+  make_curb() {
+    return softTex(512, 64, (g, W, H) => {
+      g.fillStyle = '#9a1222'; g.fillRect(0, 0, W, H);
+      for (let x = 0; x < W; x += 2) { g.fillStyle = `rgba(255,255,255,${0.03 + 0.03 * Math.sin(x * 0.4)})`; g.fillRect(x, 0, 1, H); }
+      g.fillStyle = '#ffc83c'; g.fillRect(0, 0, W, 6); g.fillRect(0, H - 6, W, 6);
+      g.fillStyle = '#b07818'; g.fillRect(0, 6, W, 1); g.fillRect(0, H - 7, W, 1);
+      for (let i = 0; i < 8; i++) {
+        const cx = (i + 0.5) * W / 8, cy = H / 2;
+        g.fillStyle = '#ffd860'; g.beginPath();
+        for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? 6 : 14; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+        g.closePath(); g.fill();
+      }
+    }, { repeat: true });
+  },
+  // ---- the lift balloons' gores: red and gold, with a darker seam between
+  make_lift() {
+    return softTex(256, 128, (g, W, H) => {
+      for (let i = 0; i < 8; i++) {
+        const x0 = i * W / 8, w = W / 8;
+        const gr = g.createLinearGradient(x0, 0, x0 + w, 0);
+        const c = i % 2 ? ['#b8901c', '#ffd24a', '#b8901c'] : ['#a01428', '#ee3048', '#a01428'];
+        gr.addColorStop(0, c[0]); gr.addColorStop(0.5, c[1]); gr.addColorStop(1, c[2]);
+        g.fillStyle = gr; g.fillRect(x0, 0, w, H);
+      }
+      g.fillStyle = 'rgba(40,10,10,0.5)'; for (let i = 0; i <= 8; i++) g.fillRect(i * W / 8 - 1, 0, 2, H);
+      g.fillStyle = '#fff4dc'; g.fillRect(0, H * 0.62, W, 5); g.fillStyle = '#ffc83c'; g.fillRect(0, H * 0.62 + 5, W, 3);
+    }, { repeat: true });
+  },
+  // ---- a candy-stripe mask (white on black) for the poles' barber stripes
+  make_barber() { return diagMaskTex(4); },
+  // ---- the two posters on the entrance's pillars
+  make_posters() {
+    return softTex(512, 384, (g, W, H) => {
+      const paper = (x0, top, bot) => {
+        const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, top); gr.addColorStop(1, bot);
+        g.fillStyle = gr; g.fillRect(x0, 0, 256, H);
+        for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(80,40,20,${0.03 + this.hh(i + x0) * 0.05})`; g.fillRect(x0 + this.hh(i * 3.1 + x0) * 256, this.hh(i * 7.7) * H, 2, 2); }
+      };
+      const sunburst = (cx, cy, col) => { g.fillStyle = col; for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, 260, a, a + TAU / 32); g.closePath(); g.fill(); } };
+      // 1: GRANDIOSO
+      g.save(); g.beginPath(); g.rect(0, 0, 256, H); g.clip();
+      paper(0, '#f6e6c4', '#e8c890'); sunburst(128, 170, 'rgba(232,40,60,0.22)');
+      const mc = document.createElement('canvas'); mc.width = 128; mc.height = 160; drawMaskFace(mc.getContext('2d'), 128, 160, 'comedy', 0);
+      g.drawImage(mc, 64, 92, 128, 160);
+      // his tent hat over the mask
+      g.fillStyle = '#e8283c'; g.beginPath(); g.moveTo(84, 96); g.lineTo(128, 40); g.lineTo(172, 96); g.closePath(); g.fill();
+      g.fillStyle = '#fff4dc'; for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(98 + k * 22, 96); g.lineTo(128, 40); g.lineTo(108 + k * 22, 96); g.closePath(); g.fill(); }
+      g.fillStyle = '#ffc83c'; g.fillRect(80, 94, 96, 8); g.fillRect(126, 22, 3, 20); g.fillRect(129, 22, 14, 8);
+      SerifFont.draw(g, 'GRANDIOSO', 128 - Math.round(SerifFont.width('GRANDIOSO', 3) / 2), 268, 3, '#c81e30', '#5a0a14');
+      PixelFont.draw(g, 'THE GREATEST SHOW', 128 - Math.round(PixelFont.width('THE GREATEST SHOW', 2) / 2), 302, 2, '#3a1a10');
+      PixelFont.draw(g, 'ABOVE EARTH', 128 - Math.round(PixelFont.width('ABOVE EARTH', 2) / 2), 320, 2, '#3a1a10');
+      g.fillStyle = '#c81e30'; g.fillRect(40, 344, 176, 22); PixelFont.draw(g, 'TONIGHT!', 128 - Math.round(PixelFont.width('TONIGHT!', 2) / 2), 349, 2, '#fff4dc');
+      g.strokeStyle = '#c81e30'; g.lineWidth = 6; g.strokeRect(9, 9, 238, H - 18);
+      g.restore();
+      // 2: THE FLYING SOUL (you!)
+      g.save(); g.translate(256, 0); g.beginPath(); g.rect(0, 0, 256, H); g.clip();
+      paper(0, '#2a1440', '#140a24'); sunburst(128, 150, 'rgba(255,200,60,0.12)');
+      g.fillStyle = 'rgba(255,240,200,0.22)'; g.beginPath(); g.moveTo(108, 0); g.lineTo(148, 0); g.lineTo(206, 250); g.lineTo(50, 250); g.closePath(); g.fill();
+      g.strokeStyle = '#d8c8a0'; g.lineWidth = 3; g.beginPath(); g.moveTo(86, 30); g.lineTo(96, 150); g.moveTo(170, 30); g.lineTo(160, 150); g.stroke();
+      g.fillStyle = '#ffc83c'; g.fillRect(90, 148, 76, 7);
+      const hx = 128, hy = 178;
+      g.fillStyle = '#ff0033'; for (let r = 0; r < 7; r++) for (let c2 = 0; c2 < 7; c2++) if (PixelFont.icons.heart[r][c2]) g.fillRect(hx - 28 + c2 * 8, hy + r * 8 - 12, 8, 8);
+      SerifFont.draw(g, 'THE FLYING', 128 - Math.round(SerifFont.width('THE FLYING', 3) / 2), 262, 3, '#ffc83c', '#5a3a08');
+      SerifFont.draw(g, 'SOUL', 128 - Math.round(SerifFont.width('SOUL', 4) / 2), 292, 4, '#ff3048', '#4a0810');
+      PixelFont.draw(g, 'DEATH-DEFYING!', 128 - Math.round(PixelFont.width('DEATH-DEFYING!', 2) / 2), 338, 2, '#fff4dc');
+      g.strokeStyle = '#ffc83c'; g.lineWidth = 6; g.strokeRect(9, 9, 238, H - 18);
+      g.restore();
+    });
+  },
+};
+
 // ----------------------------------------------------------------------------
-//  CircusSky - gradient sky dome (sunset / night with stars / storm), a sea of
-//  billboard clouds below, storm clouds above (they glow from inside to
-//  telegraph lightning - never a full-field flash), distant tents and balloons
+//  CircusSky (remastered) - the sky the big top hangs in: a sunset dome with a low sun behind GRANDIOSO,
+//  cirrus streaks and a glowing horizon (night: stars, a milky way and a big moon; storm: roiling
+//  bands), a sea of lit cumulus below over a cloud floor, storm clouds above that glow from inside
+//  before lightning, a whole fair floating on cloud islands (a Ferris wheel, a carousel, a
+//  helter-skelter, little tents), hot-air balloons, and the fair's lights coming on at night.
+//  A Background look ('circus'): built the first time boss 3 loads, freed when another look shows.
 // ----------------------------------------------------------------------------
+const SKY_NOISE_GLSL = `
+  float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float h31(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+  float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+  float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }`;
+const CSKY_FS = `uniform float uTime; uniform float uNight; uniform float uStorm; uniform float uDim; uniform vec3 uSun; uniform vec3 uMoon; varying vec3 vP;
+  ${SKY_NOISE_GLSL}
+  void main(){
+    vec3 d = normalize(vP); float h = d.y, sd = max(dot(d, uSun), 0.0);
+    // ---- sunset: a gold horizon by the sun, rose and magenta above it, violet to indigo at the top
+    float hh = clamp(h, -0.2, 1.0);
+    vec3 sun = mix(vec3(1.0, 0.7, 0.4), vec3(1.0, 0.44, 0.33), smoothstep(0.0, 0.07, hh));
+    sun = mix(sun, vec3(0.66, 0.24, 0.5), smoothstep(0.05, 0.3, hh));
+    sun = mix(sun, vec3(0.2, 0.11, 0.36), smoothstep(0.28, 0.85, hh));
+    sun += vec3(1.0, 0.5, 0.22) * pow(sd, 5.0) * 0.6 * (1.0 - smoothstep(0.0, 0.55, hh));
+    sun += vec3(1.0, 0.78, 0.48) * pow(sd, 60.0) * 0.9;
+    sun += vec3(1.0, 0.96, 0.86) * smoothstep(0.99935, 0.99975, sd) * 1.6;
+    if (h < 0.0) sun = mix(vec3(1.0, 0.68, 0.46), vec3(0.6, 0.32, 0.46), smoothstep(0.0, -0.3, h));
+    // cirrus streaks: gold toward the sun, rose away from it
+    vec2 cp = d.xz / max(h + 0.15, 0.06);
+    float ci = fbm(cp * vec2(0.28, 1.5) + vec2(uTime * 0.004, 0.0));
+    float cir = smoothstep(0.55, 0.82, ci) * smoothstep(0.02, 0.1, h) * (1.0 - smoothstep(0.3, 0.75, h));
+    sun = mix(sun, mix(vec3(1.0, 0.56, 0.6), vec3(1.0, 0.86, 0.62), pow(sd, 3.0)), cir * 0.5);
+    // ---- night: deep navy, stars in two sizes, a faint milky way, the moon and its halo
+    vec3 nightc = mix(vec3(0.07, 0.05, 0.14), vec3(0.012, 0.012, 0.04), smoothstep(-0.1, 0.75, h));
+    float st = h31(floor(d * 300.0)), st2 = h31(floor(d * 130.0) + 7.0);
+    float star = step(0.9972, st) * (0.55 + 0.45 * sin(uTime * (1.0 + st * 3.0) + st * 50.0)) + step(0.9986, st2) * (1.2 + 0.4 * sin(uTime * 0.7 + st2 * 30.0));
+    nightc += vec3(0.9, 0.92, 1.0) * star * smoothstep(-0.02, 0.2, h);
+    float mw = exp(-pow(dot(d, normalize(vec3(0.35, 0.25, 1.0))) / 0.2, 2.0)) * fbm(d.xy * 7.0 + d.z * 3.0);
+    nightc += vec3(0.16, 0.13, 0.27) * mw * smoothstep(0.0, 0.3, h);
+    float md = max(dot(d, uMoon), 0.0);
+    vec3 mt = normalize(cross(uMoon, vec3(0.0, 1.0, 0.0))), mb = cross(mt, uMoon);
+    vec2 mu = vec2(dot(d, mt), dot(d, mb)) / 0.026;
+    float disc = smoothstep(1.0, 0.94, length(mu)) * step(0.0, dot(d, uMoon));
+    float maria = fbm(mu * 1.8 + 3.0);
+    nightc = mix(nightc, vec3(0.94, 0.92, 0.84) * (0.72 + 0.28 * smoothstep(0.35, 0.65, maria)), disc);
+    nightc += vec3(0.45, 0.5, 0.7) * pow(md, 900.0) * 0.5 + vec3(0.14, 0.16, 0.3) * pow(md, 24.0) * 0.45;
+    // ---- storm: roiling bands of bruised cloud
+    float band = fbm(d.xz / max(h + 0.3, 0.12) * 0.7 + vec2(uTime * 0.02, uTime * 0.013));
+    vec3 stormc = mix(vec3(0.15, 0.13, 0.19), vec3(0.045, 0.04, 0.065), smoothstep(-0.2, 0.7, h)) * (0.7 + 0.6 * band);
+    vec3 col = mix(mix(sun, nightc, uNight), stormc, uStorm);
+    gl_FragColor = vec4(col * uDim, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// cumulus billboards (the sea below + the storm clouds above): a lumpy shape lit from the sun's side,
+// shadowed violet underneath, silver-lined when the sun is behind them, glowing from inside before lightning
+const CCLOUD_VS = `attribute vec4 iPos; attribute vec2 iSeed; attribute float iGlow; uniform float uTime; uniform float uStorm; uniform float uSeaY; uniform vec3 uSun;
+  varying vec2 vUv; varying float vSeed; varying float vTop; varying float vGlow; varying vec2 vSunUv; varying float vBack;
+  void main(){
+    vec3 p = iPos.xyz;
+    if (iSeed.y < 0.5) { p.x = mod(p.x + uTime * (0.25 + iSeed.x * 0.35) + 95.0, 190.0) - 95.0; p.y += uSeaY; }
+    else { p.x += sin(uTime * 0.07 + iSeed.x * 6.0) * 3.0; p.y += (1.0 - uStorm) * 30.0; }   // (storm clouds roll in from above and clear upward, never through the tent)
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    vec3 sv = normalize((viewMatrix * vec4(uSun, 0.0)).xyz);
+    vSunUv = normalize(sv.xy + vec2(0.0, 0.25)); vBack = max(0.0, -sv.z);
+    mv.xy += position.xy * iPos.w * vec2(1.6, 0.9);
+    gl_Position = projectionMatrix * mv;
+    vUv = position.xy + 0.5; vSeed = iSeed.x; vTop = iSeed.y; vGlow = iGlow;
+  }`;
+const CCLOUD_FS = `uniform float uNight; uniform float uStorm; uniform float uDim; varying vec2 vUv; varying float vSeed; varying float vTop; varying float vGlow; varying vec2 vSunUv; varying float vBack;
+  void main(){
+    vec2 q = vUv * 2.0 - 1.0;
+    float lump = 0.0; vec2 grad = vec2(0.0);
+    for (int i = 0; i < 5; i++) {
+      float fi = float(i);
+      vec2 c = vec2(sin(vSeed * 13.0 + fi * 2.1), cos(vSeed * 7.0 + fi * 1.7)) * vec2(0.5, 0.16) - vec2(0.0, 0.06 - fi * 0.015);
+      vec2 dq = (q - c) * vec2(1.0, 1.7); float r = 0.5 + 0.11 * fi - 0.05 * float(i == 4);
+      float l = 1.0 - length(dq) / r;
+      if (l > lump) { lump = l; grad = normalize(dq + 1e-4); }
+    }
+    float a = smoothstep(0.0, 0.32, lump) * smoothstep(-1.0, -0.6, q.y);
+    if (a < 0.02) discard;
+    float sunSide = dot(grad, vSunUv) * 0.5 + 0.5, up = clamp(vUv.y * 1.25, 0.0, 1.0);
+    float lit = clamp(sunSide * 0.65 + up * 0.55 - 0.1, 0.0, 1.0);
+    vec3 day = mix(vec3(0.34, 0.18, 0.4), vec3(1.0, 0.72, 0.52), lit) + vec3(1.0, 0.62, 0.36) * pow(1.0 - smoothstep(0.0, 0.3, lump), 2.0) * vBack * 0.9;
+    vec3 night = mix(vec3(0.04, 0.045, 0.1), vec3(0.2, 0.22, 0.36), lit);
+    vec3 storm = mix(vec3(0.06, 0.055, 0.08), vec3(0.22, 0.2, 0.26), lit);
+    vec3 col = mix(mix(day, night, uNight), storm, uStorm);
+    col += vec3(0.9, 0.85, 1.0) * vGlow * (0.4 + lump) * 1.2;
+    gl_FragColor = vec4(col * uDim, a * (vTop > 0.5 ? 0.95 * uStorm : 0.92));
+    #include <colorspace_fragment>
+  }`;
+// the cloud floor under the sea of puffs: soft billows fading into the horizon's glow
+const CFLOOR_FS = `uniform float uTime; uniform float uNight; uniform float uStorm; uniform float uDim; uniform vec3 uSun; varying vec3 vW;
+  ${SKY_NOISE_GLSL}
+  void main(){
+    vec2 p = vW.xz * 0.045 + vec2(uTime * 0.012, 0.0);
+    float n = fbm(p) * 0.65 + fbm(p * 2.7 + 4.0) * 0.35;
+    vec3 v = normalize(vW - cameraPosition); float far = smoothstep(30.0, 170.0, length(vW.xz - cameraPosition.xz));
+    float sd = pow(max(dot(normalize(vec3(v.x, 0.0, v.z)), normalize(vec3(uSun.x, 0.0, uSun.z))), 0.0), 3.0);
+    vec3 day = mix(vec3(0.36, 0.2, 0.4), vec3(0.98, 0.66, 0.5), smoothstep(0.35, 0.75, n)) + vec3(0.35, 0.18, 0.08) * sd;
+    day = mix(day, mix(vec3(0.6, 0.32, 0.46), vec3(1.0, 0.68, 0.46), sd), far);
+    vec3 night = mix(vec3(0.03, 0.035, 0.08), vec3(0.13, 0.14, 0.25), smoothstep(0.35, 0.75, n));
+    night = mix(night, vec3(0.06, 0.05, 0.12), far);
+    vec3 storm = mix(vec3(0.05, 0.045, 0.07), vec3(0.16, 0.15, 0.2), smoothstep(0.35, 0.75, n));
+    gl_FragColor = vec4(mix(mix(day, night, uNight), storm, uStorm) * uDim, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// the fair's bulbs: soft round sprites (attenuated with distance, never smaller than a pixel or two)
+const CFAIR_LIGHTS_VS = `attribute vec4 aCol; uniform float uLit; uniform float uTime; varying vec4 vC;
+  void main(){
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    float tw = 0.75 + 0.25 * sin(uTime * 3.0 + aCol.a * 40.0);
+    vC = vec4(aCol.rgb * tw, uLit);
+    gl_PointSize = clamp(260.0 / -mv.z, 1.5, 9.0);
+    gl_Position = projectionMatrix * mv;
+  }`;
+const CFAIR_LIGHTS_FS = `varying vec4 vC;
+  void main(){ vec2 q = gl_PointCoord * 2.0 - 1.0; float r = dot(q, q); if (r > 1.0) discard;
+    gl_FragColor = vec4(vC.rgb * (exp(-r * 4.0) * 1.4 + 0.15), vC.a * (1.0 - r));
+    #include <colorspace_fragment>
+  }`;
+
+// a striped cone / open cylinder as alternating coloured panels (parts for mergeGeos)
+function btStriped(rTop, rBot, h, n, colA, colB, matrix) {
+  const out = [];
+  for (let k = 0; k < n; k++) out.push({ geo: new THREE.CylinderGeometry(rTop, rBot, h, 2, 1, true, k / n * TAU, TAU / n), matrix, color: k % 2 ? colA : colB });
+  return out;
+}
 class CircusSky {
   constructor() {
     this.group = new THREE.Group(); scene.add(this.group);
-    const u = this.u = {
-      uTime: { value: 0 }, uNight: { value: 0 }, uStorm: { value: 0 }, uDim: { value: 1 },
-      uA: { value: CIRCUS.SUNSET_HORIZON.clone() }, uB: { value: CIRCUS.SUNSET_MID.clone() }, uC: { value: CIRCUS.SUNSET_TOP.clone() },
-    };
-    this.night = 0; this.storm = 0; this.nightT = 0; this.stormT = 0;
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16), new THREE.ShaderMaterial({
+    this.tex = [];   // textures this look owns (freed by dispose)
+    const u = this.u = { uTime: { value: 0 }, uNight: { value: 0 }, uStorm: { value: 0 }, uDim: { value: 1 }, uSun: { value: BT.SUN.clone() }, uMoon: { value: BT.MOON.clone() } };
+    this.night = 0; this.storm = 0; this.nightT = 0; this.stormT = 0; this.modeDur = 2;
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(200, 48, 24), new THREE.ShaderMaterial({
       uniforms: u, side: THREE.BackSide, depthWrite: false,
       vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform float uTime; uniform float uNight; uniform float uStorm; uniform float uDim; uniform vec3 uA; uniform vec3 uB; uniform vec3 uC; varying vec3 vP;
-        float h1(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
-        void main(){
-          vec3 d = normalize(vP); float h = d.y;
-          vec3 sun = h < 0.0 ? mix(uA * 0.95, uC * 0.75, smoothstep(0.0, -0.45, h)) : (h < 0.22 ? mix(uA, uB, h / 0.22) : mix(uB, uC, smoothstep(0.22, 0.85, h)));
-          vec3 sd = normalize(vec3(0.35, 0.06, -1.0));
-          sun += uA * pow(max(dot(d, sd), 0.0), 48.0) * 0.9 + vec3(1.0, 0.9, 0.7) * pow(max(dot(d, sd), 0.0), 600.0);
-          vec3 nightc = mix(vec3(0.05, 0.035, 0.1), vec3(0.012, 0.01, 0.035), smoothstep(-0.1, 0.8, h));
-          vec3 q = floor(d * 260.0); float st = h1(q);
-          float star = step(0.9965, st) * smoothstep(-0.05, 0.25, h) * (0.6 + 0.4 * sin(uTime * (1.0 + st * 3.0) + st * 50.0));
-          nightc += vec3(0.9, 0.9, 1.0) * star;
-          float band = 0.5 + 0.5 * sin(d.x * 7.0 + uTime * 0.05) * sin(d.z * 5.0 - uTime * 0.04);
-          vec3 stormc = mix(vec3(0.12, 0.1, 0.15), vec3(0.04, 0.035, 0.06), smoothstep(-0.2, 0.7, h)) * (0.8 + 0.4 * band);
-          vec3 col = mix(mix(sun, nightc, uNight), stormc, uStorm);
-          gl_FragColor = vec4(col * uDim, 1.0);
-          #include <colorspace_fragment>
-        }`,
+      fragmentShader: CSKY_FS,
     }));
     sky.renderOrder = -10; sky.frustumCulled = false; this.group.add(sky);
+    // ---- the cloud floor
+    const fl = new THREE.Mesh(new THREE.CircleGeometry(196, 48), new THREE.ShaderMaterial({
+      uniforms: u, depthWrite: false,
+      vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: CFLOOR_FS,
+    }));
+    fl.rotation.x = -Math.PI / 2; fl.position.y = -10.4; fl.renderOrder = -9; fl.frustumCulled = false; this.floor = fl; this.group.add(fl);
     // ---- cloud puffs: a sea below (N1) + storm clouds above (N2), one shader
-    const N1 = 150, N2 = 46, N = N1 + N2;
+    const N1 = 170, N2 = 46, N = N1 + N2;
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]), 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
@@ -14413,9 +14761,9 @@ class CircusSky {
     this.glowArr = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       if (i < N1) {
-        let x, z; do { x = rand(-95, 95); z = rand(-95, 95); } while (x * x + z * z < 49);
+        let x, z; do { x = rand(-95, 95); z = rand(-95, 95); } while (x * x + z * z < 64);
         const d = Math.hypot(x, z);
-        ip[i * 4] = x; ip[i * 4 + 1] = -8.5 + rand(-1.6, 1.4); ip[i * 4 + 2] = z; ip[i * 4 + 3] = 7 + d * 0.12 + rand(-2, 3);
+        ip[i * 4] = x; ip[i * 4 + 1] = -8.6 + rand(-1.6, 1.2); ip[i * 4 + 2] = z; ip[i * 4 + 3] = 7.5 + d * 0.12 + rand(-2, 3);
         isd[i * 2] = Math.random(); isd[i * 2 + 1] = 0;
       } else {
         const a = rand(0, TAU), r = rand(0, 34);
@@ -14429,73 +14777,151 @@ class CircusSky {
     g.setAttribute('iGlow', this.glowAttr);
     g.instanceCount = N;
     this.cloudPos = ip; this.N1 = N1; this.N = N;
-    const cu = this.cu = { uTime: u.uTime, uNight: u.uNight, uStorm: u.uStorm, uDim: u.uDim, uSeaY: { value: 0 } };
-    const clouds = new THREE.Mesh(g, new THREE.ShaderMaterial({
-      uniforms: cu, transparent: true, depthWrite: false,
-      vertexShader: `attribute vec4 iPos; attribute vec2 iSeed; attribute float iGlow; uniform float uTime; uniform float uStorm; uniform float uSeaY;
-        varying vec2 vUv; varying float vSeed; varying float vTop; varying float vGlow;
-        void main(){
-          vec3 p = iPos.xyz;
-          if (iSeed.y < 0.5) { p.x = mod(p.x + uTime * (0.25 + iSeed.x * 0.35) + 95.0, 190.0) - 95.0; p.y += uSeaY; }
-          else { p.x += sin(uTime * 0.07 + iSeed.x * 6.0) * 3.0; p.y -= (1.0 - uStorm) * 30.0; }
-          vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          mv.xy += position.xy * iPos.w * vec2(1.6, 0.9);
-          gl_Position = projectionMatrix * mv;
-          vUv = position.xy + 0.5; vSeed = iSeed.x; vTop = iSeed.y; vGlow = iGlow;
-        }`,
-      fragmentShader: `uniform float uNight; uniform float uStorm; uniform float uDim; varying vec2 vUv; varying float vSeed; varying float vTop; varying float vGlow;
-        void main(){
-          vec2 q = vUv * 2.0 - 1.0;
-          float lump = 0.0;
-          for (int i = 0; i < 4; i++) { float fi = float(i); vec2 c = vec2(sin(vSeed * 13.0 + fi * 2.1), cos(vSeed * 7.0 + fi * 1.7)) * vec2(0.5, 0.18) - vec2(0.0, 0.08); lump = max(lump, 1.0 - length((q - c) * vec2(1.0, 1.7)) / (0.55 + 0.12 * fi)); }
-          float a = smoothstep(0.0, 0.35, lump) * smoothstep(-1.0, -0.55, q.y);
-          if (a < 0.02) discard;
-          float lit = clamp(vUv.y * 1.2, 0.0, 1.0);
-          vec3 sunTop = mix(vec3(0.55, 0.28, 0.42), vec3(1.0, 0.72, 0.52), lit), sunLow = vec3(0.38, 0.2, 0.42);
-          vec3 day = mix(sunLow, sunTop, lit);
-          vec3 night = mix(vec3(0.05, 0.05, 0.12), vec3(0.16, 0.16, 0.28), lit);
-          vec3 storm = mix(vec3(0.07, 0.065, 0.09), vec3(0.2, 0.19, 0.24), lit);
-          vec3 col = mix(mix(day, night, uNight), storm, uStorm);
-          col += vec3(0.9, 0.85, 1.0) * vGlow * lump * 1.4;
-          gl_FragColor = vec4(col * uDim, a * (vTop > 0.5 ? 0.95 * uStorm : 0.9));
-          #include <colorspace_fragment>
-        }`,
-    }));
+    const cu = this.cu = { uTime: u.uTime, uNight: u.uNight, uStorm: u.uStorm, uDim: u.uDim, uSun: u.uSun, uSeaY: { value: 0 } };
+    const clouds = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: cu, transparent: true, depthWrite: false, vertexShader: CCLOUD_VS, fragmentShader: CCLOUD_FS }));
     clouds.frustumCulled = false; clouds.renderOrder = -8; this.group.add(clouds);
-    // ---- distant tents + hot-air balloons on the horizon
-    this.tentTex = stripeTex('#e8283c', '#fff4dc', 12);
-    const parts = [];
-    for (let i = 0; i < 7; i++) {
-      const a = -Math.PI / 2 + (i - 3) * 0.42 + rand(-0.1, 0.1), r = rand(46, 72), s = rand(2.6, 4.4);
-      const x = Math.cos(a) * r, z = Math.sin(a) * r, y = rand(-5.5, -3.5);
-      parts.push({ geo: new THREE.CylinderGeometry(s, s, s * 0.9, 12, 1, true), matrix: M4(x, y, z) });
-      parts.push({ geo: new THREE.ConeGeometry(s * 1.15, s * 1.1, 12), matrix: M4(x, y + s, z) });
-      parts.push({ geo: new THREE.CylinderGeometry(s * 1.3, s * 1.3, 0.25, 12), matrix: M4(x, y - s * 0.5, z), color: 0x5a3020 });
+    this.buildFair();
+    this.buildBalloons();
+  }
+  // ---- the fair on its cloud islands (lit by the big top's light block, fading into the haze with distance)
+  buildFair() {
+    const CS = CircusShade, P = [], RED = 0xd8283a, CREAM = 0xf6ead0, GOLD = 0xffc83c, WOOD = 0x6a4428, CLOUD = 0xf4ecf4;
+    const lights = [];   // [x, y, z, r, g, b, seed]
+    const light = (x, y, z, c) => { _c1.setHex(c); lights.push(x, y, z, _c1.r, _c1.g, _c1.b, Math.random()); };
+    // a cloud island: a cushion of cloud under a round wooden deck with a gold rim, two balloons tethered above
+    const island = (x, y, z, r, balloonCols) => {
+      for (let k = 0; k < 9; k++) {
+        const a = k / 9 * TAU + rand(-0.2, 0.2), rr = r * rand(0.35, 0.85);
+        P.push({ geo: new THREE.SphereGeometry(r * rand(0.42, 0.6), 10, 7), matrix: M4(x + Math.cos(a) * rr, y - r * rand(0.25, 0.45), z + Math.sin(a) * rr, 0, 0, 0, 1, 0.55, 1), color: CLOUD });
+      }
+      P.push({ geo: new THREE.CylinderGeometry(r, r * 0.92, 0.5, 24), matrix: M4(x, y - 0.25, z), color: WOOD });
+      P.push({ geo: new THREE.TorusGeometry(r, 0.12, 5, 28), matrix: M4(x, y, z, Math.PI / 2, 0, 0), color: GOLD });
+      (balloonCols || []).forEach((c, k) => {
+        const a = k * 2.4 + 0.6, bx = x + Math.cos(a) * r * 0.7, bz = z + Math.sin(a) * r * 0.7, by = y + 16 + k * 2;
+        P.push({ geo: new THREE.SphereGeometry(1.6, 12, 9), matrix: M4(bx, by, bz, 0, 0, 0, 1, 1.15, 1), color: c });
+        P.push({ geo: new THREE.CylinderGeometry(0.04, 0.04, by - y - 1.8, 4), matrix: M4(bx, (by + y - 1.8) / 2, bz), color: CREAM });
+      });
+    };
+    // a striped tent: walls and a conical roof in alternating panels, a flag on top
+    const tent = (x, y, z, r, h) => {
+      P.push(...btStriped(r, r, h * 0.55, 12, RED, CREAM, M4(x, y + h * 0.275, z)), ...btStriped(0, r * 1.12, h * 0.7, 12, RED, CREAM, M4(x, y + h * 0.55 + h * 0.35, z)));
+      P.push({ geo: new THREE.CylinderGeometry(0.05, 0.05, 1.2, 4), matrix: M4(x, y + h * 0.9 + 0.6, z), color: GOLD });
+      P.push({ geo: new THREE.BoxGeometry(0.7, 0.4, 0.04), matrix: M4(x + 0.35, y + h * 0.9 + 1.0, z), color: RED });
+      for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; light(x + Math.cos(a) * r * 1.12, y + h * 0.55, z + Math.sin(a) * r * 1.12, k % 2 ? 0xffd890 : 0xff7a5a); }
+      light(x, y + h * 1.25, z, 0xfff0c0);
+    };
+    // ---- the Ferris wheel (front left, under the moon)
+    const FW = this.fw = { c: new THREE.Vector3(-34, -2, -58), R: 8, H: 10.5, a: 0 };
+    island(FW.c.x, FW.c.y, FW.c.z, 7.5, [0xe8283c, 0xffc83c]);
+    const yaw = Math.atan2(-FW.c.x, -FW.c.z);
+    FW.q = new THREE.Quaternion().setFromAxisAngle(UP, yaw); FW.axle = new THREE.Vector3(FW.c.x, FW.c.y + FW.H, FW.c.z);
+    for (const s of [-1, 1]) for (const f of [-1, 1]) {
+      // the A-frame legs
+      _v1.set(f * 4.2, 0, s * 1.4).applyQuaternion(FW.q).add(FW.c); _v2.set(0, FW.H, s * 0.9).applyQuaternion(FW.q).add(FW.c);
+      const len = _v1.distanceTo(_v2); _v3.subVectors(_v2, _v1).normalize(); _q1.setFromUnitVectors(UP, _v3);
+      const m = new THREE.Matrix4().compose(_v4.addVectors(_v1, _v2).multiplyScalar(0.5), _q1, V_ONE);
+      P.push({ geo: new THREE.CylinderGeometry(0.16, 0.22, len, 6), matrix: m, color: 0xf4ecdc });
     }
-    this.tents = new THREE.Mesh(mergeGeos(parts), new THREE.MeshBasicMaterial({ map: this.tentTex, vertexColors: true }));
-    this.group.add(this.tents);
-    const bal = mergeGeos([
-      { geo: new THREE.SphereGeometry(1, 14, 10), matrix: M4(0, 0, 0, 0, 0, 0, 1, 1.15, 1) },
-      { geo: new THREE.ConeGeometry(0.62, 0.9, 12), matrix: M4(0, -1.1, 0, Math.PI, 0, 0) },
-      { geo: new THREE.BoxGeometry(0.35, 0.3, 0.35), matrix: M4(0, -1.85, 0), color: 0x6a4024 },
+    const wheelParts = [];
+    for (const s of [-0.75, 0.75]) {
+      wheelParts.push({ geo: new THREE.TorusGeometry(FW.R, 0.14, 6, 56), matrix: M4(0, 0, s), color: 0xf4ecdc });
+      wheelParts.push({ geo: new THREE.TorusGeometry(FW.R * 0.55, 0.08, 5, 40), matrix: M4(0, 0, s), color: GOLD });
+      for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; wheelParts.push({ geo: new THREE.BoxGeometry(0.1, FW.R, 0.1), matrix: M4(Math.cos(a) * FW.R / 2, Math.sin(a) * FW.R / 2, s, 0, 0, a - Math.PI / 2), color: k % 2 ? RED : 0xf4ecdc }); }
+    }
+    for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; wheelParts.push({ geo: new THREE.CylinderGeometry(0.07, 0.07, 1.5, 4), matrix: M4(Math.cos(a) * FW.R, Math.sin(a) * FW.R, 0, Math.PI / 2, 0, 0), color: GOLD }); }
+    wheelParts.push({ geo: new THREE.CylinderGeometry(0.6, 0.6, 2.0, 12), matrix: M4(0, 0, 0, Math.PI / 2, 0, 0), color: RED });
+    const shade = (o) => CS.material(Object.assign({ haze: true, gloss: 0.4, shine: 30, rim: 0.6, emit: 0.22 }, o));
+    this.wheel = new THREE.Mesh(mergeGeos(wheelParts), shade({}));
+    this.wheel.position.copy(FW.axle); this.wheel.quaternion.copy(FW.q); this.group.add(this.wheel);
+    const gond = mergeGeos([
+      { geo: new THREE.BoxGeometry(1.3, 1.0, 1.0), matrix: M4(0, -1.1, 0), color: RED },
+      { geo: new THREE.ConeGeometry(0.95, 0.55, 4), matrix: M4(0, -0.33, 0, 0, Math.PI / 4, 0), color: GOLD },
+      { geo: new THREE.CylinderGeometry(0.04, 0.04, 0.5, 4), matrix: M4(0, -0.05, 0), color: GOLD },
     ]);
-    this.balTex = stripeTex('#ffc83c', '#d23c8c', 10);
-    this.balloons = new THREE.InstancedMesh(bal, new THREE.MeshBasicMaterial({ map: this.balTex, vertexColors: true }), 9);
+    this.gondolas = new THREE.InstancedMesh(gond, shade({}), 12); this.gondolas.frustumCulled = false; this.group.add(this.gondolas);
+    // ---- the carousel (front right)
+    const CA = this.ca = { c: new THREE.Vector3(42, -4, -42), a: 0 };
+    island(CA.c.x, CA.c.y, CA.c.z, 7, [0xffc83c]);
+    const carParts = [
+      { geo: new THREE.CylinderGeometry(5, 5, 0.45, 32), matrix: M4(0, 0.25, 0), color: GOLD },
+      { geo: new THREE.CylinderGeometry(0.45, 0.45, 5.2, 12), matrix: M4(0, 2.9, 0), color: 0xf4ecdc },
+      { geo: new THREE.CylinderGeometry(5.3, 5.3, 0.6, 32, 1, true), matrix: M4(0, 5.6, 0), color: RED },
+    ];
+    carParts.push(...btStriped(0, 5.6, 2.6, 16, RED, CREAM, M4(0, 7.2, 0)));
+    for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; carParts.push({ geo: new THREE.CylinderGeometry(0.06, 0.06, 5, 4), matrix: M4(Math.cos(a) * 3.8, 3, Math.sin(a) * 3.8), color: GOLD }); }
+    this.carousel = new THREE.Mesh(mergeGeos(carParts), shade({})); this.carousel.position.copy(CA.c); this.group.add(this.carousel);
+    const horse = mergeGeos([
+      { geo: new THREE.CapsuleGeometry(0.32, 0.9, 3, 8), matrix: M4(0, 0, 0, 0, 0, Math.PI / 2), color: 0xf8f2ea },
+      { geo: new THREE.CapsuleGeometry(0.2, 0.45, 3, 8), matrix: M4(0.62, 0.38, 0, 0, 0, -0.7), color: 0xf8f2ea },
+      { geo: new THREE.BoxGeometry(0.42, 0.22, 0.2), matrix: M4(0.85, 0.62, 0, 0, 0, -0.3), color: 0xf8f2ea },
+      { geo: new THREE.BoxGeometry(0.5, 0.12, 0.56), matrix: M4(-0.05, 0.3, 0), color: RED },
+      { geo: new THREE.CylinderGeometry(0.06, 0.04, 0.8, 4), matrix: M4(0.3, -0.62, 0, 0, 0, 0.4), color: 0xf8f2ea },
+      { geo: new THREE.CylinderGeometry(0.06, 0.04, 0.8, 4), matrix: M4(-0.35, -0.62, 0, 0, 0, -0.4), color: 0xf8f2ea },
+    ]);
+    this.horses = new THREE.InstancedMesh(horse, shade({}), 8); this.horses.frustumCulled = false; this.group.add(this.horses);
+    // ---- the helter-skelter (behind you, left)
+    const HS = new THREE.Vector3(-52, 0, 24);
+    island(HS.x, HS.y, HS.z, 5.5, [0xd23c8c, 0xe8283c]);
+    for (let k = 0; k < 6; k++) P.push({ geo: new THREE.CylinderGeometry(1.5, 1.6, 2, 14), matrix: M4(HS.x, HS.y + 1 + k * 2, HS.z), color: k % 2 ? CREAM : RED });
+    P.push({ geo: new THREE.ConeGeometry(2.0, 2.6, 14), matrix: M4(HS.x, HS.y + 13.3, HS.z), color: GOLD });
+    const helix = []; for (let k = 0; k <= 60; k++) { const t = k / 60, a = t * 3 * TAU; helix.push(new THREE.Vector3(HS.x + Math.cos(a) * 2.5, HS.y + 11.5 - t * 11, HS.z + Math.sin(a) * 2.5)); }
+    P.push({ geo: btTube(helix, 0.42, 6, 120), color: 0xffd24a });
+    for (let k = 0; k < 24; k++) { const t = k / 23, a = t * 3 * TAU; light(HS.x + Math.cos(a) * 2.9, HS.y + 11.9 - t * 11, HS.z + Math.sin(a) * 2.9, k % 3 ? 0xffd890 : 0xff5fb4); }
+    // ---- little tents on two more islands (behind you, right; and far out past GRANDIOSO, under the sun)
+    island(30, 1, 52, 9, [0xffc83c, 0xe8283c]);
+    tent(26, 1.2, 50, 3.2, 7); tent(34, 1.2, 55, 2.4, 5.5); tent(31, 1.2, 46, 1.8, 4);
+    island(-22, -1, -92, 10, [0xe8283c]);
+    tent(-25, -0.8, -94, 4.2, 9); tent(-17, -0.8, -90, 2.6, 6);
+    this.fairStatic = new THREE.Mesh(mergeGeos(P), shade({ emit: 0.3 }));
+    this.group.add(this.fairStatic);
+    for (const p of P) if (p.geo.dispose) p.geo.dispose();
+    for (const p of wheelParts) p.geo.dispose();
+    for (const p of carParts) p.geo.dispose();
+    // the moving lights: the wheel's rims and the carousel's canopy edge (rewritten every frame)
+    this.lightStatic = lights.length / 7;
+    this.FW_L = 32; this.CA_L = 24;
+    const total = this.lightStatic + this.FW_L + this.CA_L, pos = new Float32Array(total * 3), col = new Float32Array(total * 4);
+    for (let i = 0; i < this.lightStatic; i++) { pos.set(lights.slice(i * 7, i * 7 + 3), i * 3); col.set(lights.slice(i * 7 + 3, i * 7 + 7), i * 4); }
+    for (let i = this.lightStatic; i < total; i++) { const k = i - this.lightStatic; _c1.setHex(k % 2 ? 0xffd890 : k % 3 ? 0xff7a5a : 0xfff0d0); col.set([_c1.r, _c1.g, _c1.b, Math.random()], i * 4); }
+    const lg = new THREE.BufferGeometry();
+    this.lightPos = new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage);
+    lg.setAttribute('position', this.lightPos); lg.setAttribute('aCol', new THREE.BufferAttribute(col, 4));
+    this.lu = { uLit: { value: 0 }, uTime: this.u.uTime };
+    this.fairLights = new THREE.Points(lg, new THREE.ShaderMaterial({ uniforms: this.lu, vertexShader: CFAIR_LIGHTS_VS, fragmentShader: CFAIR_LIGHTS_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.fairLights.frustumCulled = false; this.group.add(this.fairLights);
+  }
+  // ---- hot-air balloons: striped envelopes with wicker baskets, drifting
+  buildBalloons() {
+    const env = new THREE.LatheGeometry([[0, -1.25], [0.32, -1.18], [0.62, -0.85], [0.92, -0.25], [1.02, 0.35], [0.9, 0.85], [0.55, 1.12], [0, 1.2]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
+    const tex = softTex(128, 64, (g, W, H) => {
+      const cols = ['#e8283c', '#ffc83c', '#d23c8c', '#fff4dc'];
+      for (let i = 0; i < 8; i++) { g.fillStyle = cols[i % cols.length]; g.fillRect(i * W / 8, 0, W / 8 + 1, H); }
+      g.fillStyle = 'rgba(30,10,20,0.35)'; for (let i = 0; i < 8; i++) g.fillRect(i * W / 8, 0, 1, H);
+    }, { repeat: true });
+    this.tex.push(tex);
+    this.balloonEnv = new THREE.InstancedMesh(env, CircusShade.material({ map: tex, haze: true, gloss: 0.5, shine: 30, rim: 0.7, emit: 0.24 }), 9);
+    const basket = mergeGeos([
+      { geo: new THREE.BoxGeometry(0.42, 0.34, 0.42), matrix: M4(0, -1.75, 0), color: 0x7a5030 },
+      { geo: new THREE.CylinderGeometry(0.015, 0.015, 0.5, 3), matrix: M4(0.2, -1.4, 0.2, 0.25, 0, -0.25), color: 0xd8c8a0 },
+      { geo: new THREE.CylinderGeometry(0.015, 0.015, 0.5, 3), matrix: M4(-0.2, -1.4, -0.2, -0.25, 0, 0.25), color: 0xd8c8a0 },
+      { geo: new THREE.CylinderGeometry(0.015, 0.015, 0.5, 3), matrix: M4(0.2, -1.4, -0.2, -0.25, 0, -0.25), color: 0xd8c8a0 },
+      { geo: new THREE.CylinderGeometry(0.015, 0.015, 0.5, 3), matrix: M4(-0.2, -1.4, 0.2, 0.25, 0, 0.25), color: 0xd8c8a0 },
+    ]);
+    this.balloonBasket = new THREE.InstancedMesh(basket, CircusShade.material({ haze: true, gloss: 0.2, rim: 0.4, emit: 0.2 }), 9);
+    for (const m of [this.balloonEnv, this.balloonBasket]) { m.frustumCulled = false; this.group.add(m); }
     this.balloonData = [];
     for (let i = 0; i < 9; i++) {
-      const a = rand(0, TAU), r = rand(26, 60);
-      this.balloonData.push({ x: Math.cos(a) * r, z: Math.sin(a) * r - 6, y: rand(-1, 9), s: rand(1.4, 2.6), ph: rand(0, 10) });
+      const a = i / 9 * TAU + rand(-0.25, 0.25), r = rand(28, 62);
+      this.balloonData.push({ x: Math.cos(a) * r, z: Math.sin(a) * r - 6, y: rand(-2, 10), s: rand(1.6, 2.8), ph: rand(0, 10), burn: 0 });
     }
-    this.balloons.frustumCulled = false; this.group.add(this.balloons);
     this.layoutBalloons(0);
-    this.tint = new THREE.Color(1, 1, 1);
   }
   layoutBalloons(t) {
     this.balloonData.forEach((b, i) => {
-      _m1.compose(_v1.set(b.x + Math.sin(t * 0.05 + b.ph) * 1.5, b.y + Math.sin(t * 0.3 + b.ph) * 0.6, b.z), _q1.identity(), _v2.setScalar(b.s));
-      this.balloons.setMatrixAt(i, _m1);
+      _m1.compose(_v1.set(b.x + Math.sin(t * 0.05 + b.ph) * 1.5, b.y + Math.sin(t * 0.3 + b.ph) * 0.6, b.z), _q1.setFromAxisAngle(UP, t * 0.02 + b.ph), _v2.setScalar(b.s));
+      this.balloonEnv.setMatrixAt(i, _m1); this.balloonBasket.setMatrixAt(i, _m1);
     });
-    this.balloons.instanceMatrix.needsUpdate = true;
+    this.balloonEnv.instanceMatrix.needsUpdate = true; this.balloonBasket.instanceMatrix.needsUpdate = true;
   }
   // 'sunset' | 'night' | 'storm' | 'clear' (starry night after the storm)
   setMode(mode, dur = 2) {
@@ -14517,20 +14943,46 @@ class CircusSky {
     const u = this.u, k = dt / this.modeDur || 0;
     this.night += clamp(this.nightT - this.night, -k, k); this.storm += clamp(this.stormT - this.storm, -k, k);
     u.uTime.value = t; u.uNight.value = this.night; u.uStorm.value = this.storm; u.uDim.value = dim;
+    this.floor.position.y = -10.4 + this.cu.uSeaY.value;   // (the cloud floor rises with the sea when the circus lands)
     let decayed = false;
     for (let i = this.N1; i < this.N; i++) if (this.glowArr[i] > 0) { this.glowArr[i] = Math.max(0, this.glowArr[i] - dt * 2.2); decayed = true; }
     if (decayed) this.glowAttr.needsUpdate = true;
-    const lum = (1 - this.night * 0.75) * (1 - this.storm * 0.55) * dim;
-    this.tents.material.color.setScalar(lum); this.balloons.material.color.setScalar(lum);
+    // the fair turns: the wheel (its gondolas hang level), the carousel (its horses rise and fall)
+    const FW = this.fw, CA = this.ca;
+    FW.a += dt * 0.07; this.wheel.rotation.set(0, 0, 0); this.wheel.quaternion.copy(FW.q); this.wheel.rotateZ(FW.a);
+    CA.a += dt * 0.22; this.carousel.rotation.y = CA.a;
+    const P = this.lightPos.array; let li = this.lightStatic;
+    for (let i = 0; i < 12; i++) {
+      const a = FW.a + i / 12 * TAU;
+      _v1.set(Math.cos(a) * FW.R, Math.sin(a) * FW.R, 0).applyQuaternion(FW.q).add(FW.axle);
+      _m1.compose(_v1, FW.q, V_ONE); this.gondolas.setMatrixAt(i, _m1);
+    }
+    this.gondolas.instanceMatrix.needsUpdate = true;
+    for (let i = 0; i < this.FW_L; i++) {
+      const a = FW.a + i / this.FW_L * TAU, rr = i % 2 ? FW.R : FW.R * 0.55;
+      _v1.set(Math.cos(a) * rr, Math.sin(a) * rr, i % 4 < 2 ? 0.8 : -0.8).applyQuaternion(FW.q).add(FW.axle); P.set([_v1.x, _v1.y, _v1.z], li++ * 3);
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = CA.a + i / 8 * TAU, bob = Math.sin(t * 2.2 + i * 1.7) * 0.35;
+      _q1.setFromAxisAngle(UP, -a); _m1.compose(_v1.set(CA.c.x + Math.cos(a) * 3.8, CA.c.y + 2.4 + bob, CA.c.z - Math.sin(a) * 3.8), _q1, V_ONE); this.horses.setMatrixAt(i, _m1);
+    }
+    this.horses.instanceMatrix.needsUpdate = true;
+    for (let i = 0; i < this.CA_L; i++) { const a = CA.a + i / this.CA_L * TAU; P.set([CA.c.x + Math.cos(a) * 5.35, CA.c.y + 5.35, CA.c.z - Math.sin(a) * 5.35], li++ * 3); }
+    this.lightPos.needsUpdate = true;
+    // the fair's lights come on as the sky darkens (and blink in the storm)
+    this.lu.uLit.value = (0.15 + 0.85 * Math.max(this.night, this.storm * 0.8)) * dim;
     this.layoutBalloons(t);
   }
-  dispose() { disposeObject(this.group); this.tentTex.dispose(); this.balTex.dispose(); }
+  dispose() { disposeObject(this.group); for (const t of this.tex) t.dispose(); this.tex = []; }
 }
 
 // ----------------------------------------------------------------------------
-//  BigTopKit - deck + sawdust ring, tent (poles, 12 roof panels that can tear,
-//  rolled-up walls), lift balloons, striped rope box edges with marquee bulbs,
-//  spotlights, audience stands (+ cameo guests), the trapeze safety net
+//  BigTopKit (remastered) - the big top, lit by the shared light block: a plank deck round a sawdust ring
+//  with a padded velvet curb, the striped canvas roof on its poles (12 panels that can tear, flap and
+//  mend), the valance, festoon bulbs from the crown, a chandelier, the performers' entrance behind
+//  GRANDIOSO with his name in bulbs, the stands and the audience of clouds, the steam calliope, the lift
+//  balloons, the striped rope box with its marquee bulbs, spotlights, the trapeze net and the guests.
+//  Also the big top's light (the moods, the house lights, the chandelier and a follow spot on him).
 // ----------------------------------------------------------------------------
 // spotlight beams: a soft volumetric cone (brightest where you look through its middle, drifting
 // dust) and a pool of light with a bright rim
@@ -14552,97 +15004,353 @@ const SPOT_POOL_FS = `uniform vec3 uColor; uniform float uAlpha; varying vec2 vP
     gl_FragColor = vec4(uColor, uAlpha * a);
     #include <colorspace_fragment>
   }`;
+// the box's rope: twisted red-and-cream rope (the twist runs in world space, so every edge reads the same),
+// lit by the shared light block
+const BT_ROPE_VS = `varying vec3 vW; varying vec3 vN; varying float vAng;
+  void main(){ vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+    vAng = atan(position.z, position.x); gl_Position = projectionMatrix * viewMatrix * w; }`;
+const BT_ROPE_FS = `uniform float uLum; uniform vec3 uKeyDir; uniform vec3 uKeyCol; uniform vec3 uSky; uniform vec3 uGround; uniform vec3 uRimCol;
+  uniform int uPtN; uniform vec4 uPtPos[4]; uniform vec3 uPtCol[4];
+  varying vec3 vW; varying vec3 vN; varying float vAng;
+  void main(){
+    float t = (vW.x + vW.y + vW.z) * 4.0 + vAng * 0.32;
+    float s = step(0.5, fract(t)), groove = smoothstep(0.0, 0.12, abs(fract(t * 2.0) - 0.5));
+    vec3 base = mix(vec3(0.82, 0.12, 0.2), vec3(0.98, 0.93, 0.82), s) * (0.72 + 0.28 * groove);
+    vec3 N = normalize(vN), V = normalize(cameraPosition - vW);
+    vec3 lig = mix(uGround, uSky, N.y * 0.5 + 0.5) + uKeyCol * clamp((dot(N, uKeyDir) + 0.4) / 1.4, 0.0, 1.0);
+    for (int i = 0; i < 4; i++) { if (i >= uPtN) break; vec3 L = uPtPos[i].xyz - vW; float d = length(L);
+      float att = clamp(1.0 - d / uPtPos[i].w, 0.0, 1.0); lig += uPtCol[i] * att * att * (max(dot(N, L / max(d, 1e-4)), 0.0) * 0.8 + 0.2); }
+    float fr = 1.0 - clamp(dot(N, V), 0.0, 1.0);
+    vec3 col = base * lig + uRimCol * pow(fr, 2.5) * 0.35;
+    gl_FragColor = vec4(max(col * 1.15, base * 0.42) * uLum, 1.0);
+    #include <colorspace_fragment>
+  }`;
 const BIGTOP = { DECK_R: 10.5, ROOF_Y: 9, ROOF_R: 11, APEX: 13.6, SEAT_R: 7.0, BOSS_Z: -6.4 };
+// a hanging pennant (a thin triangle, point down, flat face along z)
+function btPennant(w, h) { return new THREE.ConeGeometry(w, h, 3).rotateX(Math.PI).scale(1, 1, 0.12); }
+// uv from world x / z (planks that line up across pieces)
+function btWorldUV(geo, tile) { const P = geo.attributes.position, U = geo.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) / tile, -P.getZ(i) / tile); return geo; }
+// turn a surface inside out (seen from the ring: the stands' risers, the back wall)
+function btInward(geo) {
+  const I = geo.index.array; for (let i = 0; i < I.length; i += 3) { const t = I[i + 1]; I[i + 1] = I[i + 2]; I[i + 2] = t; }
+  const N = geo.attributes.normal; for (let i = 0; i < N.count; i++) N.setXYZ(i, -N.getX(i), -N.getY(i), -N.getZ(i));
+  return geo;
+}
+const _bt1 = new THREE.Vector3(), _bt2 = new THREE.Vector3(), _bt3 = new THREE.Vector3(), _btq = new THREE.Quaternion(), _btm = new THREE.Matrix4(), _btc = new THREE.Color();
 const BigTopKit = {
   ready: false,
   init() {
     if (this.ready) return; this.ready = true;
-    const root = this.root = new THREE.Group(); scene.add(root);
-    // deck, sawdust ring, red curb with a gold rim
-    this.woodTex = canvasTex(64, 64, (g, w, h) => {
-      g.fillStyle = '#4a2a18'; g.fillRect(0, 0, w, h);
-      for (let y = 0; y < h; y += 8) { g.fillStyle = y % 16 ? '#55311c' : '#3e2213'; g.fillRect(0, y, w, 7); g.fillStyle = '#2a160c'; g.fillRect(0, y + 7, w, 1); }
-    }, { repeat: true });
-    this.woodTex.repeat.set(8, 8);
-    const deck = new THREE.Mesh(new THREE.CylinderGeometry(BIGTOP.DECK_R, BIGTOP.DECK_R * 0.97, 0.4, 48), new THREE.MeshBasicMaterial({ map: this.woodTex }));
-    deck.position.y = -0.25; root.add(deck);
-    this.sawTex = canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#c89a62'; g.fillRect(0, 0, w, h); for (let i = 0; i < 260; i++) { g.fillStyle = Math.random() < 0.5 ? '#b48650' : '#dcae74'; g.fillRect(randi(0, w - 1), randi(0, h - 1), 1, 1); } }, { repeat: true });
-    this.sawTex.repeat.set(5, 5);
-    const ring = new THREE.Mesh(new THREE.CircleGeometry(2.62, 40), new THREE.MeshBasicMaterial({ map: this.sawTex }));
-    ring.rotation.x = -Math.PI / 2; ring.position.y = -0.035; root.add(ring);
-    const curb = new THREE.Mesh(mergeGeos([
-      { geo: new THREE.TorusGeometry(2.7, 0.13, 6, 48), matrix: M4(0, 0.02, 0, Math.PI / 2, 0, 0), color: 0xe8283c },
-      { geo: new THREE.TorusGeometry(2.7, 0.04, 4, 48), matrix: M4(0, 0.15, 0, Math.PI / 2, 0, 0), color: 0xffc83c },
-    ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
-    root.add(curb);
-    this.floorMats = [deck.material, ring.material, curb.material];
-    // tent: poles, roof panels (12 sectors, red/cream), scalloped valance, rolled-up walls
-    const poles = [];
-    for (let i = 0; i < 8; i++) {
-      const a = i / 8 * TAU + Math.PI / 8;
-      poles.push({ geo: new THREE.CylinderGeometry(0.09, 0.12, BIGTOP.ROOF_Y + 0.4, 8), matrix: M4(Math.cos(a) * (BIGTOP.ROOF_R - 0.6), BIGTOP.ROOF_Y / 2, Math.sin(a) * (BIGTOP.ROOF_R - 0.6)), color: 0xffc83c });
-      poles.push({ geo: new THREE.SphereGeometry(0.2, 8, 6), matrix: M4(Math.cos(a) * (BIGTOP.ROOF_R - 0.6), BIGTOP.ROOF_Y + 0.4, Math.sin(a) * (BIGTOP.ROOF_R - 0.6)), color: 0xffc83c });
+    const CS = CircusShade, T = BTTex, root = this.root = new THREE.Group(); scene.add(root);
+    const RED = 0xc81e30, DRED = 0x8a1222, GOLD = 0xffc83c, CREAM = 0xf4e8d0, WOOD = 0x7a4a26, DARK = 0x2a1a12;
+    this.emits = [];   // [material, emit in the show light, emit in the dark]
+    const mat = (o, day = 0.12, dark = 0.03) => { const m = CS.material(Object.assign({ haze: true }, o)); this.emits.push([m, day, dark]); return m; };
+    const add = (geo, m, order) => { const mesh = new THREE.Mesh(geo, m); if (order) mesh.renderOrder = order; root.add(mesh); return mesh; };
+    const P = [], G2 = [], R = [];   // vertex-coloured props, gold, ropes (merged at the end)
+    // ---- the deck: honey planks (world-mapped) with a red rim between gold bands
+    add(btDisc(BT.RING_R + 0.2, BT.DECK_R, -0.05, 2.8, 80), mat({ map: T.get('wood'), gloss: 0.35, shine: 24, rim: 0.25, emit: 0.1 }, 0.1, 0.02));
+    P.push({ geo: new THREE.CylinderGeometry(BT.DECK_R, BT.DECK_R * 0.99, 0.42, 80, 1, true), matrix: M4(0, -0.26, 0), color: RED });
+    for (const y of [-0.07, -0.45]) G2.push({ geo: new THREE.TorusGeometry(BT.DECK_R + 0.01, 0.035, 4, 96), matrix: M4(0, y, 0, Math.PI / 2, 0, 0), color: GOLD });
+    const pen = btPennant(0.2, 0.42), pen2 = btPennant(0.1, 0.24);
+    for (let k = 0; k < 72; k++) {   // bunting skirt under the rim
+      const a = k / 72 * TAU, c = [RED, GOLD, CREAM][k % 3];
+      P.push({ geo: pen, matrix: M4(Math.cos(a) * (BT.DECK_R + 0.02), -0.68, Math.sin(a) * (BT.DECK_R + 0.02), 0, Math.PI / 2 - a, 0), color: c });
     }
-    poles.push({ geo: new THREE.CylinderGeometry(0.16, 0.16, 1.6, 8), matrix: M4(0, BIGTOP.APEX + 0.6, 0), color: 0xffc83c });
-    for (let i = 0; i < 24; i++) {   // rolled-up wall canvas: a fat striped roll along the roof rim
-      const a = i / 24 * TAU, a2 = (i + 1) / 24 * TAU, r = BIGTOP.ROOF_R - 0.25;
-      const mx = (Math.cos(a) + Math.cos(a2)) / 2 * r, mz = (Math.sin(a) + Math.sin(a2)) / 2 * r, len = 2 * r * Math.sin(Math.PI / 24);
-      poles.push({ geo: new THREE.CylinderGeometry(0.28, 0.28, len, 8), matrix: M4(mx, BIGTOP.ROOF_Y - 0.25, mz, 0, -((a + a2) / 2) + Math.PI / 2, Math.PI / 2), color: i % 2 ? 0xe8283c : 0xfff4dc });
-    }
-    this.tentMesh = new THREE.Mesh(mergeGeos(poles), new THREE.MeshBasicMaterial({ vertexColors: true }));
-    root.add(this.tentMesh);
+    // ---- the ring: raked sawdust round a faded star, inside a padded velvet curb with gold piping
+    add(new THREE.CircleGeometry(BT.RING_R, 56).rotateX(-Math.PI / 2).translate(0, -0.035, 0), mat({ map: T.get('ring'), gloss: 0.05, shine: 8, rim: 0.12, emit: 0.12 }, 0.12, 0.02));
+    add(btDisc(BT.RING_R - 0.02, BT.RING_R + 0.22, -0.04, 2.8, 56), mat({ map: T.get('wood'), gloss: 0.3, rim: 0.2, emit: 0.08 }, 0.08, 0.02));
+    const curbProf = [[2.62, -0.04], [2.62, 0.09], [2.645, 0.17], [2.7, 0.215], [2.79, 0.215], [2.845, 0.17], [2.87, 0.09], [2.87, -0.04]].map(([x, y]) => new THREE.Vector2(x, y));
+    add(new THREE.LatheGeometry(curbProf, 96), mat({ map: T.get('curb'), mapST: [24, 1, 0, 0], gloss: 0.3, shine: 20, rim: 0.9, emit: 0.1 }, 0.1, 0.03));
+    for (const r of [2.655, 2.835]) G2.push({ geo: new THREE.TorusGeometry(r, 0.016, 4, 96), matrix: M4(0, 0.185, 0, Math.PI / 2, 0, 0), color: GOLD });
+    // ---- the roof: 12 panels hinged at the crown (each its own mesh so it can tear and flap)
+    this.canvasMat = mat({ map: T.get('canvas'), side: THREE.DoubleSide, gloss: 0.12, shine: 10, rim: 0.2, wrap: 0.85, emit: 0.28 }, 0.28, 0.04);
+    this.tornMat = mat({ map: T.get('canvasTorn'), cutout: true, side: THREE.DoubleSide, gloss: 0.12, shine: 10, rim: 0.2, wrap: 0.85, emit: 0.28 }, 0.28, 0.04);
     this.panels = [];
+    const NU = 6, NV = 16, cy0 = btRoofY(BT.OCULUS_R);
     for (let i = 0; i < 12; i++) {
-      const a0 = i / 12 * TAU, a1 = (i + 1) / 12 * TAU, R = BIGTOP.ROOF_R, y0 = BIGTOP.ROOF_Y, y1 = BIGTOP.APEX;
-      const geo = new THREE.BufferGeometry();
-      // a sector of the cone + a scallop at its lower edge (in a pivot frame at the rim)
-      const ax = Math.cos(a0) * R, az = Math.sin(a0) * R, bx = Math.cos(a1) * R, bz = Math.sin(a1) * R;
-      const pts = [ax, y0, az, bx, y0, bz, 0, y1, 0];
-      const sc = [];
-      const S = 4;
-      for (let k = 0; k < S; k++) {
-        const t0 = k / S, t1 = (k + 1) / S, tm = (t0 + t1) / 2;
-        const p0 = [lerp(ax, bx, t0), y0, lerp(az, bz, t0)], p1 = [lerp(ax, bx, t1), y0, lerp(az, bz, t1)], pm = [lerp(ax, bx, tm), y0 - 0.55, lerp(az, bz, tm)];
-        sc.push(...p0, ...pm, ...p1);
+      const a0 = i / 12 * TAU, a1 = (i + 1) / 12 * TAU, am = (a0 + a1) / 2;
+      const pv = new THREE.Vector3(Math.cos(am) * BT.OCULUS_R, cy0, Math.sin(am) * BT.OCULUS_R);
+      const pos = [], uv = [], idx = [];
+      for (let j = 0; j <= NV; j++) for (let k = 0; k <= NU; k++) {
+        const s = k / NU, t = j / NV, a = lerp(a0, a1, s), r = lerp(BT.OCULUS_R, BT.ROOF_R, t);
+        const belly = 0.3 * Math.sin(Math.PI * s) * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.15)), 0.8) * Math.min(1, r / 3);
+        pos.push(Math.cos(a) * r - pv.x, btRoofY(r) + belly - pv.y, Math.sin(a) * r - pv.z); uv.push(s, 1 - t);
       }
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts.concat(sc)), 3));
-      const n = 3 + sc.length / 3, col = new Float32Array(n * 3);
-      const base = new THREE.Color(i % 2 ? 0xe8283c : 0xfff4dc), trim = new THREE.Color(0xffc83c);
-      for (let v = 0; v < n; v++) { const c = v < 3 ? base : trim; col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b; }
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      // pivot at the panel's apex-side so a torn panel flaps around its top
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-      root.add(m);
-      this.panels.push({ m, torn: 0, ph: rand(0, 10), axis: new THREE.Vector3(Math.cos((a0 + a1) / 2 + Math.PI / 2), 0, Math.sin((a0 + a1) / 2 + Math.PI / 2)) });
+      for (let j = 0; j < NV; j++) for (let k = 0; k < NU; k++) { const a = j * (NU + 1) + k, b = a + 1, c = a + NU + 1, d = c + 1; idx.push(a, d, b, a, c, d); }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      geo.setIndex(idx); geo.computeVertexNormals();
+      const m = add(geo, this.canvasMat); m.position.copy(pv);
+      this.panels.push({ m, torn: 0, mending: false, ph: rand(0, 10), axis: new THREE.Vector3(-Math.sin(am), 0, Math.cos(am)) });
     }
-    // lift balloons above the roof, roped to the deck (separate, so they can let go one by one)
-    const liftGeo = mergeGeos([
-      { geo: new THREE.SphereGeometry(3.1, 16, 12), matrix: M4(0, 19, 0, 0, 0, 0, 1, 1.2, 1) },
-      { geo: new THREE.ConeGeometry(1.9, 2.4, 16), matrix: M4(0, 15.4, 0, Math.PI, 0, 0) },
-      { geo: new THREE.CylinderGeometry(0.03, 0.03, 15, 4), matrix: M4(0, 7.2, 0), color: 0xc8b088 },
+    // the valance (scallops with stars and tassels), the rolled-up walls tied under the eaves
+    add(new THREE.CylinderGeometry(BT.ROOF_R - 0.45, BT.ROOF_R - 0.45, 0.62, 144, 1, true).translate(0, btRoofY(BT.ROOF_R - 0.45) - 0.3, 0), mat({ map: T.get('valance'), mapST: [12, 1, 0, 0], cutout: true, side: THREE.DoubleSide, gloss: 0.3, rim: 0.3, emit: 0.24 }, 0.24, 0.04));
+    for (let i = 0; i < 24; i++) {
+      const a = i / 24 * TAU, a2 = (i + 1) / 24 * TAU, r = BT.ROOF_R - 0.12;
+      const mx = (Math.cos(a) + Math.cos(a2)) / 2 * r, mz = (Math.sin(a) + Math.sin(a2)) / 2 * r, len = 2 * r * Math.sin(Math.PI / 24);
+      P.push({ geo: new THREE.CylinderGeometry(0.24, 0.24, len, 10), matrix: M4(mx, BT.ROOF_Y - 0.62, mz, 0, -((a + a2) / 2) + Math.PI / 2, Math.PI / 2), color: i % 2 ? RED : CREAM });
+      if (i % 2) R.push({ geo: new THREE.TorusGeometry(0.255, 0.018, 4, 14), matrix: M4(Math.cos(a) * r, BT.ROOF_Y - 0.62, Math.sin(a) * r, 0, -a, 0), color: 0xc8b088 });
+    }
+    // ---- poles: candy-striped, gold capitals and bases
+    const poleGeo = [];
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * TAU + Math.PI / 8, x = Math.cos(a) * BT.POLE_R, z = Math.sin(a) * BT.POLE_R;
+      poleGeo.push({ geo: new THREE.CylinderGeometry(0.1, 0.13, BT.ROOF_Y + 0.05, 10), matrix: M4(x, BT.ROOF_Y / 2 - 0.03, z) });
+      G2.push({ geo: new THREE.CylinderGeometry(0.2, 0.14, 0.24, 10), matrix: M4(x, BT.ROOF_Y - 0.12, z), color: GOLD });
+      G2.push({ geo: new THREE.SphereGeometry(0.17, 10, 8), matrix: M4(x, BT.ROOF_Y - 0.3, z), color: GOLD });
+      G2.push({ geo: new THREE.CylinderGeometry(0.2, 0.24, 0.22, 10), matrix: M4(x, 0.06, z), color: GOLD });
+    }
+    add(mergeGeos(poleGeo), mat({ color: RED, map: T.get('barber'), mask: true, mapST: [2, 18, 0, 0], gloss: 0.9, shine: 50, rim: 0.4, emit: 0.1 }, 0.1, 0.02));
+    // ---- ropes: the seams' ridge ropes, guy ropes round the outside, the wires of the festoons
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * TAU, pts = [];
+      for (let k = 0; k <= 12; k++) { const r = lerp(BT.OCULUS_R, BT.ROOF_R, k / 12); pts.push(new THREE.Vector3(Math.cos(a) * r, btRoofY(r) - 0.04, Math.sin(a) * r)); }
+      R.push({ geo: btTube(pts, 0.03, 5, 36), color: 0xd8c098 });
+    }
+    for (let i = 0; i < 16; i++) {
+      const a = (i + 0.5) / 16 * TAU + Math.PI / 8;
+      R.push({ geo: btTube([new THREE.Vector3(Math.cos(a) * (BT.ROOF_R + 0.05), BT.ROOF_Y - 0.05, Math.sin(a) * (BT.ROOF_R + 0.05)), new THREE.Vector3(Math.cos(a) * (BT.DECK_R - 0.05), 0.02, Math.sin(a) * (BT.DECK_R - 0.05))], 0.022, 4, 4), color: 0xc8b088 });
+      G2.push({ geo: new THREE.CylinderGeometry(0.05, 0.07, 0.16, 6), matrix: M4(Math.cos(a) * (BT.DECK_R - 0.05), 0.03, Math.sin(a) * (BT.DECK_R - 0.05)), color: GOLD });
+    }
+    // ---- the lamps: festoons from the crown to the rim, the chandelier, the entrance's sign and border
+    // (one instanced mesh, coloured every frame; each lamp knows its string for the chase)
+    this.lampList = [];   // { p (local), group: 0 festoon / 1 chandelier / 2 sign / 3 sign border, k (index along) }
+    for (let i = 0; i < 12; i++) {
+      const a = (i + 0.5) / 12 * TAU;
+      const A = new THREE.Vector3(Math.cos(a) * (BT.OCULUS_R + 0.35), cy0 - 0.25, Math.sin(a) * (BT.OCULUS_R + 0.35));
+      const B = new THREE.Vector3(Math.cos(a) * (BT.POLE_R - 0.6), BT.ROOF_Y - 0.55, Math.sin(a) * (BT.POLE_R - 0.6));
+      const pts = btSag(A, B, 1.1, 22);
+      R.push({ geo: btTube(pts, 0.012, 3, 44), color: 0x1a1410 });
+      for (let k = 1; k < pts.length - 1; k++) this.lampList.push({ p: pts[k].clone().setY(pts[k].y - 0.06), g: 0, k, s: i });
+    }
+    // the crown: a gold ring round the oculus with spokes to a hub, and the chandelier hanging from it
+    G2.push({ geo: new THREE.TorusGeometry(BT.OCULUS_R, 0.1, 6, 32), matrix: M4(0, cy0, 0, Math.PI / 2, 0, 0), color: GOLD });
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; G2.push({ geo: new THREE.BoxGeometry(BT.OCULUS_R, 0.06, 0.06), matrix: M4(Math.cos(a) * BT.OCULUS_R / 2, cy0, Math.sin(a) * BT.OCULUS_R / 2, 0, -a, 0), color: GOLD }); }
+    G2.push({ geo: new THREE.SphereGeometry(0.16, 10, 8), matrix: M4(0, cy0, 0), color: GOLD });
+    this.chand = new THREE.Group(); this.chand.position.set(0, cy0, 0); root.add(this.chand);
+    const CH = [], CR = [], cl = [];
+    CH.push({ geo: new THREE.CylinderGeometry(0.025, 0.025, 1.2, 5), matrix: M4(0, -0.6, 0), color: GOLD });
+    [[1.15, -1.55], [0.78, -1.25], [0.42, -1.0]].forEach(([r, y], ri) => {
+      CH.push({ geo: new THREE.TorusGeometry(r, 0.04, 5, 36), matrix: M4(0, y, 0, Math.PI / 2, 0, 0), color: GOLD });
+      const n = [16, 12, 8][ri];
+      for (let k = 0; k < n; k++) {
+        const a = k / n * TAU;
+        cl.push(new THREE.Vector3(Math.cos(a) * r, y + 0.07, Math.sin(a) * r));
+        CR.push({ geo: new THREE.OctahedronGeometry(0.05, 0), matrix: M4(Math.cos(a + 0.2) * r, y - 0.13, Math.sin(a + 0.2) * r, 0, 0, 0, 1, 1.9, 1), color: 0xeef8ff });
+      }
+    });
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; CH.push({ geo: btTube([new THREE.Vector3(0, -1.2, 0), new THREE.Vector3(Math.cos(a) * 0.6, -1.0, Math.sin(a) * 0.6), new THREE.Vector3(Math.cos(a) * 1.15, -1.55, Math.sin(a) * 1.15)], 0.025, 4, 10), color: GOLD }); }
+    CH.push({ geo: new THREE.SphereGeometry(0.14, 10, 8), matrix: M4(0, -1.75, 0), color: GOLD }, { geo: new THREE.ConeGeometry(0.1, 0.3, 8), matrix: M4(0, -1.97, 0, Math.PI, 0, 0), color: GOLD });
+    this.chand.add(new THREE.Mesh(mergeGeos(CH), mat({ gloss: 1.5, shine: 80, rim: 0.6, emit: 0.18 }, 0.2, 0.04)));
+    this.chand.add(new THREE.Mesh(mergeGeos(CR), mat({ gloss: 2.2, shine: 140, rim: 1.0, emit: 0.35, transparent: false }, 0.4, 0.06)));
+    for (const p of cl) this.lampList.push({ p, g: 1, k: 0, s: 0, chand: true });
+    // ---- the performers' entrance behind GRANDIOSO: red-and-gold pillars, a scalloped arch, velvet drapes
+    // swagged open, his name in bulbs on the board above, and two posters
+    const PZ = BT.PORTAL_Z, PX = BT.PORTAL_HW + 0.38;
+    for (const s of [-1, 1]) {
+      P.push({ geo: new THREE.BoxGeometry(0.72, 7.9, 0.72), matrix: M4(s * PX, 3.9, PZ), color: RED });
+      for (let k = 0; k < 3; k++) G2.push({ geo: new THREE.BoxGeometry(0.06, 3.9, 0.04), matrix: M4(s * PX + (k - 1) * 0.2, 5.3, PZ + 0.37), color: GOLD }, { geo: new THREE.BoxGeometry(0.06, 1.5, 0.04), matrix: M4(s * PX + (k - 1) * 0.2, 1.1, PZ + 0.37), color: GOLD });
+      G2.push({ geo: new THREE.BoxGeometry(0.86, 0.3, 0.86), matrix: M4(s * PX, 0.12, PZ), color: GOLD }, { geo: new THREE.BoxGeometry(0.9, 0.24, 0.9), matrix: M4(s * PX, 7.72, PZ), color: GOLD });
+      G2.push({ geo: new THREE.SphereGeometry(0.2, 10, 8), matrix: M4(s * PX, 8.05, PZ), color: GOLD });
+    }
+    // the arch: a red beam with a scalloped lower edge and a gold border
+    const arch = new THREE.Shape(); const AW = PX + 0.36;
+    arch.moveTo(-AW, 7.0); arch.lineTo(AW, 7.0); arch.lineTo(AW, 7.85); arch.lineTo(-AW, 7.85); arch.closePath();
+    P.push({ geo: new THREE.ExtrudeGeometry(arch, { depth: 0.3, bevelEnabled: false }), matrix: M4(0, 0, PZ - 0.15), color: RED });
+    for (let k = 0; k < 9; k++) {
+      const x = -BT.PORTAL_HW + (k + 0.5) * (2 * BT.PORTAL_HW / 9);
+      P.push({ geo: new THREE.CylinderGeometry(0.4, 0.4, 0.3, 14, 1, false, -Math.PI / 2, Math.PI), matrix: M4(x, 7.0, PZ, Math.PI / 2, 0, 0), color: RED });
+      G2.push({ geo: new THREE.TorusGeometry(0.41, 0.03, 4, 14, Math.PI), matrix: M4(x, 7.0, PZ + 0.16, 0, 0, Math.PI), color: GOLD });
+    }
+    G2.push({ geo: new THREE.BoxGeometry(2 * AW + 0.1, 0.07, 0.36), matrix: M4(0, 7.88, PZ), color: GOLD });
+    // the sign board over the arch
+    P.push({ geo: new THREE.BoxGeometry(6.6, 1.0, 0.22), matrix: M4(0, BT.SIGN_Y, PZ - 0.05), color: DRED });
+    for (const y of [BT.SIGN_Y + 0.54, BT.SIGN_Y - 0.54]) G2.push({ geo: new THREE.BoxGeometry(6.8, 0.07, 0.3), matrix: M4(0, y, PZ), color: GOLD });
+    for (const s of [-1, 1]) G2.push({ geo: new THREE.BoxGeometry(0.07, 1.1, 0.3), matrix: M4(s * 3.36, BT.SIGN_Y, PZ), color: GOLD });
+    const word = 'GRANDIOSO', pitch = 0.115, cols = word.length * 6 - 1, x0 = -(cols - 1) * pitch / 2;
+    for (let i = 0; i < word.length; i++) {
+      const rows = PixelFont.glyph(word[i]);
+      for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) if (rows[r] & (16 >> c)) this.lampList.push({ p: new THREE.Vector3(x0 + (i * 6 + c) * pitch, BT.SIGN_Y + (3 - r) * pitch, PZ + 0.12), g: 2, k: i * 6 + c, s: i });
+    }
+    for (let k = 0; k < 56; k++) {   // the board's chasing border
+      const t = k / 56, per = 2 * (6.5 + 0.9);
+      let d = t * per, x, y;
+      if (d < 6.5) { x = -3.25 + d; y = BT.SIGN_Y + 0.45; } else if ((d -= 6.5) < 0.9) { x = 3.25; y = BT.SIGN_Y + 0.45 - d; } else if ((d -= 0.9) < 6.5) { x = 3.25 - d; y = BT.SIGN_Y - 0.45; } else { d -= 6.5; x = -3.25; y = BT.SIGN_Y - 0.45 + d; }
+      this.lampList.push({ p: new THREE.Vector3(x, y, PZ + 0.2), g: 3, k, s: 0 });
+    }
+    // the drapes: velvet in deep folds, gathered to the pillars by gold tiebacks, a swagged pelmet above
+    const drapes = [];
+    for (const s of [-1, 1]) {
+      const nu = 14, nv = 22, pos = [], uv = [], idx = [];
+      for (let j = 0; j <= nv; j++) for (let k = 0; k <= nu; k++) {
+        const u = k / nu, v = j / nv, y = lerp(7.0, 0.0, v);
+        const tie = 3.1, gather = Math.exp(-Math.pow((y - tie) / 1.6, 2));
+        const inner = lerp(1.7, 3.05, Math.min(1, Math.pow(Math.max(0, 7.0 - y) / (7.0 - tie), 0.7))) * (y < tie ? 1 : 1) + (y < tie ? (tie - y) * -0.12 : 0);
+        const xin = lerp(inner, 3.2, gather * 0.6), xo = BT.PORTAL_HW + 0.02;
+        const x = lerp(xin, xo, u), fold = Math.sin(u * Math.PI * 7) * (0.07 + 0.12 * gather + 0.05 * v) * (1 - gather * 0.4);
+        pos.push(s * x, y, PZ + 0.32 + fold + 0.06 * (1 - u)); uv.push(u * 1.8, 1 - v);
+      }
+      for (let j = 0; j < nv; j++) for (let k = 0; k < nu; k++) { const a = j * (nu + 1) + k, b = a + 1, c = a + nu + 1, d = c + 1; if (s > 0) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+      drapes.push({ geo: g });
+      G2.push({ geo: new THREE.TorusGeometry(0.2, 0.05, 5, 14), matrix: M4(s * 3.25, 3.1, PZ + 0.42, 0, Math.PI / 2, 0), color: GOLD });
+      G2.push({ geo: new THREE.ConeGeometry(0.1, 0.42, 8), matrix: M4(s * 3.32, 2.72, PZ + 0.46), color: GOLD });
+    }
+    { // the pelmet: three swags
+      const nu = 40, nv = 4, pos = [], uv = [], idx = [];
+      for (let j = 0; j <= nv; j++) for (let k = 0; k <= nu; k++) {
+        const u = k / nu, v = j / nv, x = lerp(-BT.PORTAL_HW - 0.2, BT.PORTAL_HW + 0.2, u), sw = Math.abs(Math.sin(u * Math.PI * 3));
+        pos.push(x, 6.95 - v * (0.35 + 0.55 * sw), PZ + 0.38 + 0.12 * sw * v); uv.push(u * 6, 1 - v);
+      }
+      for (let j = 0; j < nv; j++) for (let k = 0; k < nu; k++) { const a = j * (nu + 1) + k, b = a + 1, c = a + nu + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+      drapes.push({ geo: g });
+      for (let k = 0; k < 4; k++) G2.push({ geo: new THREE.SphereGeometry(0.09, 8, 6), matrix: M4(-BT.PORTAL_HW - 0.2 + k * (2 * BT.PORTAL_HW + 0.4) / 3, 6.95, PZ + 0.42), color: GOLD });
+    }
+    add(mergeGeos(drapes), mat({ map: T.get('velvet'), side: THREE.DoubleSide, gloss: 0.25, shine: 16, rim: 1.1, wrap: 0.6, emit: 0.08 }, 0.08, 0.02));
+    // posters on the pillars' fronts
+    const pg = [];
+    for (const s of [-1, 1]) {
+      const q = new THREE.PlaneGeometry(0.62, 0.93); const U = q.attributes.uv;
+      for (let i = 0; i < U.count; i++) U.setX(i, U.getX(i) * 0.5 + (s < 0 ? 0 : 0.5));
+      pg.push({ geo: q, matrix: M4(s * PX, 2.6, PZ + 0.375) });
+    }
+    add(mergeGeos(pg), mat({ map: T.get('posters'), gloss: 0.15, rim: 0.2, emit: 0.14 }, 0.14, 0.03));
+    // ---- the stands: three tiers of velvet seats on wooden risers round the back of the ring
+    const seatG = CircusGeo.decor([
+      { geo: new THREE.BoxGeometry(0.46, 0.09, 0.42), matrix: M4(0, 0.42, 0), color: 0xb81828 },
+      { geo: new THREE.BoxGeometry(0.46, 0.52, 0.07), matrix: M4(0, 0.68, 0.2, -0.08, 0, 0), color: 0xb81828 },
+      { geo: new THREE.BoxGeometry(0.48, 0.05, 0.09), matrix: M4(0, 0.95, 0.22), color: GOLD, decor: 1 },
+      { geo: new THREE.BoxGeometry(0.05, 0.42, 0.05), matrix: M4(0, 0.21, 0), color: DARK, decor: 1 },
+      { geo: new THREE.BoxGeometry(0.04, 0.2, 0.36), matrix: M4(0.24, 0.55, 0.02), color: GOLD, decor: 1 },
     ]);
-    this.liftTex = stripeTex('#e8283c', '#ffc83c', 14);
-    this.liftMat = new THREE.MeshBasicMaterial({ map: this.liftTex, vertexColors: true });
+    this.seatPos = [];
+    for (let row = 0; row < 3; row++) {
+      const r = BT.SEAT_R + row * 0.9, y = -0.05 + row * 0.55;
+      const n = Math.floor((230 / 360) * TAU * r / 0.62);
+      for (let k = 0; k < n; k++) {
+        const ang = THREE.MathUtils.degToRad(-25 + 230 * (k + 0.5) / n);
+        this.seatPos.push({ row, x: Math.cos(ang) * r, y, z: Math.sin(ang) * r, ang });
+      }
+    }
+    this.seats = new THREE.InstancedMesh(seatG, mat({ gloss: 0.3, shine: 20, rim: 0.85, emit: 0.08, decor: true }, 0.08, 0.02), this.seatPos.length);
+    this.seatPos.forEach((s, i) => {
+      _q1.setFromAxisAngle(UP, -s.ang - Math.PI / 2 + Math.PI);
+      _m1.compose(_v1.set(s.x, s.y, s.z), _q1, V_ONE); this.seats.setMatrixAt(i, _m1);
+    });
+    root.add(this.seats);
+    const TS = -THREE.MathUtils.degToRad(205), TL = THREE.MathUtils.degToRad(230), CS0 = THREE.MathUtils.degToRad(-115);
+    const tiers = [];
+    for (let row = 0; row < 3; row++) {
+      const r = BT.SEAT_R + row * 0.9, y = 0.55 * row - 0.05;
+      if (row) tiers.push({ geo: btWorldUV(new THREE.RingGeometry(r - 0.45, r + 0.45, 60, 1, TS, TL).rotateX(-Math.PI / 2).translate(0, y, 0), 2.8) });
+      if (row) P.push({ geo: btInward(new THREE.CylinderGeometry(r - 0.45, r - 0.45, 0.55, 60, 1, true, CS0, TL)), matrix: M4(0, y - 0.275, 0), color: DRED });
+    }
+    tiers.push({ geo: btWorldUV(new THREE.RingGeometry(BT.SEAT_R + 2.25, BT.SEAT_R + 2.7, 60, 1, TS, TL).rotateX(-Math.PI / 2).translate(0, 1.05, 0), 2.8) });
+    // the back wall of the stands and the front rail, with bunting
+    P.push({ geo: btInward(new THREE.CylinderGeometry(BT.SEAT_R + 2.7, BT.SEAT_R + 2.7, 0.8, 60, 1, true, CS0, TL)), matrix: M4(0, 1.45, 0), color: RED });
+    const TR0 = THREE.MathUtils.degToRad(-25);   // (a torus arc turned flat: Rx(90) maps its angle straight onto the stands' angle)
+    G2.push({ geo: new THREE.TorusGeometry(BT.SEAT_R + 2.7, 0.04, 4, 80, TL), matrix: M4(0, 1.86, 0, Math.PI / 2, 0, TR0), color: GOLD });
+    G2.push({ geo: new THREE.TorusGeometry(BT.SEAT_R - 0.55, 0.035, 4, 80, TL), matrix: M4(0, 0.62, 0, Math.PI / 2, 0, TR0), color: GOLD });
+    for (let k = 0; k <= 24; k++) {
+      const a = THREE.MathUtils.degToRad(-25 + 230 * k / 24), r = BT.SEAT_R - 0.55;
+      G2.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.66, 5), matrix: M4(Math.cos(a) * r, 0.29, Math.sin(a) * r), color: GOLD });
+      if (k < 24) for (let f = 0; f < 3; f++) {
+        const b = THREE.MathUtils.degToRad(-25 + 230 * (k + (f + 0.5) / 3) / 24);
+        P.push({ geo: pen2, matrix: M4(Math.cos(b) * r, 0.48, Math.sin(b) * r, 0, Math.PI / 2 - b, 0), color: [RED, GOLD, CREAM][(k + f) % 3] });
+      }
+    }
+    add(mergeGeos(tiers), mat({ map: T.get('wood'), gloss: 0.3, rim: 0.2, emit: 0.07 }, 0.07, 0.02));
+    // ---- the audience of clouds: puffy cloud folk in a third of the seats (they bob to the show and cheer)
+    const puff = CircusGeo.decor([
+      { geo: new THREE.SphereGeometry(0.27, 9, 6), matrix: M4(0, 0.62, 0, 0, 0, 0, 1.1, 0.85, 0.95), color: 0xffffff },
+      { geo: new THREE.SphereGeometry(0.19, 7, 5), matrix: M4(-0.17, 0.74, 0.02), color: 0xffffff },
+      { geo: new THREE.SphereGeometry(0.17, 7, 5), matrix: M4(0.18, 0.72, -0.02), color: 0xffffff },
+      { geo: new THREE.SphereGeometry(0.21, 7, 5), matrix: M4(0.0, 0.9, -0.02), color: 0xffffff },
+      { geo: new THREE.SphereGeometry(0.11, 5, 4), matrix: M4(-0.3, 0.6, 0.05), color: 0xffffff },
+      { geo: new THREE.SphereGeometry(0.11, 5, 4), matrix: M4(0.31, 0.6, 0.05), color: 0xffffff },
+      { geo: new THREE.SphereGeometry(0.03, 5, 3), matrix: M4(-0.07, 0.8, -0.19), color: 0x1a1020, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.03, 5, 3), matrix: M4(0.07, 0.8, -0.19), color: 0x1a1020, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.035, 5, 3), matrix: M4(-0.14, 0.73, -0.15, 0, 0, 0, 1, 0.6, 0.4), color: 0xff9ab8, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.035, 5, 3), matrix: M4(0.14, 0.73, -0.15, 0, 0, 0, 1, 0.6, 0.4), color: 0xff9ab8, decor: 1 },
+    ]);
+    const free = this.seatPos.map((s, i) => i).filter((i) => this.seatPos[i].row > 0 || (i > 2 && i < this.seatPos.filter((s) => s.row === 0).length - 3));
+    this.crowd = [];
+    for (let k = 0; k < free.length; k++) if (BTTex.hh(k * 3.3 + 1) < 0.34) this.crowd.push({ seat: this.seatPos[free[k]], ph: BTTex.hh(k * 7.1) * TAU, tint: BTTex.hh(k * 1.9), jump: 0, cheer: 0 });
+    this.crowdMesh = new THREE.InstancedMesh(puff, mat({ gloss: 0.25, shine: 14, rim: 1.1, wrap: 0.9, emit: 0.32, decor: true }, 0.34, 0.06), this.crowd.length);
+    this.crowd.forEach((c, i) => this.crowdMesh.setColorAt(i, _c1.setRGB(1, 1, 1).lerp(_c2.setHex([0xffe4ee, 0xe8e0ff, 0xfff4e0][i % 3]), c.tint)));
+    this.crowdMesh.frustumCulled = false; root.add(this.crowdMesh);
+    this.crowdK = 1; this.crowdT = 1; this.cheerT = 0;
+    // ---- the steam calliope (left of GRANDIOSO): a gilded red wagon, a boiler, brass pipes that toot on the beat
+    const CP = BT.CALLIOPE, cyaw = Math.atan2(-CP.x, -CP.z);
+    const cal = new THREE.Group(); cal.position.copy(CP); cal.rotation.y = cyaw; root.add(cal); this.calliope = cal;
+    const CW = [], CG = [];
+    CW.push({ geo: new THREE.BoxGeometry(2.7, 1.2, 1.35), matrix: M4(0, 1.15, 0), color: RED });
+    CW.push({ geo: new THREE.BoxGeometry(2.9, 0.12, 1.5), matrix: M4(0, 1.8, 0), color: DRED }, { geo: new THREE.BoxGeometry(2.9, 0.1, 1.5), matrix: M4(0, 0.52, 0), color: DRED });
+    CW.push({ geo: new THREE.BoxGeometry(1.0, 0.25, 0.5), matrix: M4(0.5, 1.3, 0.85, -0.4, 0, 0), color: 0x1a1014 });   // the keyboard
+    for (let k = 0; k < 12; k++) CW.push({ geo: new THREE.BoxGeometry(0.06, 0.03, 0.22), matrix: M4(0.06 + k * 0.08, 1.45, 0.92, -0.4, 0, 0), color: k % 3 === 1 ? 0x1a1014 : 0xfff4e8 });
+    CW.push({ geo: new THREE.CylinderGeometry(0.42, 0.42, 1.1, 16), matrix: M4(-1.0, 2.35, 0), color: 0x3a3438 }, { geo: new THREE.CylinderGeometry(0.12, 0.16, 1.5, 10), matrix: M4(-1.1, 3.4, 0), color: 0x2a2428 });
+    for (const [x, z] of [[-0.95, 0.72], [0.95, 0.72], [-0.95, -0.72], [0.95, -0.72]]) {
+      CG.push({ geo: new THREE.TorusGeometry(0.42, 0.045, 6, 22), matrix: M4(x, 0.45, z), color: GOLD });
+      for (let s = 0; s < 8; s++) CW.push({ geo: new THREE.BoxGeometry(0.035, 0.82, 0.035), matrix: M4(x, 0.45, z, 0, 0, s / 8 * Math.PI), color: RED });
+      CG.push({ geo: new THREE.CylinderGeometry(0.08, 0.08, 0.12, 8), matrix: M4(x, 0.45, z, Math.PI / 2, 0, 0), color: GOLD });
+    }
+    for (const z of [0.68, -0.68]) for (let k = 0; k < 3; k++) CG.push({ geo: new THREE.TorusGeometry(0.22, 0.03, 4, 16), matrix: M4(-0.85 + k * 0.85, 1.15, z), color: GOLD });
+    CG.push({ geo: new THREE.BoxGeometry(2.8, 0.05, 0.05), matrix: M4(0, 1.72, 0.7), color: GOLD }, { geo: new THREE.BoxGeometry(2.8, 0.05, 0.05), matrix: M4(0, 0.6, 0.7), color: GOLD });
+    CG.push({ geo: new THREE.CylinderGeometry(0.16, 0.14, 0.12, 10), matrix: M4(-1.1, 4.2, 0), color: GOLD });
+    cal.add(new THREE.Mesh(mergeGeos(CW), mat({ gloss: 0.6, shine: 36, rim: 0.5, emit: 0.1 }, 0.1, 0.02)));
+    cal.add(new THREE.Mesh(mergeGeos(CG), mat({ gloss: 1.5, shine: 80, rim: 0.6, emit: 0.16 }, 0.16, 0.03)));
+    this.pipes = [];
+    const pipeG = mergeGeos([{ geo: new THREE.CylinderGeometry(0.06, 0.07, 1, 10), matrix: M4(0, 0.5, 0) }, { geo: new THREE.CylinderGeometry(0.09, 0.06, 0.08, 10), matrix: M4(0, 0.04, 0) }, { geo: new THREE.BoxGeometry(0.1, 0.06, 0.02), matrix: M4(0, 0.16, 0.06) }]);
+    for (let r = 0; r < 2; r++) for (let k = 0; k < 7; k++) this.pipes.push({ x: 0.0 + k * 0.17 + r * 0.08, z: r ? -0.25 : 0.12, h: 0.55 + k * 0.13 + r * 0.12, toot: 0 });
+    this.pipeMesh = new THREE.InstancedMesh(pipeG, mat({ color: 0xffc860, gloss: 1.8, shine: 90, rim: 0.7, emit: 0.16 }, 0.16, 0.03), this.pipes.length);
+    this.pipeMesh.frustumCulled = false; cal.add(this.pipeMesh);
+    this.lastPipeBeat = -1;
+    // ---- the props corner (right of GRANDIOSO): elephant tubs, a hoop stand, a steamer trunk, juggling clubs
+    const PP = BT.PROPS, pyaw = Math.atan2(-PP.x, -PP.z), pm = (x, y, z, rx, ry, rz, sx, sy, sz) => new THREE.Matrix4().makeRotationY(pyaw).premultiply(new THREE.Matrix4().makeTranslation(PP.x, PP.y, PP.z)).multiply(M4(x, y, z, rx, ry, rz, sx, sy, sz));
+    for (const [x, z, h, r] of [[-0.6, 0.2, 0.75, 0.55], [0.55, -0.1, 0.6, 0.5], [0.0, 0.0, 0.5, 0.42]]) {
+      const y0 = x === 0 ? 0.75 : 0;
+      P.push({ geo: new THREE.CylinderGeometry(r, r * 1.08, h, 20), matrix: pm(x, y0 + h / 2, z), color: RED });
+      for (const y of [y0 + 0.04, y0 + h - 0.04]) G2.push({ geo: new THREE.TorusGeometry(r * 1.02, 0.03, 4, 24), matrix: pm(x, y, z, Math.PI / 2, 0, 0), color: GOLD });
+      G2.push({ geo: new THREE.CylinderGeometry(r * 0.98, r * 0.98, 0.04, 20), matrix: pm(x, y0 + h + 0.01, z), color: GOLD });
+    }
+    for (let k = 0; k < 3; k++) {
+      G2.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 1.6, 5), matrix: pm(1.4 + k * 0.05, 0.8, 0.9), color: GOLD });
+      P.push({ geo: new THREE.TorusGeometry(0.55 - k * 0.08, 0.045, 6, 28), matrix: pm(1.4, 1.2 - k * 0.12, 0.9 + (k - 1) * 0.12, 0, Math.PI / 2, 0), color: [RED, GOLD, CREAM][k] });
+    }
+    P.push({ geo: new THREE.BoxGeometry(1.1, 0.6, 0.62), matrix: pm(-1.6, 0.3, 0.9, 0, 0.4, 0), color: 0x6a2418 });
+    for (const sx of [-1, 1]) for (const sy of [0, 1]) G2.push({ geo: new THREE.BoxGeometry(0.1, 0.1, 0.66), matrix: pm(-1.6 + sx * 0.5, 0.05 + sy * 0.5, 0.9, 0, 0.4, 0), color: GOLD });
+    for (let k = 0; k < 4; k++) P.push({ geo: makePinGeo(8), matrix: pm(0.9 + k * 0.12, 0.02, -0.7, 0, 0, 0.15, 0.17, 0.17, 0.17), color: 0xffffff });
+    // ---- merge the props, the gold and the ropes
+    add(mergeGeos(P), mat({ gloss: 0.5, shine: 30, rim: 0.45, emit: 0.1 }, 0.1, 0.02));
+    add(mergeGeos(G2), mat({ gloss: 1.5, shine: 80, rim: 0.6, emit: 0.16 }, 0.16, 0.03));
+    add(mergeGeos(R), mat({ gloss: 0.15, shine: 14, rim: 0.3, emit: 0.06 }, 0.06, 0.01));
+    for (const p of [...P, ...G2, ...R, ...CW, ...CG, ...CH, ...CR, ...poleGeo, ...pg, ...drapes, ...tiers]) if (p.geo.dispose) p.geo.dispose();
+    // ---- the lamps (one instanced mesh)
+    this.lamps = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.062, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), this.lampList.length);
+    this.lampDead = new Uint8Array(this.lampList.length);
+    this.lampList.forEach((L, i) => { _m1.makeTranslation(L.p.x, L.p.y, L.p.z); this.lamps.setMatrixAt(i, _m1); this.lamps.setColorAt(i, _c1.setRGB(1, 1, 1)); });
+    this.lamps.frustumCulled = false; root.add(this.lamps);
+    this.signK = 1; this.followK = 1;
+    // ---- lift balloons above the roof, roped down to it (they let go one by one in the FIGHT ending)
+    const liftGeo = new THREE.LatheGeometry([[0, -3.0], [0.9, -2.85], [1.9, -2.2], [2.9, -0.9], [3.15, 0.4], [2.8, 1.7], [1.7, 2.7], [0, 3.05]].map(([x, y]) => new THREE.Vector2(x, y)), 24);
+    this.liftMesh = new THREE.InstancedMesh(liftGeo, mat({ map: T.get('lift'), mapST: [3, 1, 0, 0], gloss: 0.6, shine: 40, rim: 0.7, emit: 0.2 }, 0.22, 0.05), 5);
+    const ropeG = mergeGeos([{ geo: new THREE.CylinderGeometry(0.035, 0.035, 1, 5), matrix: M4(0, -0.5, 0), color: 0xc8b088 }]);
+    this.liftRope = new THREE.InstancedMesh(ropeG, mat({ gloss: 0.3, rim: 0.3, emit: 0.08 }, 0.08, 0.02), 5);
+    for (const m of [this.liftMesh, this.liftRope]) { m.frustumCulled = false; root.add(m); }
     this.lifts = [];
     for (let i = 0; i < 5; i++) {
-      const a = i / 5 * TAU + 0.3, m = new THREE.Mesh(liftGeo, this.liftMat);
-      m.position.set(Math.cos(a) * 7.5, 0, Math.sin(a) * 7.5); root.add(m);
-      this.lifts.push({ m, home: m.position.clone(), free: 0, vy: 0, drift: rand(-0.3, 0.3) });
+      const a = i / 5 * TAU + 0.3;
+      const home = new THREE.Vector3(Math.cos(a) * 7.5, 19, Math.sin(a) * 7.5);
+      this.lifts.push({ pos: home.clone(), home, free: 0, vy: 0, drift: rand(-0.3, 0.3), rot: 0, visible: true, ph: rand(0, 10), anchorY: btRoofY(7.5) });
     }
-    this.lift = this.lifts[0].m;
-    // ---- striped rope box edges (world-space candy stripes, so every edge length reads the same)
-    this.ropeU = { uLum: { value: 1 } };
-    this.rope = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 8, 1, true), new THREE.ShaderMaterial({
-      uniforms: this.ropeU,
-      vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float uLum; varying vec3 vW; void main(){ float s = step(0.5, fract((vW.x + vW.y + vW.z) * 4.0)); vec3 c = mix(vec3(0.91, 0.16, 0.24), vec3(1.0, 0.96, 0.86), s); gl_FragColor = vec4(c * uLum, 1.0);
-        #include <colorspace_fragment>
-      }`,
-    }), 12);
+    this.layoutLifts(0);
+    // ---- the box rope (twisted, lit) + marquee bulbs
+    this.ropeU = Object.assign({}, CS.uniforms(), { uLum: { value: 1 } });
+    this.rope = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 10, 1, true), new THREE.ShaderMaterial({ uniforms: this.ropeU, vertexShader: BT_ROPE_VS, fragmentShader: BT_ROPE_FS }), 12);
     this.rope.frustumCulled = false; root.add(this.rope);
-    // ---- marquee bulbs
     this.BULB_CAP = 240;
-    this.bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.034, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), this.BULB_CAP);
+    this.bulbs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.038, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), this.BULB_CAP);
     this.bulbs.frustumCulled = false; this.bulbs.setColorAt(0, _c1.setRGB(1, 1, 1)); root.add(this.bulbs);
     this.bulbN = 0; this.bulbDead = new Uint8Array(this.BULB_CAP); this.chase = 0; this.flashT = 0; this.lightLevel = 1; this.lightTarget = 1; this.lightFade = 0.6;
     this.boxKey = null;
@@ -14658,34 +15366,6 @@ const BigTopKit = {
       m.visible = pool.visible = false; root.add(m, pool);
       this.spots.push({ m, pool, src: new THREE.Vector3(), tgt: new THREE.Vector3(), r: 0.6, a: 0, aT: 0, col: new THREE.Color(0xfff0d0), dust: false });
     }
-    // ---- audience stands: three tiers of seats around the ring (the ringmaster's side stays open)
-    const seatG = mergeGeos([
-      { geo: new THREE.BoxGeometry(0.46, 0.08, 0.42), matrix: M4(0, 0.42, 0) },
-      { geo: new THREE.BoxGeometry(0.46, 0.5, 0.06), matrix: M4(0, 0.68, 0.2) },
-      { geo: new THREE.BoxGeometry(0.06, 0.42, 0.06), matrix: M4(0, 0.21, 0), color: 0x2a1a14 },
-    ]);
-    this.seatPos = [];
-    for (let row = 0; row < 3; row++) {
-      const r = BIGTOP.SEAT_R + row * 0.9, y = -0.05 + row * 0.55;
-      const n = Math.floor((230 / 360) * TAU * r / 0.62);
-      for (let k = 0; k < n; k++) {
-        const ang = THREE.MathUtils.degToRad(-25 + 230 * (k + 0.5) / n);
-        this.seatPos.push({ row, x: Math.cos(ang) * r, y, z: Math.sin(ang) * r, ang });
-      }
-    }
-    this.seats = new THREE.InstancedMesh(seatG, new THREE.MeshBasicMaterial({ vertexColors: true, color: 0x7a1828 }), this.seatPos.length);
-    this.seatPos.forEach((s, i) => {
-      _q1.setFromAxisAngle(UP, -s.ang - Math.PI / 2 + Math.PI);
-      _m1.compose(_v1.set(s.x, s.y, s.z), _q1, V_ONE); this.seats.setMatrixAt(i, _m1);
-    });
-    root.add(this.seats);
-    const risers = [];
-    for (let row = 0; row < 3; row++) {
-      const r = BIGTOP.SEAT_R + row * 0.9;
-      risers.push({ geo: new THREE.CylinderGeometry(r + 0.45, r + 0.45, 0.55 * row + 0.02, 40, 1, true, THREE.MathUtils.degToRad(115), THREE.MathUtils.degToRad(230)), matrix: M4(0, (0.55 * row) / 2 - 0.05, 0), color: 0x2a1610 });
-    }
-    this.risers = new THREE.Mesh(mergeGeos(risers), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-    root.add(this.risers);
     // ---- safety net (trapeze), hidden until needed
     this.netTex = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = 'rgba(255,240,210,0.95)'; g.lineWidth = 2; for (let i = 0; i <= w; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, h); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(w, i); g.stroke(); } }, { repeat: true });
     this.net = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 12, 12), new THREE.MeshBasicMaterial({ map: this.netTex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
@@ -14693,12 +15373,12 @@ const BigTopKit = {
     this.netBounce = 0;
     this.guests = [];
     this.setGuests();
+    this.chandPos = new THREE.Vector3(0, cy0 - 1.5, 0); this.sway = 0; this.time = 0;
   },
   // ---- cameo guests from the save data (bosses 1 and 2)
   setGuests() {
     for (const g of this.guests) disposeObject(g.root);
     this.guests = [];
-    const seat = (i) => this.seatPos[i];
     const front = this.seatPos.filter((s) => s.row === 0);
     const P = front[1], K = front[front.length - 2];   // front row, near the ringmaster on each side
     const add = (id, how, s) => {
@@ -14716,7 +15396,6 @@ const BigTopKit = {
     };
     add('proprietor', Save.beaten('proprietor'), P);
     add('kiddie', Save.beaten('kiddie'), K);
-    void seat;
   },
   guest(id) { return this.guests.find((g) => g.id === id) || null; },
   // ---- spotlights
@@ -14732,6 +15411,9 @@ const BigTopKit = {
   },
   // ---- house lights: 'show' (chase + downbeat flash), 'dark' (lights out), with a fade
   setLights(level, fade = 0.6) { this.lightTarget = level; this.lightFade = Math.max(0.05, fade); },
+  // the audience of clouds: 1 = in their seats, 0 = gone home (they drift up and away)
+  setCrowd(on, fade = 2) { this.crowdT = on ? 1 : 0; this.crowdFade = Math.max(0.05, fade); },
+  crowdCheer(sec) { this.cheerT = Math.max(this.cheerT, sec); },
   popBulbs(frac) {   // knock out a share of the remaining bulbs (lights going out / the show falling apart)
     const alive = []; for (let i = 0; i < this.bulbN; i++) if (!this.bulbDead[i]) alive.push(i);
     shuffle(alive); const n = Math.ceil(alive.length * frac);
@@ -14740,27 +15422,50 @@ const BigTopKit = {
       this.bulbDead[alive[k]] = 1;
       if (CircusFX.ready && k < 24) { this.bulbs.getMatrixAt(alive[k], _m1); _v1.setFromMatrixPosition(_m1).applyMatrix4(this.root.matrixWorld); CircusFX.sparks(_v1, 3, 0xffe0a0, 0.8, 0.5, 0.012, 3, 0.04); }
     }
-    if (n) G.audio.sfx.bulbPop();
+    // the tent's own lamps go out with them (the festoons, the sign, the chandelier)
+    const lamps = []; for (let i = 0; i < this.lampList.length; i++) if (!this.lampDead[i]) lamps.push(i);
+    shuffle(lamps); const nl = Math.ceil(lamps.length * frac);
+    for (let k = 0; k < nl; k++) {
+      this.lampDead[lamps[k]] = 1;
+      if (CircusFX.ready && k < 10) { _v1.copy(this.lampList[lamps[k]].p).applyMatrix4(this.root.matrixWorld); CircusFX.sparks(_v1, 4, 0xffe0a0, 1.0, 0.5, 0.014, 3, 0.05); }
+    }
+    if (n || nl) G.audio.sfx.bulbPop();
     return n;
   },
-  reviveBulbs() { this.bulbDead.fill(0); },
-  tearRoof(n) { const intact = this.panels.filter((p) => !p.torn); shuffle(intact); for (let k = 0; k < Math.min(n, intact.length); k++) intact[k].torn = 0.001; },
+  reviveBulbs() { this.bulbDead.fill(0); this.lampDead.fill(0); },
+  tearRoof(n) {
+    const intact = this.panels.filter((p) => !p.torn); shuffle(intact);
+    for (let k = 0; k < Math.min(n, intact.length); k++) {
+      const p = intact[k]; p.torn = 0.001; p.mending = false; p.m.material = this.tornMat;
+      if (CircusFX.ready) { this.root.updateMatrixWorld(true); _v1.set(0, -2.5, 0).applyMatrix4(p.m.matrixWorld); CircusFX.shreds(_v1, 10, k % 2 ? 0xd0243a : 0xf4e8d0, 2.0); }
+    }
+  },
   // instant: reset the roof; animated (the spare ending): torn panels sew themselves back with sparkles
   mendRoof(animated) {
     for (const p of this.panels) {
       if (animated && p.torn > 0) { p.mending = true; continue; }
-      p.torn = 0; p.mending = false; p.m.rotation.set(0, 0, 0); p.m.position.set(0, 0, 0); p.m.visible = true;
+      p.torn = 0; p.mending = false; p.m.rotation.set(0, 0, 0); p.m.material = this.canvasMat; p.m.visible = true;
     }
   },
   // the fight ending: the lift balloons let go one by one
   letGo(i) { const b = this.lifts[i]; if (b && !b.free) { b.free = 0.001; G.audio.sfx.balloonSqueak(); } },
-  resetLifts() { for (const b of this.lifts) { b.free = 0; b.vy = 0; b.m.position.copy(b.home); b.m.rotation.set(0, 0, 0); b.m.visible = true; } },
+  resetLifts() { for (const b of this.lifts) { b.free = 0; b.vy = 0; b.pos.copy(b.home); b.rot = 0; b.visible = true; } this.layoutLifts(0); },
+  layoutLifts(t) {
+    this.lifts.forEach((b, i) => {
+      const bob = b.free ? 0 : Math.sin(t * 0.6 + b.ph) * 0.25;
+      _btq.setFromAxisAngle(UP, t * 0.03 + b.ph).premultiply(_q1.setFromAxisAngle(_bt1.set(0, 0, 1), b.rot));
+      _btm.compose(_bt2.copy(b.pos).setY(b.pos.y + bob), _btq, _bt3.setScalar(b.visible ? 1 : 0)); this.liftMesh.setMatrixAt(i, _btm);
+      const top = b.pos.y + bob - 3.0, len = Math.max(0.1, b.free ? 5.0 : top - b.anchorY);
+      _btm.compose(_bt2.set(b.pos.x, top, b.pos.z), _btq.identity(), _bt3.set(b.visible ? 1 : 0, len, b.visible ? 1 : 0)); this.liftRope.setMatrixAt(i, _btm);
+    });
+    this.liftMesh.instanceMatrix.needsUpdate = true; this.liftRope.instanceMatrix.needsUpdate = true;
+  },
   // box edges: 12 rope segments + bulbs spaced along them
   layoutBox() {
     const A = G.arena, K = this.boxKey || (this.boxKey = new Float64Array(6).fill(NaN));
     if (K[0] === A.min.x && K[1] === A.min.y && K[2] === A.min.z && K[3] === A.max.x && K[4] === A.max.y && K[5] === A.max.z) return;
     K[0] = A.min.x; K[1] = A.min.y; K[2] = A.min.z; K[3] = A.max.x; K[4] = A.max.y; K[5] = A.max.z;
-    const c = A.center, s = A.size, hx = s.x / 2, hy = s.y / 2, hz = s.z / 2, r = 0.03;
+    const c = A.center, s = A.size, hx = s.x / 2, hy = s.y / 2, hz = s.z / 2, r = 0.032;
     let i = 0;
     const edges = [];
     const set = (x, y, z, ax, len) => {
@@ -14777,13 +15482,12 @@ const BigTopKit = {
     let total = 0; for (const e of edges) total += e.len;
     const gap = Math.max(0.19, total / this.BULB_CAP);
     let n = 0;
-    // walk the edges in a loop order so the chase reads as running around the box
     for (const e of edges) {
       const cnt = Math.max(1, Math.floor(e.len / gap));
       for (let k = 0; k < cnt && n < this.BULB_CAP; k++) {
         const t = (k + 0.5) / cnt - 0.5;
         _v1.set(e.x + (e.ax === 0 ? t * e.len : 0), e.y + (e.ax === 1 ? t * e.len : 0), e.z + (e.ax === 2 ? t * e.len : 0));
-        _m1.makeTranslation(_v1.x, _v1.y + (e.ax === 1 ? 0 : 0.045), _v1.z); this.bulbs.setMatrixAt(n++, _m1);
+        _m1.makeTranslation(_v1.x, _v1.y + (e.ax === 1 ? 0 : 0.048), _v1.z); this.bulbs.setMatrixAt(n++, _m1);
       }
     }
     this.bulbN = n; this.bulbs.count = n; this.bulbs.instanceMatrix.needsUpdate = true;
@@ -14791,7 +15495,9 @@ const BigTopKit = {
   update(dt) {
     if (!this.ready) return;
     this.layoutBox();
-    const red = Flash.reduced, A = G.arena, c = G.clock, M = c.bpb;
+    this.time += dt;
+    const red = Flash.reduced, A = G.arena, c = G.clock, M = c.bpb, t = this.time;
+    const sky = G.bg.circus, night = sky ? sky.night : 0, storm = sky ? sky.storm : 0;
     // the bulbs chase one step per half-beat and all flash on beat 1 (read from the beat clock)
     const hb = Math.floor(c.beat * 2);
     if (hb !== this.lastHB) { this.lastHB = hb; this.chase++; if (((hb % (2 * M)) + 2 * M) % (2 * M) === 0) this.flashT = 1; }
@@ -14802,37 +15508,93 @@ const BigTopKit = {
     this.lightLevel += clamp(this.lightTarget - this.lightLevel, -k, k);
     this.flashT = Math.max(0, this.flashT - dt * (red ? 2.2 : 4.5));
     const L = this.lightLevel, glow = G.fx.glow;
-    this.ropeU.uLum.value = (0.25 + 0.75 * L) * A.opacity;
+    const boxK = (0.6 + 0.4 * A.opacity) * Math.min(1, A.opacity / 0.2);   // (the box settles back while the menus are up: its bulbs stay lit; it fades out at the end)
+    this.ropeU.uLum.value = (0.55 + 0.45 * L) * boxK;
     const step = this.chase, bp = G.clock.barPhase;
     let ng = 0;
     for (let i = 0; i < this.bulbN; i++) {
       let lv;
       if (this.bulbDead[i]) lv = 0.03;
-      else if (red) lv = (0.5 + 0.3 * Math.cos(bp * TAU) + 0.15 * this.flashT) * L;     // gentle pulse, no strobe
-      else lv = (((i + step) & 3) === 0 ? 1 : 0.42 + 0.58 * this.flashT) * L;
-      lv = Math.max(lv, 0.03) * A.opacity;
-      this.bulbs.setColorAt(i, _c1.setRGB(1.0 * lv + 0.04, 0.78 * lv + 0.03, 0.36 * lv + 0.03));
-      if (lv > 0.7 && (i % 5) === 0 && ng < 48) { this.bulbs.getMatrixAt(i, _m1); _v1.setFromMatrixPosition(_m1); glow.add(_v1.x, _v1.y, _v1.z, 0.11, 1, 0.8, 0.4, 0.55 * lv, 0); ng++; }
+      else if (red) lv = (0.7 + 0.25 * Math.cos(bp * TAU) + 0.15 * this.flashT) * L;     // gentle pulse, no strobe
+      else lv = (((i + step) & 3) === 0 ? 1.35 : 0.62 + 0.6 * this.flashT) * L;
+      lv = Math.max(lv, 0.03) * boxK;
+      this.bulbs.setColorAt(i, _c1.setRGB(1.0 * lv + 0.04, 0.8 * lv + 0.03, 0.42 * lv + 0.03));
+      if (lv > 0.75 && (i % 2) === 0 && ng < 120) { this.bulbs.getMatrixAt(i, _m1); _v1.setFromMatrixPosition(_m1); glow.add(_v1.x, _v1.y, _v1.z, 0.12, 1, 0.8, 0.4, 0.5 * Math.min(1.2, lv), 0); ng++; }
     }
     if (this.bulbs.instanceColor) this.bulbs.instanceColor.needsUpdate = true;
-    // dim the big top itself with the house lights (and the sky's night)
-    const dimTent = 0.18 + 0.82 * L;
-    for (const m of this.floorMats) m.color.setScalar(0.24 + 0.76 * L);
-    this.tentMesh.material.color.setScalar(dimTent); this.seats.material.color.setHex(0x7a1828).multiplyScalar(0.25 + 0.75 * L);
-    this.risers.material.color.setScalar(0.3 + 0.7 * L); this.liftMat.color.setScalar(0.35 + 0.65 * L);
+    // ---- the tent's lamps: the festoons chase out from the crown, the sign's letters light in turn, the
+    // border runs round the board (all steady pulses in Reduced flashing), dead lamps glow faintly
+    const dim = G.bg.dim, rootY = this.root.position.y;
+    this.sway = damp(this.sway, storm * 0.12, 0.8, dt);
+    this.chand.rotation.set(Math.sin(t * 0.9) * this.sway, 0, Math.cos(t * 0.7) * this.sway * 0.8);
+    this.chand.updateMatrix();
+    this.signK = damp(this.signK, L > 0.3 ? 1 : 0.15, 2, dt);
+    let gl = 0;
+    for (let i = 0; i < this.lampList.length; i++) {
+      const Lp = this.lampList[i];
+      let lv;
+      if (this.lampDead[i]) lv = 0.04;
+      else if (red) lv = 0.8 + 0.25 * Math.cos(bp * TAU + Lp.s * 0.4);
+      else if (Lp.g === 0) lv = ((Lp.k - step) & 3) === 0 ? 1.3 : 0.7 + 0.4 * this.flashT;
+      else if (Lp.g === 2) lv = 1.0 + 0.35 * ((Math.floor(step / 2) % 9) === Lp.s ? 1 : 0) + 0.2 * this.flashT;
+      else if (Lp.g === 3) lv = ((Lp.k + step) % 4) < 2 ? 1.3 : 0.45;
+      else lv = 0.85 + 0.15 * Math.sin(t * 3 + i);
+      lv *= (Lp.g >= 2 ? this.signK : L) * dim;
+      if (Lp.chand) { _bt1.copy(Lp.p).applyMatrix4(this.chand.matrix); _btm.makeTranslation(_bt1.x, _bt1.y, _bt1.z); this.lamps.setMatrixAt(i, _btm); }
+      this.lamps.setColorAt(i, _btc.setRGB(1.0 * lv + 0.05, 0.8 * lv + 0.04, 0.42 * lv + 0.03));
+      if (lv > 0.6 && gl < 300 && (Lp.g === 2 || (i % 2) === 0)) {
+        if (Lp.chand) _bt1.copy(Lp.p).applyMatrix4(this.chand.matrix); else _bt1.copy(Lp.p);
+        glow.add(_bt1.x, _bt1.y + rootY, _bt1.z, Lp.g === 2 ? 0.17 : 0.2, 1, 0.78, 0.4, 0.42 * Math.min(1.2, lv), 0); gl++;
+      }
+    }
+    this.lamps.instanceMatrix.needsUpdate = true; if (this.lamps.instanceColor) this.lamps.instanceColor.needsUpdate = true;
+    this.chandPos.set(0, btRoofY(BT.OCULUS_R) - 1.5 + rootY, 0).add(_bt1.set(Math.sin(this.chand.rotation.z) * -1.5, 0, Math.sin(this.chand.rotation.x) * 1.5));
+    // ---- the materials' self-light: canvas glows with the sunset outside, everything sinks in the dark
+    const dk = clamp(1 - L * (1 - 0.35 * storm), 0, 1), outside = (1 - night) * (1 - 0.65 * storm);
+    for (const [m, day, dark] of this.emits) m.uniforms.uEmit.value = lerp(day, dark, dk);
+    this.canvasMat.uniforms.uEmit.value = this.tornMat.uniforms.uEmit.value = 0.06 + 0.46 * outside + 0.08 * L;
+    _btc.setRGB(0.07, 0.04, 0.015).multiplyScalar(outside * G.bg.dim); this.canvasMat.uniforms.uGlow.value.copy(_btc); this.tornMat.uniforms.uGlow.value.copy(_btc);
+    // ---- the audience of clouds: bob to the music, jump when they cheer; drift away when they leave
+    this.crowdK += clamp(this.crowdT - this.crowdK, -dt / (this.crowdFade || 2), dt / (this.crowdFade || 2));
+    this.cheerT = Math.max(0, this.cheerT - dt);
+    const ck = this.crowdK, beatPh = c.beatPhase;
+    this.crowd.forEach((cw, i) => {
+      const s = cw.seat, sway = Math.sin(c.beat * Math.PI + cw.ph) * 0.05 * (red ? 0.5 : 1);
+      const jump = this.cheerT > 0 ? Math.abs(Math.sin(t * 9 + cw.ph * 3)) * 0.22 : Math.max(0, Math.sin(beatPh * Math.PI)) * 0.025;
+      const away = 1 - ck, sc = Math.max(0.001, easeOut(Math.min(1, ck * 1.3)));
+      _btq.setFromAxisAngle(UP, -s.ang - Math.PI / 2 + Math.PI + Math.sin(t * 0.6 + cw.ph) * 0.15).multiply(_q2.setFromAxisAngle(_bt1.set(0, 0, 1), sway));
+      _btm.compose(_bt2.set(s.x, s.y + 0.05 + jump + away * away * 9, s.z), _btq, _bt3.setScalar(sc * (1 + (this.cheerT > 0 ? 0.06 * Math.sin(t * 18 + i) : 0))));
+      this.crowdMesh.setMatrixAt(i, _btm);
+    });
+    this.crowdMesh.instanceMatrix.needsUpdate = true; this.crowdMesh.visible = ck > 0.005;
+    // ---- the calliope: a pipe toots on every beat while the show is on (a little puff of steam)
+    const playing = L > 0.4 && !this.calliopeQuiet;
+    const bi = Math.floor(c.beat);
+    if (bi !== this.lastPipeBeat) {
+      this.lastPipeBeat = bi;
+      if (playing) {
+        const p = this.pipes[(bi * 5 + (bi >> 2) * 3) % this.pipes.length]; p.toot = 1;
+        if (CircusFX.ready && !red) { _bt1.set(p.x, 1.86 + p.h, p.z).applyMatrix4(this.calliope.matrixWorld); CircusFX.smoke(_bt1, 1, { color: 0xf4f0f4, size: 0.12, speed: 0.25, alpha: 0.35, rise: 1.4 }); }
+      }
+    }
+    this.pipes.forEach((p, i) => {
+      p.toot = Math.max(0, p.toot - dt * 4);
+      _btm.compose(_bt1.set(p.x, 1.86, p.z), _btq.identity(), _bt2.set(1 + p.toot * 0.12, p.h * (1 + p.toot * 0.06), 1 + p.toot * 0.12)); this.pipeMesh.setMatrixAt(i, _btm);
+    });
+    this.pipeMesh.instanceMatrix.needsUpdate = true;
     // balloons that were let go float away
-    for (const b of this.lifts) if (b.free > 0) { b.free += dt; b.vy = Math.min(2.4, b.vy + dt * 0.6); b.m.position.y += b.vy * dt; b.m.position.x += b.drift * dt; b.m.rotation.z = Math.sin(b.free) * 0.08; if (b.free > 25) b.m.visible = false; }
+    for (const b of this.lifts) if (b.free > 0) { b.free += dt; b.vy = Math.min(2.4, b.vy + dt * 0.6); b.pos.y += b.vy * dt; b.pos.x += b.drift * dt; b.rot = Math.sin(b.free) * 0.08; if (b.free > 25) b.visible = false; }
+    this.layoutLifts(t);
+    // torn panels flap round their hinge at the crown (mending ones sew themselves back)
     for (const p of this.panels) {
-      p.m.material.color.setScalar(dimTent);
       if (p.mending) {
         p.torn = Math.max(0, p.torn - dt * 0.6);
-        if (chance(dt * 20)) { const a = rand(0, TAU), r = rand(BIGTOP.ROOF_R * 0.4, BIGTOP.ROOF_R); G.fx.parts.emit(Math.cos(a) * r, lerp(BIGTOP.APEX, BIGTOP.ROOF_Y, r / BIGTOP.ROOF_R), Math.sin(a) * r, 0, rand(-0.2, 0.2), 0, rand(0.6, 1.2), 0.08, 1, 0.85, 0.4, 1, 0, 1); }
-        if (p.torn <= 0) { p.mending = false; p.m.rotation.set(0, 0, 0); p.m.position.set(0, 0, 0); continue; }
+        if (chance(dt * 20)) { const a = rand(0, TAU), r = rand(BT.ROOF_R * 0.4, BT.ROOF_R); G.fx.parts.emit(Math.cos(a) * r, btRoofY(r) - 0.2 + rootY, Math.sin(a) * r, 0, rand(-0.2, 0.2), 0, rand(0.6, 1.2), 0.08, 1, 0.85, 0.4, 1, 0, 1); }
+        if (p.torn <= 0) { p.mending = false; p.m.rotation.set(0, 0, 0); p.m.material = this.canvasMat; continue; }
       } else if (p.torn > 0) p.torn = Math.min(1, p.torn + dt * 0.8);
       if (p.torn > 0) {
-        const fl = Math.sin(G.time * 5.5 + p.ph) * 0.35 + 0.5;
-        p.m.position.set(0, BIGTOP.APEX * (1 - Math.cos(p.torn * fl * 0.9)) * 0.08, 0);
-        p.m.setRotationFromAxisAngle(p.axis, (0.25 + 0.6 * fl) * p.torn * (red ? 0.7 : 1));
+        const fl = Math.sin(t * 5.5 + p.ph) * 0.35 + 0.5 + Math.sin(t * 13 + p.ph * 2) * 0.06;
+        p.m.setRotationFromAxisAngle(p.axis, (0.18 + 0.42 * fl) * p.torn * (red ? 0.7 : 1));
       }
     }
     // spotlights
@@ -14850,21 +15612,61 @@ const BigTopKit = {
       cu.uAlpha.value = s.a * (1 - 0.72 * s.camIn); cu.uTime.value = G.time; pu.uAlpha.value = Math.min(1, s.a * 2.4);
       if (s.dust && chance(dt * 6)) G.fx.parts.emit(lerp(s.src.x, s.tgt.x, 0.7) + rand(-0.2, 0.2), lerp(s.src.y, s.tgt.y, 0.7) + rand(-0.4, 0.4), lerp(s.src.z, s.tgt.z, 0.7) + rand(-0.2, 0.2), rand(-0.05, 0.05), rand(-0.08, 0.02), rand(-0.05, 0.05), rand(2, 3.5), 0.012, 0.85, 0.8, 0.7, 0.5, 0, 1);
     }
+    // golden dust drifting in the low sun that comes in round GRANDIOSO (the show phase only)
+    if (outside > 0.5 && L > 0.5 && !red && chance(dt * 3)) G.fx.parts.emit(rand(-4, 4), rand(0.5, 6), rand(-9, -4), rand(-0.05, 0.05), rand(-0.02, 0.04), rand(0.02, 0.08), rand(3, 5), 0.014, 1, 0.82, 0.55, 0.3, 0, 1);
     // safety net bounce ripple
     if (this.net.visible) {
       this.netBounce = Math.max(0, this.netBounce - dt * 1.6);
-      const P = this.net.geometry.attributes.position, A = G.arena;
+      const P = this.net.geometry.attributes.position;
       for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), d = Math.hypot(x, y); P.setZ(i, -Math.sin(Math.min(1, this.netBounce) * Math.PI) * 0.25 * Math.max(0, 1 - d * 1.6)); }
       P.needsUpdate = true;
-      void A;
     }
     // guests
     for (const g of this.guests) if (g.update) g.update(dt, g);
   },
   showNet(y, w, d, cx, cz) { const A = G.arena; this.net.visible = true; this.net.position.set(cx !== undefined ? cx : A.center.x, y, cz !== undefined ? cz : A.center.z); this.net.scale.set(w, d, 1); this.netTex.repeat.set(w * 2, d * 2); },
   hideNet() { this.net.visible = false; },
+  // ---- the big top's light block: the mood (sky blend) and the house lights; every frame of the fight
+  applyLook() {
+    const U = CircusShade.uniforms(), sky = G.bg.circus, night = sky ? sky.night : 0, storm = sky ? sky.storm : 0;
+    const L = this.ready ? this.lightLevel : 1, dim = G.bg.dim, S = BT_LOOKS.sunset, N = BT_LOOKS.night, ST = BT_LOOKS.storm;
+    const mix3 = (k, out) => out.set(lerp(lerp(S[k][0], N[k][0], night), ST[k][0], storm), lerp(lerp(S[k][1], N[k][1], night), ST[k][1], storm), lerp(lerp(S[k][2], N[k][2], night), ST[k][2], storm));
+    mix3('keyDir', U.uKeyDir.value).normalize();
+    const show = 0.42 + 0.58 * L;
+    mix3('key', U.uKeyCol.value).multiplyScalar(show * dim);
+    mix3('sky', U.uSky.value).multiplyScalar((0.5 + 0.5 * L) * dim);
+    mix3('ground', U.uGround.value).multiplyScalar((0.45 + 0.55 * L) * dim);
+    mix3('rim', U.uRimCol.value).multiplyScalar(dim);
+    // the bulbs' warm fill when the lights are on at night (the endings)
+    const warm = L * night * (1 - storm) * dim;
+    U.uSky.value.x += 0.16 * warm; U.uSky.value.y += 0.1 * warm; U.uSky.value.z += 0.05 * warm;
+    U.uKeyCol.value.x += 0.35 * warm; U.uKeyCol.value.y += 0.24 * warm; U.uKeyCol.value.z += 0.1 * warm;
+    mix3('haze', _bt1); const hk = lerp(lerp(S.hazeK, N.hazeK, night), ST.hazeK, storm);
+    U.uHaze.value.set(_bt1.x * dim, _bt1.y * dim, _bt1.z * dim, hk); U.uHaze2.value.set(0.015, 2.0, 0.7, 0);
+  },
+  // after the acts' own lights: the chandelier over the ring and the glow of the sign behind him
+  housePoints(U, n) {
+    if (!this.ready) return n;
+    const L = this.lightLevel * G.bg.dim;
+    if (L < 0.03) return n;
+    if (n < 4) { const c = this.chandPos; U.uPtPos.value[n].set(c.x, c.y, c.z, 18); U.uPtCol.value[n].set(0.6 * L, 0.44 * L, 0.26 * L); n++; }
+    if (n < 4 && this.signK > 0.05) { const k = L * this.signK; U.uPtPos.value[n].set(0, BT.SIGN_Y + this.root.position.y, BT.PORTAL_Z + 0.9, 6.5); U.uPtCol.value[n].set(1.0 * k, 0.66 * k, 0.3 * k); n++; }
+    return n;
+  },
+  // ... and a follow spot on GRANDIOSO from high over the stands behind you
+  houseSpots(U, n) {
+    if (!this.ready || n >= 4) return n;
+    const k = this.lightLevel * G.bg.dim * this.followK;
+    if (k < 0.03 || !G.boss || !G.boss.chestPos || !G.boss.root.visible) return n;
+    G.boss.chestPos(_bt1); _bt1.y += 0.55;
+    _bt2.set(0.4, 10.6, 3.6); _bt3.subVectors(_bt1, _bt2).normalize();
+    U.uSpPos.value[n].set(_bt2.x, _bt2.y, _bt2.z, Math.cos(0.15)); U.uSpDir.value[n].set(_bt3.x, _bt3.y, _bt3.z, Math.cos(0.1));
+    U.uSpCol.value[n].set(1.05 * k, 0.92 * k, 0.78 * k);
+    return n + 1;
+  },
 };
-registerKit(BigTopKit, function () { this.panels = []; this.spots = []; this.guests = []; this.seatPos = []; this.boxKey = null; this.floorMats = []; this.lifts = []; });
+registerKit(BigTopKit, function () { this.panels = []; this.spots = []; this.guests = []; this.seatPos = []; this.boxKey = null; this.lifts = []; this.crowd = []; this.pipes = []; this.lampList = []; this.emits = []; this.calliopeQuiet = false; });
+// @@/BIGTOP
 
 // ---- cameo guests (small silhouettes of bosses 1 and 2)
 function buildProprietorMini() {
@@ -15603,13 +16405,17 @@ class Trapeze {
 }
 // ============================================================================
 //  BOSS 3 - GRANDIOSO, Ringmaster of the Sky: the procedural model
-//  ~7 m tall on stilts under long striped trousers, a red-and-gold tailcoat with
-//  tails that flutter like flags, a top hat that is a tiny big-top tent with a
-//  flag, a porcelain mask that spins 180 degrees between comedy and tragedy on
-//  the beat, white gloves, a cane with a glowing ball that conducts the attacks,
-//  and faint marionette strings from his wrists and shoulders into the clouds.
-//  He conducts in the song's meter (big gesture on beat 1), tips his hat every
-//  4th bar and bows whenever an act ends.
+//  ~7 m tall on stilts under long striped trousers that flare over patent shoes;
+//  a crimson velvet tailcoat open over a gold waistcoat and a ruffled shirt,
+//  frogged with gold braid, with fringed epaulettes, medals, a carnation and a
+//  pleated ruff; coat tails that stream and flutter like flags; a hat that is a
+//  tiny big top with a flag and chasing bulbs round its brim; a curved porcelain
+//  mask (comedy front, tragedy back) that springs round on the beat over a
+//  tired real face; white gloves; a lacquered cane whose crystal glows as it
+//  conducts the attacks; and faint silk marionette strings up into the dark.
+//  All lit by the big top. He conducts in the song's meter (big gesture on
+//  beat 1), breathes, looks down at you, tips his hat every 4th bar and bows
+//  whenever an act ends.
 // ============================================================================
 function drawMaskFace(g, W, H, kind, crack) {
   g.clearRect(0, 0, W, H);
@@ -15676,115 +16482,208 @@ class RingmasterModel {
     const root = this.root = new THREE.Group();
     this.home = new THREE.Vector3(0, 0, -9.6);
     root.position.copy(this.home); scene.add(root);
-    this.mats = [];   // { m, base }: dimmed with the house lights
-    const tint = (m, base) => { this.mats.push({ m, base: new THREE.Color(base) }); return m; };
-    const vc = () => tint(new THREE.MeshBasicMaterial({ vertexColors: true }), 0xffffff);
-    const RED = 0xe8283c, GOLD = 0xffc83c, CREAM = 0xfff4dc, GLOVE = 0xf8f6f0;
-    // ---- legs: stilts inside long striped trousers (hips at 4.3 m)
-    this.legTex = stripeTex('#e8283c', '#fff4dc', 6, true, 32, 32); this.legTex.repeat.set(1, 1);
-    this.legMat = tint(new THREE.MeshBasicMaterial({ map: this.legTex }), 0xffffff);
+    this.mats = [];   // { m, base }: every lit material of his (a hurt flash and his beaming glow go through uGlow)
+    const CS = CircusShade, RED = 0xc8182c, DRED = 0x8a0e1e, GOLD = 0xffc83c, CREAM = 0xfff4dc, GLOVE = 0xf8f6f0, INK = 0x141018;
+    const lit = (o) => { const m = CS.material(o); this.mats.push({ m, base: new THREE.Color(o.color !== undefined ? o.color : 0xffffff) }); return m; };
+    const cloth = lit({ gloss: 0.35, shine: 22, rim: 0.95, wrap: 0.55, emit: 0.13 });
+    const gold = lit({ gloss: 1.6, shine: 90, rim: 0.6, emit: 0.18 });
+    this.tex = [];
+    // ---- legs: stilts inside long striped trousers that flare over big patent shoes (hips at 4.3 m)
+    this.legTex = smoothTex(stripeTex('#000000', '#ffffff', 8, true, 64, 16)); this.tex.push(this.legTex);
+    this.legMat = lit({ color: RED, map: this.legTex, mask: true, mapST: [1, 1, 0, 0], decor: true, gloss: 0.6, shine: 40, rim: 0.75, emit: 0.13 });
+    const legProf = [[0.0, -4.13], [0.142, -4.12], [0.12, -3.95], [0.1, -3.6], [0.095, -3.1], [0.1, -2.3], [0.112, -1.5], [0.128, -0.5], [0.136, -0.05], [0.09, 0.07]].map(([x, y]) => new THREE.Vector2(x, y));
     this.legs = [];
     for (const s of [-1, 1]) {
       const pivot = new THREE.Group(); pivot.position.set(s * 0.17, 4.3, 0); root.add(pivot);
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.075, 4.15, 10, 1), this.legMat);
-      leg.position.y = -2.08; pivot.add(leg);
-      const shoe = new THREE.Mesh(mergeGeos([{ geo: new THREE.BoxGeometry(0.17, 0.12, 0.42), matrix: M4(0, 0, 0.08), color: 0x141018 }, { geo: new THREE.BoxGeometry(0.18, 0.03, 0.44), matrix: M4(0, -0.07, 0.08), color: GOLD }]), vc());
-      shoe.position.y = -4.2; pivot.add(shoe);
+      pivot.add(new THREE.Mesh(CircusGeo.decor([
+        { geo: new THREE.LatheGeometry(legProf, 16) },
+        { geo: new THREE.TorusGeometry(0.135, 0.012, 4, 20), matrix: M4(0, -4.06, 0, Math.PI / 2, 0, 0), color: GOLD, decor: 1 },
+        { geo: new THREE.SphereGeometry(1, 16, 10), matrix: M4(0, -4.2, 0.09, 0, 0, 0, 0.12, 0.075, 0.27), color: INK, decor: 1 },
+        { geo: new THREE.SphereGeometry(1, 10, 6), matrix: M4(0, -4.17, 0.36, -0.5, 0, 0, 0.05, 0.04, 0.08), color: INK, decor: 1 },
+        { geo: new THREE.BoxGeometry(0.19, 0.03, 0.5), matrix: M4(0, -4.265, 0.1), color: 0x2a1a14, decor: 1 },
+        { geo: new THREE.BoxGeometry(0.09, 0.06, 0.02), matrix: M4(0, -4.15, 0.27, -0.6, 0, 0), color: GOLD, decor: 1 },
+      ]), this.legMat));
       this.legs.push(pivot);
     }
-    // ---- torso (pivot at the hips: bows tip it forward)
+    // ---- torso (pivot at the hips: bows tip it forward): a crimson tailcoat open over a gold waistcoat and
+    // ruffled shirt, frogged with gold braid, epaulettes with fringe, medals, a carnation, a pleated ruff
     const torso = this.torso = new THREE.Group(); torso.position.y = 4.3; root.add(torso);
-    const coatParts = [
-      { geo: new THREE.CylinderGeometry(0.3, 0.24, 1.2, 12), matrix: M4(0, 0.6, 0), color: RED },
-      { geo: new THREE.BoxGeometry(0.2, 0.9, 0.04), matrix: M4(0, 0.68, 0.24), color: CREAM },                 // shirt front
-      { geo: new THREE.BoxGeometry(0.07, 1.0, 0.05), matrix: M4(-0.13, 0.62, 0.25, 0, 0, 0.12), color: GOLD },  // lapels
-      { geo: new THREE.BoxGeometry(0.07, 1.0, 0.05), matrix: M4(0.13, 0.62, 0.25, 0, 0, -0.12), color: GOLD },
-      { geo: new THREE.BoxGeometry(0.62, 0.06, 0.52), matrix: M4(0, 0.06, 0), color: GOLD },                    // belt line
-      { geo: new THREE.BoxGeometry(0.2, 0.08, 0.06), matrix: M4(-0.08, 1.12, 0.26, 0, 0, 0.5), color: 0x141018 }, // bow tie
-      { geo: new THREE.BoxGeometry(0.2, 0.08, 0.06), matrix: M4(0.08, 1.12, 0.26, 0, 0, -0.5), color: 0x141018 },
-      { geo: new THREE.BoxGeometry(0.22, 0.07, 0.28), matrix: M4(-0.36, 1.18, 0), color: GOLD },               // epaulettes
-      { geo: new THREE.BoxGeometry(0.22, 0.07, 0.28), matrix: M4(0.36, 1.18, 0), color: GOLD },
-      { geo: new THREE.CylinderGeometry(0.07, 0.08, 0.2, 8), matrix: M4(0, 1.3, 0), color: 0xe6d8c8 },         // neck
+    const coatProf = [[0.275, 0.0], [0.262, 0.15], [0.238, 0.32], [0.27, 0.55], [0.318, 0.8], [0.345, 0.98], [0.33, 1.1], [0.25, 1.19], [0.13, 1.25], [0.085, 1.3]].map(([x, y]) => new THREE.Vector2(x, y));
+    const inner = (k) => coatProf.map((p) => new THREE.Vector2(p.x * k, p.y));
+    const open = 0.46;
+    const coatR = (y) => { for (let i = 1; i < coatProf.length; i++) { const a = coatProf[i - 1], b = coatProf[i]; if (y <= b.y) return lerp(a.x, b.x, (y - a.y) / (b.y - a.y)); } return 0.085; };
+    const onCoat = (x, y, k = 1, lift = 0.012) => Math.sqrt(Math.max(0, Math.pow(coatR(y) * k, 2) - x * x)) + lift;   // z on the (round) coat at x, y
+    const yawX = (x, y, z, ay, ax, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(ax, ay, 0, 'YXZ')), new THREE.Vector3(sx, sy, sz));
+    const C = [   // cloth (vertex-coloured)
+      { geo: new THREE.LatheGeometry(coatProf, 28, open, TAU - 2 * open), color: RED },
+      { geo: new THREE.LatheGeometry(inner(0.955).slice(0, 5), 10, -open - 0.04, 2 * open + 0.08), color: GOLD },
+      { geo: new THREE.LatheGeometry(inner(0.955).slice(4), 10, -open - 0.04, 2 * open + 0.08), color: CREAM },
+      { geo: new THREE.CylinderGeometry(0.075, 0.085, 0.2, 10), matrix: M4(0, 1.32, 0), color: 0xf0e2d6 },
+      { geo: new THREE.TorusGeometry(0.245, 0.034, 6, 24), matrix: M4(0, 0.32, 0, Math.PI / 2, 0, 0), color: INK },
     ];
-    for (let i = 0; i < 4; i++) coatParts.push({ geo: new THREE.SphereGeometry(0.025, 6, 4), matrix: M4(0, 0.32 + i * 0.18, 0.27), color: GOLD });
-    torso.add(new THREE.Mesh(mergeGeos(coatParts), vc()));
-    // coat tails: two long flaps that flutter like flags
+    for (const s of [-1, 1]) {
+      // satin lapels along the opening, a red carnation on the left one
+      C.push({ geo: new THREE.BoxGeometry(0.085, 0.62, 0.022), matrix: M4(s * 0.15, 0.88, onCoat(0.15, 0.88, 1, 0.014), -0.12, s * 0.48, s * -0.2), color: INK });
+      // the coat's front edges trimmed in gold
+      for (let k = 0; k < 5; k++) { const y = k * 0.13 + 0.08, r = coatR(y) + 0.008; C.push({ geo: new THREE.BoxGeometry(0.018, 0.14, 0.018), matrix: M4(s * Math.sin(open) * r, y, Math.cos(open) * r), color: GOLD }); }
+    }
+    // the jabot: three ruffles cascading down the shirt
+    for (let k = 0; k < 3; k++) C.push({ geo: new THREE.ConeGeometry(0.07 + k * 0.012, 0.09, 10, 1, true), matrix: M4(0, 1.16 - k * 0.075, 0.27 - k * 0.012, -0.35, 0, 0), color: 0xfffaf0 });
+    for (let k = 0; k < 5; k++) C.push({ geo: new THREE.SphereGeometry(0.022, 6, 5), matrix: M4(-0.17 + (k % 3) * 0.015, 1.0 + (k % 2) * 0.02, onCoat(0.17, 1.0, 1, 0.018)), color: 0xe8203c });
+    // the ruff: pleats radiating round the neck
+    for (let k = 0; k < 28; k++) {
+      const a = k / 28 * TAU, r = 0.15;
+      C.push({ geo: new THREE.ConeGeometry(0.034, 0.13, 4), matrix: yawX(Math.sin(a) * r, 1.3 + (k % 2) * 0.012, Math.cos(a) * r, a, Math.PI / 2, 1, 1, 0.5), color: 0xfffaf2 });
+    }
+    const Gd = [   // gold
+      { geo: new THREE.TorusGeometry(0.275, 0.016, 4, 28), matrix: M4(0, 0.01, 0, Math.PI / 2, 0, 0), color: GOLD },
+      { geo: new THREE.CylinderGeometry(0.06, 0.06, 0.02, 5), matrix: M4(0, 0.32, 0.255, Math.PI / 2, 0, 0), color: GOLD },
+    ];
+    for (let k = 0; k < 4; k++) {   // frogging across the waistcoat, a knot at each end
+      const y = 0.44 + k * 0.11, r = coatR(y) * 0.955 + 0.012;
+      Gd.push({ geo: new THREE.TorusGeometry(r, 0.011, 4, 16, 0.95), matrix: M4(0, y, 0, Math.PI / 2, 0, Math.PI / 2 - 0.475), color: GOLD });
+      for (const s of [-1, 1]) Gd.push({ geo: new THREE.TorusGeometry(0.026, 0.008, 4, 10), matrix: M4(s * Math.sin(0.48) * r, y, Math.cos(0.48) * r, 0, s * 0.48, 0), color: GOLD });
+    }
+    for (let k = 0; k < 3; k++) for (const s of [-1, 1]) Gd.push({ geo: new THREE.SphereGeometry(0.02, 8, 6), matrix: M4(s * 0.06, 0.4 + k * 0.13, onCoat(0.06, 0.4 + k * 0.13, 0.955, 0.008)), color: GOLD });
+    for (const s of [-1, 1]) {   // epaulettes: a gold board with a fringe of bullion
+      Gd.push({ geo: new THREE.CylinderGeometry(0.13, 0.135, 0.035, 14), matrix: M4(s * 0.33, 1.175, 0, 0, 0, s * -0.22), color: GOLD });
+      for (let k = 0; k < 11; k++) { const a = (k / 10 - 0.5) * Math.PI * 1.1; Gd.push({ geo: new THREE.CylinderGeometry(0.011, 0.011, 0.13, 4), matrix: M4(s * (0.33 + Math.cos(a) * 0.125), 1.1, Math.sin(a) * 0.125), color: GOLD }); }
+    }
+    for (let k = 0; k < 2; k++) {   // medals on the left breast
+      const mx = 0.18 + k * 0.07;
+      Gd.push({ geo: new THREE.CylinderGeometry(0.035, 0.035, 0.012, 12), matrix: yawX(mx, 0.82, onCoat(mx, 0.82, 1, 0.01), Math.asin(mx / coatR(0.82)), Math.PI / 2 - 0.2), color: GOLD });
+      C.push({ geo: new THREE.BoxGeometry(0.04, 0.07, 0.01), matrix: yawX(mx, 0.89, onCoat(mx, 0.89, 1, 0.008), Math.asin(mx / coatR(0.89)), -0.2), color: k ? 0x2a4ab8 : 0xe8283c });
+    }
+    Gd.push({ geo: new THREE.OctahedronGeometry(0.03, 0), matrix: M4(0, 1.2, 0.285), color: 0xff3a5a });
+    const torsoCloth = mergeGeos(C), torsoGold = mergeGeos(Gd);
+    torsoCloth.scale(1, 1, 0.78); torsoGold.scale(1, 1, 0.78);
+    torso.add(new THREE.Mesh(torsoCloth, cloth), new THREE.Mesh(torsoGold, gold));
+    // coat tails: two long flaps (bent and fluttered every frame, like flags in a wind)
     this.tails = [];
-    const tailGeo = new THREE.BoxGeometry(0.2, 1.3, 0.025); tailGeo.translate(0, -0.65, 0);
-    const tailCol = new THREE.BufferAttribute(new Float32Array(tailGeo.attributes.position.count * 3), 3);
-    for (let i = 0; i < tailCol.count; i++) { const gold = tailGeo.attributes.position.getY(i) < -1.25; _c1.setHex(gold ? GOLD : RED); tailCol.setXYZ(i, _c1.r, _c1.g, _c1.b); }
-    tailGeo.setAttribute('color', tailCol);
-    const tailMat = vc();
-    for (const s of [-1, 1]) { const t = new THREE.Mesh(tailGeo, tailMat); t.position.set(s * 0.12, 0.1, -0.22); torso.add(t); this.tails.push(t); }
-    // ---- arms (A holds the cane, B gestures); shoulder pivots with an elbow
+    for (const s of [-1, 1]) {
+      const g = new THREE.BoxGeometry(0.22, 1.32, 0.028, 2, 12, 1); g.translate(0, -0.66, 0);
+      const P = g.attributes.position, col = new Float32Array(P.count * 3);
+      for (let i = 0; i < P.count; i++) { _c1.setHex(P.getY(i) < -1.21 ? GOLD : RED); col.set([_c1.r, _c1.g, _c1.b], i * 3); }   // red, a gold hem
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const t = new THREE.Mesh(g, cloth); t.position.set(s * 0.12, 0.1, -0.2); torso.add(t);
+      this.tails.push(t); t.userData.rest = P.array.slice();
+    }
+    // ---- arms (A holds the cane, B gestures): puffed velvet sleeves, gold cuffs with lace, white gloves
     this.arms = [];
-    const sleeve = new THREE.CylinderGeometry(0.055, 0.05, 0.6, 8); sleeve.translate(0, -0.3, 0);
-    const fore = new THREE.CylinderGeometry(0.05, 0.045, 0.55, 8); fore.translate(0, -0.275, 0);
-    const armMat = tint(new THREE.MeshBasicMaterial({ color: RED }), RED);
-    const gloveMat = tint(new THREE.MeshBasicMaterial({ color: GLOVE }), GLOVE);
+    const sleeve = mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.075, 0.064, 0.6, 12), matrix: M4(0, -0.3, 0), color: RED },
+      { geo: new THREE.SphereGeometry(0.1, 12, 9), matrix: M4(0, -0.02, 0, 0, 0, 0, 1, 0.9, 1), color: RED },
+      { geo: new THREE.TorusGeometry(0.066, 0.012, 4, 14), matrix: M4(0, -0.56, 0, Math.PI / 2, 0, 0), color: GOLD },
+    ]);
+    const fore = mergeGeos([
+      { geo: new THREE.CylinderGeometry(0.062, 0.054, 0.55, 12), matrix: M4(0, -0.275, 0), color: RED },
+      { geo: new THREE.CylinderGeometry(0.07, 0.068, 0.1, 12), matrix: M4(0, -0.47, 0), color: GOLD },
+      { geo: new THREE.CylinderGeometry(0.06, 0.1, 0.07, 14, 1, true), matrix: M4(0, -0.545, 0), color: 0xfffaf0 },
+    ]);
+    const gloveMat = lit({ color: 0xffffff, gloss: 0.5, shine: 30, rim: 0.6, emit: 0.26 });
     for (const s of [-1, 1]) {
       const sh = new THREE.Group(); sh.position.set(s * 0.36, 1.12, 0); torso.add(sh);
-      sh.add(new THREE.Mesh(sleeve, armMat));
+      sh.add(new THREE.Mesh(sleeve, cloth));
       const el = new THREE.Group(); el.position.y = -0.6; sh.add(el);
-      el.add(new THREE.Mesh(fore, armMat));
+      el.add(new THREE.Mesh(fore, cloth));
       const hand = new THREE.Group(); hand.position.y = -0.58; el.add(hand);
-      hand.add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), gloveMat));
-      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.06, 8), gloveMat); cuff.position.y = 0.06; hand.add(cuff);
+      const gl = new THREE.Mesh(gloveGeo(s < 0), gloveMat); gl.scale.setScalar(1.45);
+      if (s < 0) { gl.rotation.set(0, 0, -Math.PI / 2); gl.position.set(0.0, -0.02, 0.0); }   // a fist round the cane
+      else { gl.rotation.set(0, -Math.PI / 2, -Math.PI / 2); gl.position.set(0, 0.04, 0); }             // an open showman's hand
+      hand.add(gl);
       this.arms.push({ s, sh, el, hand, rx: 0, rz: 0, e: 0 });
     }
-    // the cane: black shaft, gold tip, glowing ball (conducts the attacks)
+    // the cane: black lacquer with a gold spiral and bands, a gold claw holding a faceted crystal that glows
     const cane = this.cane = new THREE.Group();
-    cane.add(new THREE.Mesh(mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.018, 0.018, 1.25, 6), matrix: M4(0, 0.2, 0), color: 0x141018 },
-      { geo: new THREE.CylinderGeometry(0.03, 0.02, 0.08, 6), matrix: M4(0, -0.42, 0), color: GOLD },
-      { geo: new THREE.TorusGeometry(0.06, 0.012, 4, 10), matrix: M4(0, 0.78, 0, Math.PI / 2, 0, 0), color: GOLD },
-    ]), vc()));
+    const caneParts = [
+      { geo: new THREE.CylinderGeometry(0.018, 0.016, 1.25, 8), matrix: M4(0, 0.2, 0), color: INK },
+      { geo: new THREE.CylinderGeometry(0.03, 0.02, 0.08, 8), matrix: M4(0, -0.42, 0), color: GOLD },
+      { geo: new THREE.CylinderGeometry(0.026, 0.026, 0.05, 8), matrix: M4(0, 0.7, 0), color: GOLD },
+      { geo: new THREE.TorusGeometry(0.06, 0.012, 4, 12), matrix: M4(0, 0.78, 0, Math.PI / 2, 0, 0), color: GOLD },
+    ];
+    const spiral = []; for (let k = 0; k <= 40; k++) { const t = k / 40, a = t * TAU * 5; spiral.push(new THREE.Vector3(Math.cos(a) * 0.019, -0.35 + t * 1.0, Math.sin(a) * 0.019)); }
+    caneParts.push({ geo: btTube(spiral, 0.005, 3, 80), color: GOLD });
+    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU; caneParts.push({ geo: new THREE.BoxGeometry(0.014, 0.1, 0.014), matrix: M4(Math.cos(a) * 0.05, 0.84, Math.sin(a) * 0.05, Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35), color: GOLD }); }
+    cane.add(new THREE.Mesh(mergeGeos(caneParts), gold));
     this.ballMat = new THREE.MeshBasicMaterial({ color: 0xfff0b0 });
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), this.ballMat); this.ball.position.y = 0.86; cane.add(this.ball);
+    this.ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.08, 1), this.ballMat); this.ball.position.y = 0.86; cane.add(this.ball);
     cane.rotation.x = Math.PI / 2 - 0.3; cane.position.set(0, -0.02, 0.05);
     this.arms[0].hand.add(cane);
-    // ---- head: the mask pivot (comedy front / tragedy back), the tired face behind it, the tent hat
+    // ---- head: the porcelain mask (comedy front / tragedy back) on a pivot, the tired face behind it,
+    // dark hair with powdered side curls and a ribboned queue, and the hat: a tiny big top with a flag
     const head = this.head = new THREE.Group(); head.position.y = 1.62; torso.add(head);
-    this.faceTex = canvasTex(128, 160, drawTiredFace);
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.62), new THREE.MeshBasicMaterial({ map: this.faceTex, transparent: true, alphaTest: 0.5 }));
-    face.position.z = 0.05; head.add(face);
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 10), new THREE.MeshBasicMaterial({ color: 0x3a2418 })); skull.position.z = -0.12; skull.scale.set(1, 1.15, 0.6); head.add(skull);
+    const shell = (w, h, depth, nose) => {
+      const g = new THREE.PlaneGeometry(w, h, 14, 18), P = g.attributes.position;
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i) / (w / 2), y = P.getY(i) / (h / 2), r2 = Math.min(1, x * x + y * y);
+        let z = depth * Math.sqrt(1 - r2 * 0.92);
+        if (nose) z += nose * Math.exp(-(x * x) / 0.012 - Math.pow((y + 0.05) / 0.32, 2)) + nose * 0.35 * Math.exp(-Math.pow((x - 0.5) / 0.18, 2) - Math.pow((y + 0.2) / 0.18, 2)) + nose * 0.35 * Math.exp(-Math.pow((x + 0.5) / 0.18, 2) - Math.pow((y + 0.2) / 0.18, 2));
+        P.setZ(i, z);
+      }
+      g.computeVertexNormals(); return g;
+    };
+    this.faceTex = smoothTex(canvasTex(128, 160, drawTiredFace)); this.tex.push(this.faceTex);
+    const face = new THREE.Mesh(shell(0.5, 0.62, 0.07, 0.03), lit({ map: this.faceTex, cutout: true, gloss: 0.3, shine: 20, rim: 0.5, emit: 0.22 }));
+    face.position.z = 0.0; head.add(face);
+    const hairP = [{ geo: new THREE.SphereGeometry(0.24, 16, 12), matrix: M4(0, 0.03, -0.1, 0, 0, 0, 1, 1.1, 0.72), color: 0x2a1810 }];
+    for (const s of [-1, 1]) {   // a small powdered curl at each temple, tucked behind the mask's edge
+      const pts = []; for (let i = 0; i <= 20; i++) { const t = i / 20, a = t * TAU * 0.9; pts.push(new THREE.Vector3(s * 0.225, 0.02 + Math.sin(a) * 0.026, -0.02 + Math.cos(a) * 0.026)); }
+      hairP.push({ geo: btTube(pts, 0.016, 5, 24), color: 0xe8e2da });
+    }
+    head.add(new THREE.Mesh(mergeGeos(hairP), cloth));
     const mp = this.maskPivot = new THREE.Group(); mp.position.z = 0.12; head.add(mp);
-    this.maskTexC = canvasTex(128, 160); this.maskTexT = canvasTex(128, 160);
-    this.maskFront = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.7), new THREE.MeshBasicMaterial({ map: this.maskTexC, transparent: true, alphaTest: 0.5 }));
-    this.maskBack = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.7), new THREE.MeshBasicMaterial({ map: this.maskTexT, transparent: true, alphaTest: 0.5 }));
+    this.maskTexC = smoothTex(canvasTex(128, 160)); this.maskTexT = smoothTex(canvasTex(128, 160)); this.tex.push(this.maskTexC, this.maskTexT);
+    const maskGeo = shell(0.56, 0.7, 0.085, 0.045);
+    this.maskFront = new THREE.Mesh(maskGeo, lit({ map: this.maskTexC, cutout: true, gloss: 1.7, shine: 90, rim: 0.45, emit: 0.3 }));
+    this.maskBack = new THREE.Mesh(maskGeo, lit({ map: this.maskTexT, cutout: true, gloss: 1.7, shine: 90, rim: 0.45, emit: 0.3 }));
     this.maskFront.position.z = 0.012; this.maskBack.position.z = -0.012; this.maskBack.rotation.y = Math.PI;
     mp.add(this.maskFront, this.maskBack);
     const hat = this.hat = new THREE.Group(); hat.position.set(0, 0.42, -0.02); head.add(hat);
-    this.hatTex = stripeTex('#e8283c', '#fff4dc', 10, true, 64, 16);
-    hat.add(new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.34, 16, 1, true), new THREE.MeshBasicMaterial({ map: this.hatTex, side: THREE.DoubleSide })));
-    hat.add(new THREE.Mesh(mergeGeos([
-      { geo: new THREE.CylinderGeometry(0.36, 0.36, 0.03, 18), matrix: M4(0, -0.17, 0), color: 0x8a0a1c },
-      { geo: new THREE.ConeGeometry(0.25, 0.24, 16), matrix: M4(0, 0.29, 0), color: RED },
-      { geo: new THREE.TorusGeometry(0.215, 0.018, 4, 18), matrix: M4(0, 0.17, 0, Math.PI / 2, 0, 0), color: GOLD },
-      { geo: new THREE.CylinderGeometry(0.008, 0.008, 0.26, 4), matrix: M4(0, 0.52, 0), color: GOLD },
-    ]), vc()));
-    this.flag = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.09), new THREE.MeshBasicMaterial({ color: GOLD, side: THREE.DoubleSide }));
-    this.flag.geometry.translate(0.08, 0, 0); this.flag.position.set(0, 0.6, 0); hat.add(this.flag);
+    this.hatTex = smoothTex(stripeTex('#d0182c', '#fff4dc', 10, true, 64, 16)); this.tex.push(this.hatTex);
+    hat.add(new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.215, 0.34, 20, 1, true), lit({ map: this.hatTex, side: THREE.DoubleSide, gloss: 0.4, shine: 24, rim: 0.7, emit: 0.16 })));
+    const hatP = [
+      { geo: new THREE.CylinderGeometry(0.37, 0.37, 0.035, 24), matrix: M4(0, -0.17, 0), color: DRED },
+      { geo: new THREE.TorusGeometry(0.37, 0.014, 4, 32), matrix: M4(0, -0.17, 0, Math.PI / 2, 0, 0), color: GOLD },
+      { geo: new THREE.TorusGeometry(0.216, 0.02, 4, 24), matrix: M4(0, 0.165, 0, Math.PI / 2, 0, 0), color: GOLD },
+      { geo: new THREE.CylinderGeometry(0.008, 0.008, 0.26, 4), matrix: M4(0, 0.53, 0), color: GOLD },
+      { geo: new THREE.SphereGeometry(0.022, 8, 6), matrix: M4(0, 0.66, 0), color: GOLD },
+      ...btStriped(0, 0.26, 0.26, 10, RED, CREAM, M4(0, 0.3, 0)),
+    ];
+    for (let k = 0; k < 10; k++) { const a = (k + 0.5) / 10 * TAU; hatP.push({ geo: new THREE.SphereGeometry(0.03, 6, 4), matrix: M4(Math.sin(a) * 0.225, 0.15, Math.cos(a) * 0.225, 0, 0, 0, 1, 0.7, 1), color: GOLD }); }
+    hat.add(new THREE.Mesh(mergeGeos(hatP), lit({ side: THREE.DoubleSide, gloss: 0.9, shine: 50, rim: 0.6, emit: 0.15 })));
+    const flagG = new THREE.PlaneGeometry(0.17, 0.095, 6, 2); flagG.translate(0.085, 0, 0);
+    this.flag = new THREE.Mesh(flagG, lit({ color: GOLD, side: THREE.DoubleSide, gloss: 0.8, shine: 40, rim: 0.5, emit: 0.2 }));
+    this.flag.position.set(0, 0.6, 0); this.flag.userData.rest = flagG.attributes.position.array.slice(); hat.add(this.flag);
     // ---- trapeze bar held over his head (FLYING TRAPEZE)
     this.swingBar = new THREE.Group(); this.swingBar.visible = false; root.add(this.swingBar);
-    this.swingBar.add(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.1, 8).rotateZ(Math.PI / 2), new THREE.MeshBasicMaterial({ color: GOLD })));
-    for (const s of [-1, 1]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 14, 4), new THREE.MeshBasicMaterial({ color: 0xd8c8a0 })); r.position.set(s * 0.5, 7, 0); this.swingBar.add(r); }
-    // ---- marionette strings (wrists + shoulders up into the clouds)
-    this.strGeo = new THREE.BufferGeometry(); this.strPos = new Float32Array(8 * 3);
-    this.strGeo.setAttribute('position', new THREE.BufferAttribute(this.strPos, 3));
-    this.strings = new THREE.LineSegments(this.strGeo, new THREE.LineBasicMaterial({ color: 0xfff4dc, transparent: true, opacity: 0.16, depthWrite: false }));
-    this.strings.frustumCulled = false; scene.add(this.strings);
+    const sb = [{ geo: new THREE.CylinderGeometry(0.035, 0.035, 1.1, 10).rotateZ(Math.PI / 2), color: GOLD }];
+    for (const s of [-1, 1]) {
+      sb.push({ geo: new THREE.CylinderGeometry(0.012, 0.012, 14, 5), matrix: M4(s * 0.5, 7, 0), color: 0xd8c8a0 });
+      sb.push({ geo: new THREE.CylinderGeometry(0.04, 0.04, 0.12, 8), matrix: M4(s * 0.42, 0, 0, 0, 0, Math.PI / 2), color: 0xfff4ec });
+    }
+    this.swingBar.add(new THREE.Mesh(mergeGeos(sb), gold));
+    // ---- marionette strings: faint glowing silk from his wrists and shoulders up into the dark above the roof
+    const sg = new THREE.InstancedBufferGeometry(), sp = [], si = [];
+    for (let k = 0; k <= 12; k++) sp.push(-1, k / 12, 0, 1, k / 12, 0);
+    for (let k = 0; k < 12; k++) { const a = k * 2; si.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setIndex(si);
+    this.strA = {};
+    for (const nm of ['iA', 'iB', 'iC']) { const a = new THREE.InstancedBufferAttribute(new Float32Array(16), 4); a.setUsage(THREE.DynamicDrawUsage); sg.setAttribute(nm, a); this.strA[nm] = a; }
+    sg.instanceCount = 4;
+    this.strU = { uTime: { value: 0 } };
+    this.strings = new THREE.Mesh(sg, new THREE.ShaderMaterial({ uniforms: this.strU, vertexShader: SILK_VS, fragmentShader: SILK_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    this.strings.frustumCulled = false; this.strings.renderOrder = 18; scene.add(this.strings);
     this.strTop = [0, 0, 0, 0].map(() => new THREE.Vector3());
+    this.look = 0; this.lookX = 0;
     this.reset();
   }
   reset() {
     this.phase = 0; this.tired = false; this.defeated = false; this.attack = false; this.mood = 'comedy';
-    this.maskWant = 0; this.maskTarget = 0; this.maskPivot.rotation.y = 0; this.maskPivot.position.set(0, 0, 0.12); this.maskPivot.visible = true; this.maskOff = 0;
+    this.maskWant = 0; this.maskTarget = 0; this.maskPivot.rotation.set(0, 0, 0); this.maskPivot.position.set(0, 0, 0.12); this.maskPivot.visible = true; this.maskOff = 0;
     this.crack = 0; this.drawMasks();
     this.bowT = 0; this.bowTarget = 0; this.hatT = 1; this.gestT = 0; this.flashT = 0; this.shakeT = 0; this.stunT = 0;
     this.strCut = 0; this.strAlpha = 1; this.swing = null; this.swingBar.visible = false;
-    this.slump = 0; this.sink = 0; this.lum = 1; this.flourishT = 0; this.talkT = 0; this.beam = 0;
+    this.slump = 0; this.sink = 0; this.lum = 1; this.flourishT = 0; this.talkT = 0; this.beam = 0; this.spinV = 0;
     this.root.position.copy(this.home); this.root.rotation.set(0, 0, 0); this.root.visible = true;
     this.torso.rotation.set(0, 0, 0);
   }
@@ -15807,8 +16706,8 @@ class RingmasterModel {
   glitchBurst() { this.shakeT = 0.4; }
   onBeat(b) {
     const M = G.clock.bpb, k = ((b % M) + M) % M;
-    // the mask flips on the beat (a quick 180 degree spin)
-    if (this.maskTarget !== this.maskWant) { this.maskTarget = this.maskWant; G.audio.sfx.tone({ type: 'triangle', f: 1200, f2: 600, dur: 0.08, vol: 0.03 }); }
+    // the mask flips on the beat (a quick 180 degree spin with a little overshoot)
+    if (this.maskTarget !== this.maskWant) { this.maskTarget = this.maskWant; this.spinV = 0; G.audio.sfx.tone({ type: 'triangle', f: 1200, f2: 600, dur: 0.08, vol: 0.03 }); }
     if (k === 0) { this.gestT = 1; if (((b / M) | 0) % 4 === 0 && !this.attack && !this.tired) this.tipHat(); }
   }
   onOnset(strength) { this.flourishT = Math.max(this.flourishT, Math.min(0.6, 0.2 + strength * 0.08)); }
@@ -15828,7 +16727,23 @@ class RingmasterModel {
   chestPos(out) { this.torso.updateMatrixWorld(true); return out.set(0, 0.7, 0.3).applyMatrix4(this.torso.matrixWorld); }
   headWorldPos(out) { this.head.updateMatrixWorld(true); return out.set(0, -0.2, 0.15).applyMatrix4(this.head.matrixWorld); }
   ballWorldPos(out) { this.ball.updateMatrixWorld(true); return out.setFromMatrixPosition(this.ball.matrixWorld); }
-  dispose() { disposeObject(this.strings); disposeObject(this.root); }
+  dispose() { disposeObject(this.strings); disposeObject(this.root); for (const t of this.tex) t.dispose(); this.tex = []; }
+  // a coat tail: bent back by the wind along its length, with a wave running down it and a sideways flutter
+  bendTail(tl, kap, t, ph) {
+    const P = tl.geometry.attributes.position, R = tl.userData.rest;
+    for (let i = 0; i < P.count; i++) {
+      const x = R[i * 3], y = R[i * 3 + 1], z0 = R[i * 3 + 2], sl = -y;
+      const kk = kap + Math.sin(t * 4.6 + ph - sl * 3.2) * 0.3;   // a wave runs down the tail
+      const th = kk * sl, cy = Math.abs(kk) > 1e-3 ? -Math.sin(th) / kk : -sl, cz = Math.abs(kk) > 1e-3 ? -(1 - Math.cos(th)) / kk : 0;
+      P.setXYZ(i, x + Math.sin(t * 3.3 + ph + sl * 2.4) * 0.05 * sl * sl, cy - z0 * Math.sin(th), cz + z0 * Math.cos(th));
+    }
+    P.needsUpdate = true; tl.geometry.computeVertexNormals();
+  }
+  bendFlag(t) {
+    const P = this.flag.geometry.attributes.position, R = this.flag.userData.rest;
+    for (let i = 0; i < P.count; i++) { const x = R[i * 3], y = R[i * 3 + 1]; P.setXYZ(i, x, y + Math.sin(t * 9 - x * 30) * 0.008 * x * 10, Math.sin(t * 11 - x * 34) * 0.025 * (x / 0.17)); }
+    P.needsUpdate = true; this.flag.geometry.computeVertexNormals();
+  }
   // ---- per-frame
   update(dt) {
     const c = G.clock, M = c.bpb, t = G.time;
@@ -15852,14 +16767,27 @@ class RingmasterModel {
       this.swingBar.position.set(0, 7.0, 0.1);
     }
     for (let i = 0; i < 2; i++) this.legs[i].rotation.x = Math.sin(t * 1.3 + i * Math.PI) * 0.04 * (1 - this.bowT);
-    // bow / slump
+    // bow / slump, and he breathes
     this.slump = this.slump > 0 ? Math.min(1, this.slump + dt * 0.5) : 0;
     this.torso.rotation.x = this.bowT * 0.9 + this.slump * 0.45;
     this.torso.rotation.z = sway;
-    this.head.rotation.x = this.bowT * 0.35 + this.slump * 0.4 - (this.talkT > 0 ? 0.04 : 0);
+    const br = Math.sin(t * (this.tired ? 1.1 : 1.6)) * (this.tired ? 0.018 : 0.011);
+    this.torso.scale.set(1 + br, 1 + br * 0.5, 1 + br * 1.4);
+    // he looks down at you (a little, the mask turning to follow), unless he is bowing or slumped
+    Head.update();
+    _v1.set(this.root.position.x, 0, this.root.position.z);
+    const yaw = clamp(Math.atan2(Head.pos.x - _v1.x, Head.pos.z - _v1.z), -0.45, 0.45) * (1 - this.bowT) * (1 - this.slump);
+    this.look = damp(this.look, this.swing ? 0 : yaw, 3, dt);
+    this.head.rotation.y = this.look;
+    this.head.rotation.x = this.bowT * 0.35 + this.slump * 0.4 - (this.talkT > 0 ? 0.04 : 0) + 0.12 * (1 - this.bowT);
+    this.head.rotation.z = Math.sin(t * 0.8) * 0.03 + (this.mood === 'tragedy' ? 0.08 : 0);
     // coat tails flutter like flags
-    for (let i = 0; i < 2; i++) { const tl = this.tails[i]; tl.rotation.x = -0.35 - 0.25 * Math.abs(Math.sin(t * 3.2 + i)) - this.bowT * 0.3; tl.rotation.z = Math.sin(t * 4.1 + i * 2.1) * 0.12; }
-    this.flag.rotation.y = Math.sin(t * 7) * 0.5;
+    for (let i = 0; i < 2; i++) {
+      const tl = this.tails[i];
+      tl.rotation.x = 0.14 + 0.12 * Math.abs(Math.sin(t * 3.2 + i)) + this.bowT * 0.5; tl.rotation.z = Math.sin(t * 4.1 + i * 2.1) * 0.1;
+      this.bendTail(tl, 0.24 + 0.12 * Math.sin(t * 2.3 + i), t, i * 1.7);
+    }
+    this.flag.rotation.y = Math.sin(t * 7) * 0.4; this.bendFlag(t);
     // ---- arms: conducting in the meter (A, the cane) + gestures (B)
     const A = this.arms[0], Bm = this.arms[1];
     const conduct4 = [[-0.55, 0.05, -0.7], [-0.85, -0.35, -0.9], [-0.9, 0.55, -0.8], [-1.55, 0.12, -0.6]];
@@ -15880,10 +16808,14 @@ class RingmasterModel {
     if (this.bowT > 0.05) { brx = lerp(brx, -0.2, this.bowT); brz = lerp(brz, 1.2, this.bowT); bel = lerp(bel, -0.1, this.bowT); }
     if (this.swing) { brx = -2.9; brz = -0.1; bel = -0.1; }
     if (this.maskOff > 0 && this.maskOff < 1) { brx = -2.2; brz = -0.45; bel = -1.9; }
+    if (this.talkT > 0) brz += 0.12;
     Bm.sh.rotation.set(brx * (1 - this.slump), 0, Bm.s * brz * (1 - this.slump));
     Bm.el.rotation.x = bel * (1 - this.slump);
-    // ---- mask flip (quick spin toward the target on the beat) + taking it off
-    this.maskPivot.rotation.y = damp(this.maskPivot.rotation.y, this.maskTarget, 22, dt);
+    Bm.hand.rotation.set(Math.sin(t * 2.1) * 0.15 + this.gestT * 0.4, 0, Math.sin(t * 1.7) * 0.1);
+    // ---- mask flip: a quick spring to the target on the beat (overshoots a touch) + taking it off
+    const err = this.maskTarget - this.maskPivot.rotation.y;
+    this.spinV += (err * 520 - this.spinV * 34) * Math.min(dt, 0.05); this.maskPivot.rotation.y += this.spinV * Math.min(dt, 0.05);
+    if (Math.abs(err) < 1e-3 && Math.abs(this.spinV) < 1e-3) { this.maskPivot.rotation.y = this.maskTarget; this.spinV = 0; }
     if (this.maskOff > 0) {
       this.maskOff = Math.min(1, this.maskOff + dt * 0.45);
       const m = easeInOut(this.maskOff);
@@ -15897,31 +16829,39 @@ class RingmasterModel {
       const h = Math.sin(this.hatT * Math.PI);
       this.hat.position.y = 0.42 + h * 0.16; this.hat.rotation.x = h * 0.45;
     } else { this.hat.position.y = 0.42; this.hat.rotation.x = this.bowT * 0.2; }
-    // ---- lights: he reads dark in the lights-out phase (spotlights still find him)
+    // ---- light: he is lit by the big top; a hurt flashes him white, and he glows when he beams in the dark
     const want = BigTopKit.ready ? 0.3 + 0.7 * BigTopKit.lightLevel : 1;
     this.lum = damp(this.lum, Math.max(want, this.beam > 0 ? 1 : 0), 4, dt);
-    const lum = this.lum + this.flashT * 0.6;
-    for (const t of this.mats) t.m.color.copy(t.base).multiplyScalar(Math.min(1.6, lum));
-    this.ballMat.color.setRGB(1, 0.94, 0.7).multiplyScalar(0.7 + 0.3 * lum);
-    // the cane's ball glows (brighter while conducting an attack)
+    const dark = BigTopKit.ready ? 1 - BigTopKit.lightLevel : 0, gl = this.flashT * 0.55 + (this.beam > 0 ? 0.1 * dark : 0) + 0.035 * dark;
+    for (const tm of this.mats) tm.m.uniforms.uGlow.value.setRGB(gl, gl * 0.95, gl * 0.85);
+    this.ballMat.color.setRGB(1, 0.94, 0.7).multiplyScalar(0.75 + 0.25 * this.lum);
+    // the crystal glows (brighter while conducting an attack), and the hat's brim bulbs chase
     this.ballWorldPos(_v1);
-    const gl = (this.attack ? 0.75 : 0.45) + 0.25 * G.fx.beatPulse * (Flash.reduced ? 0.4 : 1) + this.flourishT * 0.6;
-    G.fx.glow.add(_v1.x, _v1.y, _v1.z, 0.5 + gl * 0.4, 1, 0.82, 0.4, gl, 0);
+    const glw = (this.attack ? 0.75 : 0.45) + 0.25 * G.fx.beatPulse * (Flash.reduced ? 0.4 : 1) + this.flourishT * 0.6;
+    G.fx.glow.add(_v1.x, _v1.y, _v1.z, 0.5 + glw * 0.4, 1, 0.82, 0.4, glw, 0);
+    G.fx.glow.add(_v1.x, _v1.y, _v1.z, 0.16, 1, 0.98, 0.9, 0.8, 1);
+    this.hat.updateMatrixWorld(true);
+    const ch = Math.floor(c.beat * 2);
+    for (let i = 0; i < 10; i++) {
+      const a = (i + 0.5) / 10 * TAU, on = Flash.reduced ? 0.7 : ((i + ch) % 3 === 0 ? 1 : 0.35);
+      _v2.set(Math.sin(a) * 0.23, 0.15, Math.cos(a) * 0.23).applyMatrix4(this.hat.matrixWorld);
+      G.fx.glow.add(_v2.x, _v2.y, _v2.z, 0.07, 1, 0.8, 0.4, 0.55 * on * (0.4 + 0.6 * this.lum), 0);
+    }
     // ---- marionette strings (nobody mentions them until the finale)
     this.root.updateMatrixWorld(true);
-    const P = this.strPos;
-    const pts = [Bm.hand, A.hand, Bm.sh, A.sh];
+    const pts = [Bm.hand, A.hand, Bm.sh, A.sh], S = this.strA, IA = S.iA.array, IB = S.iB.array, IC = S.iC.array;
     if (this.strCut > 0) { this.strCut = Math.min(1, this.strCut + dt * 0.8); this.strAlpha = 1 - this.strCut; }
+    const sa = 0.22 * this.strAlpha * (0.6 + 0.4 * this.lum);
     for (let i = 0; i < 4; i++) {
       pts[i].getWorldPosition(_v2);
-      P[i * 6] = _v2.x; P[i * 6 + 1] = _v2.y; P[i * 6 + 2] = _v2.z;
       // cut strings slither up and away into the clouds
       const top = this.strTop[i].set(_v2.x * 0.6 + (i % 2 ? 0.4 : -0.4), 40, _v2.z * 0.9);
-      if (this.strCut > 0) { top.y = lerp(_v2.y + 0.4, 46, Math.min(1, this.strCut * 1.2)); P[i * 6 + 1] = lerp(_v2.y, 44, this.strCut); }
-      P[i * 6 + 3] = top.x; P[i * 6 + 4] = top.y; P[i * 6 + 5] = top.z;
+      let by = _v2.y;
+      if (this.strCut > 0) { top.y = lerp(_v2.y + 0.4, 46, Math.min(1, this.strCut * 1.2)); by = lerp(_v2.y, 44, this.strCut); }
+      IA.set([top.x, top.y, top.z, i * 1.37], i * 4); IB.set([_v2.x, by, _v2.z, 0], i * 4); IC.set([1, 0.95, 0.85, sa], i * 4);
     }
-    this.strGeo.attributes.position.needsUpdate = true;
-    this.strings.material.opacity = 0.16 * this.strAlpha * (0.6 + 0.4 * this.lum);
+    for (const k2 in S) S[k2].needsUpdate = true;
+    this.strU.uTime.value = t;
     this.strings.visible = this.strAlpha > 0.01 && this.root.visible;
   }
 }
@@ -16009,16 +16949,7 @@ const CircusFX = {
   gate(name, sec) { const t = G.time; if (t - (this.gates[name] || -99) < sec) return false; this.gates[name] = t; return true; },
 
   // ------------------------------------------------------------------ lighting
-  updateLook() {
-    const U = CircusShade.uniforms(), sky = G.bg.circus;
-    const night = sky ? sky.night : 0, storm = sky ? sky.storm : 0;
-    const m = 0.55 + 0.45 * (BigTopKit.ready ? BigTopKit.lightLevel : 1);
-    const set = (v, k, mul) => {
-      const a = CIRCUS_LOOK.sunset[k], b = CIRCUS_LOOK.night[k], c = CIRCUS_LOOK.storm[k];
-      v.set(lerp(lerp(a[0], b[0], night), c[0], storm) * mul, lerp(lerp(a[1], b[1], night), c[1], storm) * mul, lerp(lerp(a[2], b[2], night), c[2], storm) * mul);
-    };
-    set(U.uKeyCol.value, 'key', m); set(U.uSky.value, 'sky', m); set(U.uGround.value, 'ground', m); set(U.uRimCol.value, 'rim', 1);
-  },
+  updateLook() { BigTopKit.applyLook(); },   // the big top's moods and house lights (BigTopKit)
   slot(key) {
     let s = this.lights.find((l) => !l.on);
     if (!s) { let best = null; for (const l of this.lights) if (!l.key && (!best || l.t > best.t)) best = l; s = best; }   // steal the oldest flash
@@ -16057,7 +16988,7 @@ const CircusFX = {
       }
       if (n < 4) { U.uPtPos.value[n].set(s.pos.x, s.pos.y, s.pos.z, s.radius); U.uPtCol.value[n].set(s.r * k, s.g * k, s.b * k); n++; }
     }
-    U.uPtN.value = n;
+    U.uPtN.value = BigTopKit.housePoints(U, n);   // the acts' lights first, then the chandelier and the sign
   },
   // the big top's spotlights also light the acts (knives glint as they cross a beam)
   updateSpots() {
@@ -16073,7 +17004,7 @@ const CircusFX = {
       U.uSpCol.value[n].set(s.col.r * k, s.col.g * k, s.col.b * k);
       n++;
     }
-    U.uSpN.value = n;
+    U.uSpN.value = BigTopKit.houseSpots(U, n);   // ...and the follow spot on him when a slot is free
   },
 
   // ------------------------------------------------------------------ ribbon trails
@@ -18405,7 +19336,7 @@ BOSSES.ringmaster = {
   musicSlot: 'MUSIC_RINGMASTER', dataUri: MUSIC_DATA_URI_RINGMASTER, musicUrl: MUSIC_URL_RINGMASTER,
   fallbackMusic() { return synthRingmasterFallback(89); }, fallbackLabel: '3/4 calliope waltz',
   palette: { name: '#fff4dc', spareName: '#ffe600', hp: '#ffc83c', hpBack: '#5a0a1c', accent: '#e8283c', pelletGlow: 0xffc83c, glyph: 0xfff4dc },
-  arenaTheme: 'bigtop', bgTheme: 'circus',
+  arenaTheme: 'bigtop', bgTheme: 'circus', bossBarY: 0.52,
   dialogue: RLINES, flavorText: RFLAVOR, dialogueStyle: 'banner',
   attacks: RINGMASTER_PATTERNS,
   acts: [
@@ -18457,7 +19388,7 @@ BOSSES.ringmaster = {
     if (spared) L.push({ text: RLINES.guests, fn: () => this.cheerGuests(3) });
     B.talk(L.concat(RLINES.tail), () => B.startAttack('cascade_tut'));
   },
-  cheerGuests(sec) { if (BigTopKit.ready) for (const g of BigTopKit.guests) if (!g.empty) g.cheerT = sec; },
+  cheerGuests(sec) { if (BigTopKit.ready) { for (const g of BigTopKit.guests) if (!g.empty) g.cheerT = sec; BigTopKit.crowdCheer(sec); } },
   flavor(B) {
     if (B.turn === 1) return RFLAVOR.first;
     if (B.spare >= 100) return pick(RFLAVOR.spare);
@@ -18969,17 +19900,18 @@ BOSSES.ringmaster = {
     if (phase === 0) {
       if (G.arena.themeName !== 'bigtop') G.arena.setTheme('bigtop');
       if (sky) sky.setMode('sunset', f);
-      if (K.ready) { K.setLights(1, f); K.reviveBulbs(); K.mendRoof(); }
+      if (K.ready) { K.setLights(1, f); K.reviveBulbs(); K.mendRoof(); K.setCrowd(true, f); K.followK = 1; }
       StormKit.setRain(false); G.audio.sfx.rainLoop(false); G.clock.setFreeTime(false);
     } else if (phase === 1) {
       if (G.arena.themeName !== 'bigtopNight') G.arena.setTheme('bigtopNight');
       if (sky) sky.setMode('night', f);
       if (K.ready && K.lightTarget > 0.2) { K.setLights(0.12, f); K.popBulbs(0.8); }
+      if (K.ready) { K.setCrowd(false, f); K.followK = 0; }
       StormKit.setRain(false); G.audio.sfx.rainLoop(false); G.clock.setFreeTime(true);
     } else {
       if (G.arena.themeName !== 'bigtopStorm') G.arena.setTheme('bigtopStorm');
       if (sky) sky.setMode('storm', f);
-      if (K.ready) { K.setLights(1, f); K.reviveBulbs(); if (!K.panels.some((p) => p.torn)) K.tearRoof(4); }
+      if (K.ready) { K.setLights(1, f); K.reviveBulbs(); if (!K.panels.some((p) => p.torn)) K.tearRoof(4); K.setCrowd(true, f); K.followK = 1; }
       StormKit.setRain(true); G.audio.sfx.rainLoop(true); G.clock.setFreeTime(false);
     }
   },
