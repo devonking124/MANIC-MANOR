@@ -15529,7 +15529,16 @@ const BigTopKit = {
     this.sway = damp(this.sway, storm * 0.12, 0.8, dt);
     this.chand.rotation.set(Math.sin(t * 0.9) * this.sway, 0, Math.cos(t * 0.7) * this.sway * 0.8);
     this.chand.updateMatrix();
-    this.signK = damp(this.signK, L > 0.3 ? 1 : 0.15, 2, dt);
+    if (this.reveal) {
+      const R = this.reveal; R.t += dt; const kk = Math.min(1, R.t / R.dur), shown = Math.floor(kk * 9.999);
+      for (let i = 0; i < this.lampList.length; i++) {
+        const Lp = this.lampList[i]; if (Lp.g < 2) continue;
+        const idx = Lp.g === 2 ? Lp.s : Math.floor(Lp.k / 56 * 9);   // the border keeps pace with the letters
+        this.lampDead[i] = R.on ? (idx < shown ? 0 : 1) : (idx >= 9 - shown ? 1 : 0);
+      }
+      if (kk >= 1) this.reveal = null;
+    }
+    this.signK = damp(this.signK, (this.reveal && this.reveal.on) || L > 0.3 ? 1 : 0.15, 2, dt);
     let gl = 0;
     for (let i = 0; i < this.lampList.length; i++) {
       const Lp = this.lampList[i];
@@ -15625,6 +15634,10 @@ const BigTopKit = {
     // guests
     for (const g of this.guests) if (g.update) g.update(dt, g);
   },
+  // the sign's letters light up one by one over `dur` (the finale's drumroll, the spare ending) ...
+  signReveal(dur) { this.reveal = { t: 0, dur: Math.max(0.1, dur), on: true }; for (let i = 0; i < this.lampList.length; i++) if (this.lampList[i].g >= 2) this.lampDead[i] = 1; },
+  // ... or go out one by one, from the last letter (lights out, the fight ending)
+  signDark(dur) { this.reveal = { t: 0, dur: Math.max(0.1, dur), on: false }; },
   showNet(y, w, d, cx, cz) { const A = G.arena; this.net.visible = true; this.net.position.set(cx !== undefined ? cx : A.center.x, y, cz !== undefined ? cz : A.center.z); this.net.scale.set(w, d, 1); this.netMat.uniforms.uMapST.value.set(w * 2, d * 2, 0, 0); },
   hideNet() { this.net.visible = false; },
   // ---- the big top's light block: the mood (sky blend) and the house lights; every frame of the fight
@@ -15666,7 +15679,7 @@ const BigTopKit = {
     return n + 1;
   },
 };
-registerKit(BigTopKit, function () { this.panels = []; this.spots = []; this.guests = []; this.seatPos = []; this.boxKey = null; this.lifts = []; this.crowd = []; this.pipes = []; this.lampList = []; this.emits = []; this.calliopeQuiet = false; });
+registerKit(BigTopKit, function () { this.reveal = null; this.panels = []; this.spots = []; this.guests = []; this.seatPos = []; this.boxKey = null; this.lifts = []; this.crowd = []; this.pipes = []; this.lampList = []; this.emits = []; this.calliopeQuiet = false; });
 // @@/BIGTOP
 
 // ---- cameo guests (small silhouettes of bosses 1 and 2)
@@ -19331,14 +19344,17 @@ const JuggleKit = {
     this.rings = [0, 1, 2].map(() => { const r = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffc83c, transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); r.visible = false; scene.add(r); return r; });
     this.gauge = new TextPanel({ w: 1.0, h: 0.2, cw: 400, bg: 'rgba(40,0,10,0.85)', border: '#ffc83c', borderPx: 3, scale: 3, align: 'center', valign: 'middle', color: '#fff4dc', renderOrder: 45, depthTest: false });
     this.gauge.mesh.visible = false; scene.add(this.gauge.mesh);
-    this.curtainTex = canvasTex(256, 128, drawVelvet);
-    this.curtain = new THREE.Mesh(new THREE.PlaneGeometry(9, 6.5), new THREE.MeshBasicMaterial({ map: this.curtainTex }));
+    this.curtainTex = smoothTex(canvasTex(256, 128, drawVelvet));
+    const cg = new THREE.PlaneGeometry(9, 6.5, 72, 6), cp = cg.attributes.position;
+    for (let i = 0; i < cp.count; i++) { const x = cp.getX(i); cp.setZ(i, Math.sin(x * 7.0) * 0.1 + Math.sin(x * 17.0 + 1.3) * 0.03); }
+    cg.computeVertexNormals();
+    this.curtain = new THREE.Mesh(cg, CircusShade.material({ map: this.curtainTex, gloss: 0.3, shine: 18, rim: 1.1, wrap: 0.6, emit: 0.22 }));
     this.curtain.visible = false; this.curtain.renderOrder = 6; scene.add(this.curtain);
     this.redBalloon = new THREE.Mesh(mergeGeos([
       { geo: new THREE.SphereGeometry(0.22, 14, 10), matrix: M4(0, 0, 0, 0, 0, 0, 1, 1.18, 1), color: 0xe8283c },
       { geo: new THREE.ConeGeometry(0.04, 0.06, 6), matrix: M4(0, -0.27, 0, Math.PI, 0, 0), color: 0xb81828 },
       { geo: new THREE.CylinderGeometry(0.004, 0.004, 1.1, 3), matrix: M4(0, -0.85, 0), color: 0xfff4dc },
-    ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    ]), CircusShade.material({ gloss: 1.6, shine: 90, rim: 0.8, emit: 0.3 }));
     this.redBalloon.visible = false; scene.add(this.redBalloon);
   },
   setGauge(text, color) {
@@ -19426,9 +19442,17 @@ BOSSES.ringmaster = {
     BigTopKit.update(G.rdt); StormKit.update(G.dt); RingKit.update(G.dt); CircusFX.update(G.dt);
     if (!B) return;
     this.updateCameos(B, G.dt);
-    // spareable: a single spotlight settles softly on you both
-    const want = B.spare >= 100 && RM_TALK_STATES.includes(B.state) && BigTopKit.ready;
-    if (want !== !!this.spareSpot) { this.spareSpot = want; if (want) BigTopKit.spotOn(3, _v1.set(0, 13.5, -3.4), _v2.set(0, 0, -3.8), 4.4, 0xfff0c8, 0.03); else if (BigTopKit.ready) BigTopKit.spotOff(3); }
+    // spareable: a single spotlight settles softly on you both; in the dark (LIGHTS OUT) a lonely cold
+    // spotlight finds him while he talks
+    const spare = B.spare >= 100 && RM_TALK_STATES.includes(B.state) && BigTopKit.ready;
+    const lonely = !spare && B.phase === 1 && RM_TALK_STATES.includes(B.state) && BigTopKit.ready && !this.ending;
+    const mode = spare ? 'spare' : lonely ? 'lonely' : null;
+    if (mode !== (this.spotMode || null)) {
+      this.spotMode = mode; this.spareSpot = spare;
+      if (mode === 'spare') BigTopKit.spotOn(3, _v1.set(0, 13.5, -3.4), _v2.set(0, 0, -3.8), 4.4, 0xfff0c8, 0.03);
+      else if (mode === 'lonely') BigTopKit.spotOn(3, _v1.set(0.6, 12.2, -6.4), _v2.set(0, 0, -9.6), 1.6, 0xc8d4ff, 0.045, true);
+      else if (BigTopKit.ready) BigTopKit.spotOff(3);
+    }
     if (this.ending) this.updateEnding(B, G.rdt);
   },
   newState() {
@@ -19439,7 +19463,7 @@ BOSSES.ringmaster = {
   restore(B, s) { B.items = Object.assign({}, s.items); B.applauds = s.applauds; B.bowed = s.bowed; B.juggled = s.juggled; B.candy = false; B.popcorn = 0; B.heckled = false; B.sulk = 0; B.encore = false; },
   hudName(B) { return B && B.tired ? 'GRANDIOSO (TIRED)' : B && B.sulk > 0 ? 'GRANDIOSO (SULKING)' : 'GRANDIOSO'; },
   onLoad(B) {
-    this.ending = null; this.spareSpot = false; this.shieldT = 0;
+    this.ending = null; this.spareSpot = false; this.spotMode = null; this.shieldT = 0;
     this.applyPhaseLook(B, 0, true);
     CircusFX.prewarm();   // compile the lit props / effects during the intro
   },
@@ -19924,7 +19948,7 @@ BOSSES.ringmaster = {
       // a bar into the interlude, which then loops in free-time (onset-driven) mode
       c.seekAtBar('I', T.sections.I.start, when, { xfade: c.barDur });
       c.setFreeTime(true);
-      if (BigTopKit.ready) BigTopKit.setLights(0.12, c.barDur * 1.5);
+      if (BigTopKit.ready) { BigTopKit.setLights(0.12, c.barDur * 1.5); BigTopKit.setCrowd(false, c.barDur * 1.6); BigTopKit.followK = 0; BigTopKit.signDark(c.barDur * 1.2); }
       for (let i = 0; i < 4; i++) c.after(when + i * 2 * c.beatDur, () => { if (BigTopKit.ready) BigTopKit.popBulbs(0.34); });
       if (sky) sky.setMode('night', c.barDur * 1.5);
       G.arena.setTheme('bigtopNight', 1.2);
@@ -19934,11 +19958,14 @@ BOSSES.ringmaster = {
       // THE GRAND FINALE: a drumroll swells over a bar (~2 s), then the finale hits on the next
       // bar line - all lights blasting on (a 0.5 s fade-in in reduced mode), storm, torn tent
       G.audio.sfx.drumroll(c.barDur);
+      if (BigTopKit.ready) BigTopKit.signReveal(c.barDur * 0.95);
       if (G.boss) G.boss.setMood('comedy');
       const hit = when + c.barDur, b0 = (bar + 1) * c.bpb;
       c.after(hit - 0.12, () => { c.play('F', { pos: T.sections.F.start, when: hit, beat0: b0 }); c.setFreeTime(false); });
       c.after(hit, () => {
-        if (BigTopKit.ready) { BigTopKit.reviveBulbs(); BigTopKit.setLights(1, Flash.reduced ? 0.5 : 0.08); BigTopKit.tearRoof(4); }
+        if (BigTopKit.ready) { BigTopKit.reviveBulbs(); BigTopKit.setLights(1, Flash.reduced ? 0.5 : 0.08); BigTopKit.tearRoof(4); BigTopKit.setCrowd(true, 0.6); BigTopKit.followK = 1; BigTopKit.crowdCheer(1.6); }
+        if (CircusFX.ready) { CircusFX.paper(_v1.set(0, 10.5, -1.5), 34, 2.2); CircusFX.flash(_v1.set(5, 10, -9), 0xdfe4ff, 2.4, 9, 0.35); }
+        G.audio.sfx.thunder(0.2);
         if (sky) sky.setMode('storm', 1.2);
         StormKit.setRain(true); G.audio.sfx.rainLoop(true);
         G.arena.setTheme('bigtopStorm', Flash.reduced ? 0.5 : 0);
@@ -19987,7 +20014,7 @@ BOSSES.ringmaster = {
     if (G.trapeze) G.trapeze.stop();
     StormKit.clear();
     if (BigTopKit.ready) { for (let i = 0; i < 4; i++) BigTopKit.spotOff(i); BigTopKit.hideNet(); }
-    this.shieldT = 0; this.spareSpot = false;
+    this.shieldT = 0; this.spareSpot = false; this.spotMode = null;
     if (G.loco.boost === 0.35) G.loco.boost = 1;
     if (B && B.state !== 'GAME_OVER') G.audio.sfx.rainLoop(false);
   },
@@ -20027,7 +20054,7 @@ BOSSES.ringmaster = {
       B.after(1.2, () => {
         const sky = G.bg.circus; if (sky) sky.setMode('clear', 3);
         StormKit.setRain(false); G.audio.sfx.rainLoop(false);
-        if (BigTopKit.ready) BigTopKit.setLights(0.35, 2.5);
+        if (BigTopKit.ready) { BigTopKit.setLights(0.35, 2.5); BigTopKit.setCrowd(false, 3); BigTopKit.followK = 0; BigTopKit.signDark(2.4); }
         G.arena.setTheme('bigtopNight', 1.5);
       });
       for (let i = 0; i < 5; i++) B.after(2.0 + i * 0.9, () => { if (BigTopKit.ready) BigTopKit.letGo(i); });
@@ -20055,7 +20082,7 @@ BOSSES.ringmaster = {
     this.cheerGuests(8);
     const E = this.ending;
     B.afterIn('SPARE_BOW', 1.6, () => {
-      if (BigTopKit.ready) { BigTopKit.mendRoof(true); BigTopKit.reviveBulbs(); BigTopKit.setLights(0.9, 2); }
+      if (BigTopKit.ready) { BigTopKit.mendRoof(true); BigTopKit.reviveBulbs(); BigTopKit.setLights(0.9, 2); BigTopKit.setCrowd(true, 1.2); BigTopKit.crowdCheer(8); BigTopKit.followK = 1; BigTopKit.signReveal(1.6); }
       const sky = G.bg.circus; if (sky) sky.setMode('clear', 3);
       StormKit.setRain(false); G.audio.sfx.rainLoop(false);
       G.arena.setTheme('bigtop', 2);
@@ -24990,26 +25017,62 @@ const OUTLAW_PATTERNS = {
 
 // ---- the campfire guests of the SPARE ending (the ringmaster, unmasked; bosses 1 and 2 reuse their minis)
 function buildRingmasterMini() {
+  // a little GRANDIOSO for boss 4's campfire: off his stilts at last, sitting in his crimson tailcoat with the gold
+  // waistcoat and ruff, his tent hat on and the cane across his knees; the comedy mask lies on the ground beside
+  // him, face up, and he wears his own tired smile
   const root = new THREE.Group();
-  const body = new THREE.Mesh(mergeGeos([
-    { geo: new THREE.BoxGeometry(0.3, 0.4, 0.2), matrix: M4(0, 0.2, 0), color: 0xb81828 },
-    { geo: new THREE.BoxGeometry(0.12, 0.22, 0.02), matrix: M4(0, 0.29, 0.105), color: 0xfff4dc },
-    { geo: new THREE.BoxGeometry(0.06, 0.025, 0.02), matrix: M4(0, 0.39, 0.112), color: 0xffc83c },
-    { geo: new THREE.SphereGeometry(0.11, 10, 8), matrix: M4(0, 0.52, 0), color: 0xe8c8a8 },
-    { geo: new THREE.BoxGeometry(0.025, 0.025, 0.02), matrix: M4(-0.04, 0.54, 0.1), color: 0x2a1a14 },
-    { geo: new THREE.BoxGeometry(0.025, 0.025, 0.02), matrix: M4(0.04, 0.54, 0.1), color: 0x2a1a14 },
-    { geo: new THREE.BoxGeometry(0.05, 0.012, 0.02), matrix: M4(0, 0.48, 0.105), color: 0x8a3a3a },
-    { geo: new THREE.CylinderGeometry(0.13, 0.13, 0.015, 12), matrix: M4(0, 0.62, 0), color: 0x1a0a14 },
-    { geo: new THREE.CylinderGeometry(0.075, 0.08, 0.18, 12), matrix: M4(0, 0.72, 0), color: 0x1a0a14 },
-    { geo: new THREE.CylinderGeometry(0.081, 0.081, 0.03, 12), matrix: M4(0, 0.65, 0), color: 0xb81828 },
-    { geo: new THREE.CylinderGeometry(0.01, 0.01, 0.5, 5), matrix: M4(0.2, 0.22, 0.05, 0.2, 0, 0), color: 0x1a0a14 },
-    { geo: new THREE.SphereGeometry(0.025, 6, 5), matrix: M4(0.21, 0.46, 0.1), color: 0xffc83c },
-    // the mask, set down on the ground beside him
-    { geo: new THREE.CylinderGeometry(0.07, 0.07, 0.012, 14), matrix: M4(-0.22, 0.006, 0.12), color: 0xfff4dc },
-  ]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  const RED = 0xc8182c, DRED = 0x8a0e1e, GOLD = 0xffc83c, CREAM = 0xfff4dc, INK = 0x141018;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const limb = (a, b, r) => { _v6.subVectors(b, a); const len = _v6.length(); return { geo: new THREE.CylinderGeometry(r, r * 0.9, len, 8), matrix: new THREE.Matrix4().compose(_v7.addVectors(a, b).multiplyScalar(0.5), new THREE.Quaternion().setFromUnitVectors(UP, _v6.normalize()), V_ONE) }; };
+  const P = [
+    { geo: new THREE.LatheGeometry([[0.135, 0.15], [0.122, 0.22], [0.142, 0.32], [0.158, 0.4], [0.12, 0.455], [0.05, 0.485]].map(([x, y]) => new THREE.Vector2(x, y)), 16), color: RED },
+    { geo: new THREE.BoxGeometry(0.085, 0.17, 0.02), matrix: M4(0, 0.31, 0.135, -0.08, 0, 0), color: GOLD },
+    { geo: new THREE.BoxGeometry(0.06, 0.075, 0.02), matrix: M4(0, 0.42, 0.13, -0.15, 0, 0), color: CREAM },
+    { geo: new THREE.TorusGeometry(0.072, 0.022, 6, 18), matrix: M4(0, 0.49, 0, Math.PI / 2, 0, 0), color: 0xfffaf2 },
+    { geo: new THREE.TorusGeometry(0.127, 0.012, 4, 18), matrix: M4(0, 0.24, 0, Math.PI / 2, 0, 0), color: INK },
+    { geo: new THREE.SphereGeometry(0.1, 12, 9), matrix: M4(0, 0.585, -0.015, 0, 0, 0, 1, 1.1, 0.95), color: 0x2a1810 },
+    { geo: new THREE.CylinderGeometry(0.155, 0.155, 0.012, 18), matrix: M4(0, 0.672, 0), color: DRED },
+    ...btStriped(0.085, 0.085, 0.12, 10, RED, CREAM, M4(0, 0.735, 0)),
+    ...btStriped(0, 0.1, 0.1, 10, RED, CREAM, M4(0, 0.845, 0)),
+    { geo: new THREE.TorusGeometry(0.087, 0.008, 4, 18), matrix: M4(0, 0.795, 0, Math.PI / 2, 0, 0), color: GOLD },
+    { geo: new THREE.CylinderGeometry(0.004, 0.004, 0.1, 4), matrix: M4(0, 0.93, 0), color: GOLD },
+    { geo: new THREE.BoxGeometry(0.06, 0.035, 0.005), matrix: M4(0.03, 0.96, 0), color: GOLD },
+    { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.015, 10), matrix: M4(-0.135, 0.45, 0, 0, 0, 0.4), color: GOLD },
+    { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.015, 10), matrix: M4(0.135, 0.45, 0, 0, 0, -0.4), color: GOLD },
+    // the coat tails trail over the log behind him
+    { geo: new THREE.BoxGeometry(0.075, 0.02, 0.26), matrix: M4(-0.05, 0.13, -0.17, 0.35, 0, 0), color: RED },
+    { geo: new THREE.BoxGeometry(0.075, 0.02, 0.26), matrix: M4(0.05, 0.13, -0.17, 0.35, 0, 0), color: RED },
+    // the cane across his knees
+    { geo: new THREE.CylinderGeometry(0.008, 0.008, 0.5, 6), matrix: M4(0, 0.215, 0.2, 0, 0, Math.PI / 2 - 0.15), color: INK },
+    { geo: new THREE.IcosahedronGeometry(0.028, 0), matrix: M4(0.25, 0.25, 0.2), color: 0xfff0b0 },
+  ];
+  for (const s of [-1, 1]) {
+    // sitting: striped legs bent at the knee, patent shoes; arms resting on the knees, white gloves
+    const hip = V(s * 0.06, 0.17, 0.04), knee = V(s * 0.07, 0.18, 0.22), ankle = V(s * 0.075, 0.03, 0.25);
+    P.push(Object.assign(limb(hip, knee, 0.042), { color: s < 0 ? RED : CREAM }), Object.assign(limb(knee, ankle, 0.036), { color: s < 0 ? CREAM : RED }));
+    P.push({ geo: new THREE.SphereGeometry(1, 10, 7), matrix: M4(s * 0.075, 0.02, 0.29, 0, 0, 0, 0.045, 0.03, 0.08), color: INK });
+    const sh = V(s * 0.145, 0.43, 0.0), el = V(s * 0.16, 0.3, 0.12), hd = V(s * 0.09, 0.22, 0.2);
+    P.push(Object.assign(limb(sh, el, 0.032), { color: RED }), Object.assign(limb(el, hd, 0.028), { color: RED }));
+    P.push({ geo: new THREE.SphereGeometry(0.036, 10, 8), matrix: M4(hd.x, hd.y + 0.005, hd.z + 0.01), color: 0xf8f6f0 });
+  }
+  const body = new THREE.Mesh(mergeGeos(P), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  for (const p of P) p.geo.dispose();
   root.add(body);
+  // his own face (the tired smile) and the mask on the ground beside him
+  const faceTex = smoothTex(canvasTex(128, 160, drawTiredFace));
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.19), new THREE.MeshBasicMaterial({ map: faceTex, transparent: true, alphaTest: 0.5 }));
+  face.position.set(0, 0.585, 0.083); body.add(face);
+  const maskTex = smoothTex(canvasTex(128, 160)); drawMaskFace(maskTex.userData.ctx, 128, 160, 'comedy', 1); maskTex.needsUpdate = true;
+  const mask = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.21), new THREE.MeshBasicMaterial({ map: maskTex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }));
+  mask.rotation.set(-Math.PI / 2 + 0.25, 0, 0.5); mask.position.set(-0.26, 0.02, 0.14); root.add(mask);
   const g = { root, body, kind: 'ringmaster' };
-  g.update = () => { body.position.y = Math.sin(G.time * 1.1) * 0.008; };
+  g.update = (dt) => {
+    g.cheerT = Math.max(0, (g.cheerT || 0) - dt);
+    body.position.y = g.cheerT > 0 ? Math.abs(Math.sin(G.time * 9)) * 0.05 : Math.sin(G.time * 1.1) * 0.008;
+    // the crystal on his cane glints
+    root.updateMatrixWorld(true); _v6.set(0.25, 0.25 + body.position.y, 0.2).applyMatrix4(root.matrixWorld);
+    G.fx.glow.add(_v6.x, _v6.y, _v6.z, 0.08, 1, 0.9, 0.6, 0.5 + 0.2 * Math.sin(G.time * 2.3), 0);
+  };
   return g;
 }
 
