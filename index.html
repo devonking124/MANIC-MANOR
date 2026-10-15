@@ -2067,6 +2067,14 @@ class BeatClock {
       this.after(start, () => { this.countIn = null; if (onDone) onDone(); });
     });
   }
+  // a pause that ends without RESUME (QUIT TO TITLE, a new fight): forget it and wake the audio back up,
+  // or the context stays suspended and every sound after it (title, shop, the next fight) is silent
+  release() {
+    const a = this.audio; this.paused = null; this.countIn = null;
+    if (!a.ctx) return;
+    a.userPaused = false;
+    if (a.ctx.state === 'suspended') a.ctx.resume().catch(() => {});
+  }
   after(t, fn) { this.tasks.push({ t, fn }); }
   // beat as the player perceived it at ctx time t (latency compensated)
   beatAt(t) { return this.seg.beat0 + this.elapsed(t - this.audio.latency) / this.beatDur; }
@@ -9613,6 +9621,8 @@ class Battle {
   }
   cleanup() {
     this.clearTimers();
+    if (G.clock.paused || G.audio.userPaused) G.clock.release();   // leaving a paused fight (QUIT TO TITLE)
+    this.softPause = false;
     if (this.pattern) { this.pattern.end(); this.pattern = null; }
     G.bullets.clear(false); G.tele.clear();
     G.bullets.frozen = false; G.bullets.bugChance = 0; G.bullets.quarantine = 0; G.bullets.srcTag = null;
