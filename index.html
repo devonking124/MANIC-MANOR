@@ -9790,21 +9790,28 @@ class Battle {
   openModeSelect() {
     G.ui.titleMenu.hide(); G.ui.saveMenu.hide(); G.ui.showTitle(false);
     this.setState('MODE_SELECT');
-    G.ui.showBig('CHOOSE A MODE', { scale: 5, dist: 1.8, y: 0.34, border: null, bg: null, color: '#ffffff' });
+    this.modeHeader();
     G.ui.refreshModeCards();
     G.ui.modeMenu.showArc({ yOff: -0.24 });
   }
-  closeModeSelect() { G.ui.modeMenu.hide(); G.ui.hideBig(); G.ui.showTitle(true); this.setState('TITLE'); G.ui.titleMenu.showArc(); }
+  modeHeader() { G.ui.showBig('CHOOSE A MODE', { scale: 5, dist: 1.8, y: 0.34, border: null, bg: null, color: '#ffffff' }); }
+  closeModeSelect() { this.modePromptN = (this.modePromptN || 0) + 1; G.ui.modeMenu.hide(); G.ui.hideBig(); G.ui.showTitle(true); this.setState('TITLE'); G.ui.titleMenu.showArc(); }
   freePlayOpen() { return !!Save.beaten('outlaw'); }
   chooseStory() {
-    G.ui.modeMenu.hide(); G.ui.hideBig();
+    this.modePromptN = (this.modePromptN || 0) + 1;
+    G.ui.modeMenu.hide(); G.ui.hideBig(); G.ui.prompt.mesh.visible = false;
     G.audio.sfx.digiWhoosh(); RiftKit.surgeT = 0.7;
     G.fx.fadeTo(1, 3.2, 0x140826);
     this.afterIn('MODE_SELECT', 0.4, () => StoryScene.play(() => this.openSaveFiles()));
   }
   chooseFreePlay() {
-    if (!this.freePlayOpen()) { G.audio.sfx.buzz(); G.ui.showPrompt('LOCKED: FINISH THE STORY (BEAT SUNDOWN) TO UNLOCK FREE PLAY', 3, '#b8a8d8'); return; }
-    G.audio.sfx.chimes(); G.ui.showPrompt('FREE PLAY: COMING SOON', 2.4, '#2affd5');
+    const open = this.freePlayOpen(), life = open ? 2.4 : 3, n = this.modePromptN = (this.modePromptN || 0) + 1;
+    if (open) G.audio.sfx.chimes(); else G.audio.sfx.buzz();
+    // the prompt stands in for the header while it shows (they sit at the same height), then the header returns
+    G.ui.hideBig();
+    if (open) G.ui.showPrompt('FREE PLAY: COMING SOON', life, '#2affd5');
+    else G.ui.showPrompt('LOCKED: FINISH THE STORY (BEAT SUNDOWN) TO UNLOCK FREE PLAY', life, '#b8a8d8');
+    this.afterIn('MODE_SELECT', life, () => { if (n === this.modePromptN) this.modeHeader(); });
   }
   // SAVE FILES: FILE 1 (always open) / FILE 2 (encrypted until boss 1 is beaten)
   openSaveFiles() {
