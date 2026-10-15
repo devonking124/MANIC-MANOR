@@ -15367,8 +15367,9 @@ const BigTopKit = {
       this.spots.push({ m, pool, src: new THREE.Vector3(), tgt: new THREE.Vector3(), r: 0.6, a: 0, aT: 0, col: new THREE.Color(0xfff0d0), dust: false });
     }
     // ---- safety net (trapeze), hidden until needed
-    this.netTex = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = 'rgba(255,240,210,0.95)'; g.lineWidth = 2; for (let i = 0; i <= w; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, h); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(w, i); g.stroke(); } }, { repeat: true });
-    this.net = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 12, 12), new THREE.MeshBasicMaterial({ map: this.netTex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+    this.netTex = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = '#fff2dc'; g.lineWidth = 3; for (let i = 0; i <= w; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, h); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(w, i); g.stroke(); } }, { repeat: true });
+    this.netMat = CircusShade.material({ map: this.netTex, cutout: true, side: THREE.DoubleSide, gloss: 0.2, rim: 0.4, emit: 0.32, haze: true });
+    this.net = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 12, 12), this.netMat);
     this.net.rotation.x = -Math.PI / 2; this.net.visible = false; root.add(this.net);
     this.netBounce = 0;
     this.guests = [];
@@ -15624,7 +15625,7 @@ const BigTopKit = {
     // guests
     for (const g of this.guests) if (g.update) g.update(dt, g);
   },
-  showNet(y, w, d, cx, cz) { const A = G.arena; this.net.visible = true; this.net.position.set(cx !== undefined ? cx : A.center.x, y, cz !== undefined ? cz : A.center.z); this.net.scale.set(w, d, 1); this.netTex.repeat.set(w * 2, d * 2); },
+  showNet(y, w, d, cx, cz) { const A = G.arena; this.net.visible = true; this.net.position.set(cx !== undefined ? cx : A.center.x, y, cz !== undefined ? cz : A.center.z); this.net.scale.set(w, d, 1); this.netMat.uniforms.uMapST.value.set(w * 2, d * 2, 0, 0); },
   hideNet() { this.net.visible = false; },
   // ---- the big top's light block: the mood (sky blend) and the house lights; every frame of the fight
   applyLook() {
@@ -16173,12 +16174,20 @@ const TRAPEZE = {
 class Trapeze {
   constructor() {
     this.group = new THREE.Group(); this.group.visible = false; scene.add(this.group);
-    this.barGeo = new THREE.CylinderGeometry(0.034, 0.034, TRAPEZE.BAR_W, 10); this.barGeo.rotateZ(Math.PI / 2);   // long axis = x
-    this.ropeGeo = new THREE.CylinderGeometry(0.009, 0.009, 1, 5); this.ropeGeo.translate(0, 0.5, 0);
-    this.ropeMat = new THREE.MeshBasicMaterial({ color: 0xd8c8a0 });
+    this.barGeo = CircusGeo.decor([   // long axis = x
+      { geo: new THREE.CylinderGeometry(0.034, 0.034, TRAPEZE.BAR_W, 12).rotateZ(Math.PI / 2) },
+      { geo: new THREE.CylinderGeometry(0.039, 0.039, 0.2, 12).rotateZ(Math.PI / 2), matrix: M4(-0.25, 0, 0), color: 0xfaf6f0, decor: 1 },
+      { geo: new THREE.CylinderGeometry(0.039, 0.039, 0.2, 12).rotateZ(Math.PI / 2), matrix: M4(0.25, 0, 0), color: 0xfaf6f0, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.046, 10, 8), matrix: M4(-TRAPEZE.BAR_W / 2, 0, 0), color: 0xe8283c, decor: 1 },
+      { geo: new THREE.SphereGeometry(0.046, 10, 8), matrix: M4(TRAPEZE.BAR_W / 2, 0, 0), color: 0xe8283c, decor: 1 },
+    ]);
+    this.ropeGeo = new THREE.CylinderGeometry(0.012, 0.012, 1, 6); this.ropeGeo.translate(0, 0.5, 0);
+    this.ropeMat = CircusShade.material({ color: 0xd8c8a0, map: BTTex.get('barber'), mask: true, mapST: [1, 30, 0, 0], gloss: 0.2, rim: 0.45, emit: 0.2 });
+    this.rigMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 10), CircusShade.material({ color: 0xffc83c, gloss: 1.4, shine: 70, rim: 0.6, emit: 0.2 }), 12);
+    this.rigMesh.count = 0; this.rigMesh.frustumCulled = false; this.group.add(this.rigMesh);
     this.bars = [];
     for (let i = 0; i < 6; i++) {
-      const mat = new THREE.MeshBasicMaterial({ color: 0xffc83c });
+      const mat = CircusShade.material({ color: 0xffc83c, decor: true, gloss: 1.5, shine: 80, rim: 0.7, emit: 0.3 });
       const bar = new THREE.Mesh(this.barGeo, mat);
       const ropes = [new THREE.Mesh(this.ropeGeo, this.ropeMat), new THREE.Mesh(this.ropeGeo, this.ropeMat)];
       const g = new THREE.Group(); g.add(bar, ropes[0], ropes[1]); g.visible = false; this.group.add(g);
@@ -16207,6 +16216,7 @@ class Trapeze {
       b.anchor.set(d.x, o.lowY + L, d.z);
       b.near = 0; b.held = 0;
     });
+    this.layoutRig();
     this.active = true; this.hover = true; this.att.length = 0; this.vel.set(0, 0, 0); this.histN = 0;
     this.netSoft = o.softNet || 0; this.catches = 0; this.lastRelease.bar = null;
     this.group.visible = true;
@@ -16241,9 +16251,21 @@ class Trapeze {
         const len = _v1.length();
         rope.quaternion.setFromUnitVectors(UP, _v1.divideScalar(len)); rope.scale.set(1, len, 1);
       }
-      b.mat.color.setHex(b.held ? 0xff8fd0 : b.near ? 0xfff0f8 : 0xffc83c);
+      b.mat.uniforms.uColor.value.setHex(b.held ? 0xff8fd0 : b.near ? 0xfff0f8 : 0xffc83c); b.mat.uniforms.uGlow.value.setHex(b.held ? 0x4a1430 : b.near ? 0x3a3038 : 0x000000);
       if (b.near && !b.held) G.fx.glow.add(b.pos.x, b.pos.y, b.pos.z, 0.5, 1, 0.45, 0.75, 0.35, 0);
     }
+  }
+  // the rigging over the anchors: two pipes along the swing line, cross pipes at the ends, hung from the roof
+  layoutRig() {
+    const on = this.bars.filter((b) => b.on), M = this.rigMesh;
+    if (!on.length) { M.count = 0; return; }
+    let z0 = 1e9, z1 = -1e9; for (const b of on) { z0 = Math.min(z0, b.anchor.z); z1 = Math.max(z1, b.anchor.z); }
+    const a = on[0].anchor, y = a.y + 0.05; let n = 0;
+    const put = (x, yy, z, ax, len, r) => { _q1.setFromUnitVectors(UP, ax === 0 ? _v4.set(1, 0, 0) : ax === 1 ? _v4.set(0, 1, 0) : _v4.set(0, 0, 1)); _m1.compose(_v1.set(x, yy, z), _q1, _v2.set(r, len, r)); M.setMatrixAt(n++, _m1); };
+    for (const sx of [-0.42, 0.42]) put(a.x + sx, y, (z0 + z1) / 2, 2, z1 - z0 + 1.2, 0.04);
+    for (const z of [z0 - 0.6, z1 + 0.6]) put(a.x, y, z, 0, 1.05, 0.036);
+    for (const z of [z0 - 0.6, z1 + 0.6]) for (const sx of [-0.5, 0.5]) { const top = btRoofY(Math.hypot(a.x + sx, z)) - 0.1; put(a.x + sx, (y + top) / 2, z, 1, Math.max(0.1, top - y), 0.012); }
+    M.count = n; M.instanceMatrix.needsUpdate = true;
   }
   barAt(i) { return this.bars[i]; }
   // world-space hand point: the grip (VR) or a virtual hand above your head (desktop)
@@ -17550,7 +17572,7 @@ const CURTAIN_VS = `uniform float uTime; uniform float uMode; uniform vec2 uSize
     }
     vec4 w = modelMatrix * vec4(p, 1.0); vW = w.xyz; vN = n;
     gl_Position = projectionMatrix * viewMatrix * w; }`;
-const CURTAIN_FS = `uniform vec2 uSize; uniform vec4 uHole[2]; uniform float uTime; uniform float uAlpha; uniform float uMode;
+const CURTAIN_FS = `uniform vec2 uSize; uniform vec4 uHole[2]; uniform float uTime; uniform float uAlpha; uniform float uMode; uniform sampler2D uCanvas;
   uniform vec3 uKeyDir; uniform vec3 uKeyCol; uniform vec3 uSky; uniform vec3 uGround;
   uniform int uPtN; uniform vec4 uPtPos[4]; uniform vec3 uPtCol[4];
   varying vec2 vUv; varying vec3 vN; varying vec3 vW;
@@ -17571,21 +17593,28 @@ const CURTAIN_FS = `uniform vec2 uSize; uniform vec4 uHole[2]; uniform float uTi
         #include <colorspace_fragment>
         return;
       }
-      // rising, domain-warped flames; white-hot where the hoops burn through
-      vec2 q = vec2(p.x * 2.3, p.y * 1.5 - uTime * 2.4);
-      float n = fbm(q + vec2(vnoise(q * 0.6 + uTime * 0.35) * 1.1, 0.0));
-      float rim = 1.0 - smoothstep(0.0, 0.2, edge);
-      float heat = clamp(n * 1.5 - 0.12 + rim * 0.95 + 0.1 * sin(p.x * 3.0 + uTime * 2.0), 0.0, 1.45);
-      col = mix(vec3(0.5, 0.05, 0.02), vec3(1.0, 0.34, 0.05), smoothstep(0.12, 0.55, heat));
-      col = mix(col, vec3(1.0, 0.78, 0.26), smoothstep(0.62, 1.0, heat));
-      col = mix(col, vec3(1.0, 0.97, 0.86), smoothstep(1.05, 1.4, heat));
+      // tongues of flame rising off a burning bed: solid low down, thinning into licks and smoke up top,
+      // with dark gaps you can see through; white-hot where the hoops burn through
+      float hy = clamp((p.y + uSize.y * 0.5) / uSize.y, 0.0, 1.0);
+      vec2 q = vec2(p.x * 2.6, p.y * 1.3 - uTime * 2.9);
+      float w = fbm(q * 0.65 + vec2(0.0, uTime * 0.45));
+      float n = fbm(q + vec2((w - 0.5) * 1.8, 0.0));
+      float tongue = smoothstep(hy * 0.92 - 0.1, hy * 0.92 + 0.2, n + 0.3 * (1.0 - hy));
+      float rim = 1.0 - smoothstep(0.0, 0.18, edge);
+      // (linear colours: the output is sRGB-encoded, so these land as gold at the bed, orange, then red licks;
+      // only the hoops' rims get white-hot)
+      float heat = clamp(tongue * (0.7 + 0.55 * n - 0.45 * hy) + rim * 1.0 + 0.08 * sin(p.x * 3.0 + uTime * 2.0), 0.0, 1.5);
+      col = mix(vec3(0.3, 0.025, 0.01), vec3(1.0, 0.22, 0.02), smoothstep(0.1, 0.5, heat));
+      col = mix(col, vec3(1.0, 0.52, 0.1), smoothstep(0.6, 1.0, heat));
+      col = mix(col, vec3(1.0, 0.92, 0.75), smoothstep(1.1, 1.4, heat));
+      float sm = smoothstep(0.55, 1.0, hy) * smoothstep(0.45, 0.8, vnoise(q * 0.5 + vec2(3.0, uTime * 0.3))) * (1.0 - tongue);
+      col = mix(col, vec3(0.16, 0.12, 0.12), sm * 0.8);
       float top = uSize.y * 0.5 - p.y;
-      a = uAlpha * clamp(0.3 + 0.72 * smoothstep(0.18, 0.78, n) + rim * 0.45, 0.0, 1.0) * smoothstep(0.0, 0.05 + 0.04 * n, top);
-      a *= mix(0.3, 1.0, smoothstep(0.15, 0.75, length(vW - cameraPosition)));   // see through the wall you are passing
+      a = uAlpha * clamp(0.06 + 0.94 * tongue + rim * 0.55 + sm * 0.3, 0.0, 1.0) * smoothstep(0.0, 0.05 + 0.04 * n, top);
+      a *= mix(0.12, 1.0, smoothstep(0.15, 0.75, length(vW - cameraPosition)));   // a wall passing through your head thins right out
     } else {
       // red-and-cream canvas, rain running down it, a gold rope + grommets along the top; lit by the storm
-      float s = step(0.5, fract(p.x * 2.4 + 0.25));
-      vec3 base = mix(vec3(0.91, 0.16, 0.24), vec3(1.0, 0.96, 0.86), s);
+      vec3 base = texture2D(uCanvas, vec2(fract(p.x * 1.2 + 0.25), 0.5 - p.y / uSize.y * 0.9)).rgb * 1.1;
       float wet = smoothstep(0.55, 1.0, vnoise(vec2(p.x * 9.0, p.y * 1.3 + uTime * 0.9)));
       base *= 1.0 - 0.28 * wet;
       float top = uSize.y * 0.5 - p.y;
@@ -17791,7 +17820,7 @@ const RingKit = {
     // ---- curtains (fire walls with candy-striped hoops / torn canvas with rope rings)
     this.curtains = [];
     for (let i = 0; i < 2; i++) {
-      const u = Object.assign({}, CS.uniforms(), { uSize: { value: new THREE.Vector2(1, 1) }, uHole: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uTime: { value: 0 }, uAlpha: { value: 1 }, uMode: { value: 0 } });
+      const u = Object.assign({}, CS.uniforms(), { uSize: { value: new THREE.Vector2(1, 1) }, uHole: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uTime: { value: 0 }, uAlpha: { value: 1 }, uMode: { value: 0 }, uCanvas: { value: BTTex.get('canvas') } });
       const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 24, 18), new THREE.ShaderMaterial({ uniforms: u, vertexShader: CURTAIN_VS, fragmentShader: CURTAIN_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
       m.visible = false; m.renderOrder = 3; scene.add(m);
       this.curtains.push({ m, u, active: false, owner: null, holes: [], z: 0, key: null, reward: false, mode: 0 });
@@ -17860,6 +17889,7 @@ const RingKit = {
     this.fixBody = inst(fixtureGeo(), CS.material({ gloss: 0.9, shine: 50, rim: 0.5, emit: 0.1 }), 4);
     const lens = new THREE.CircleGeometry(0.185, 20); lens.rotateX(Math.PI / 2); lens.translate(0, -0.225, 0);
     this.fixLens = inst(lens, CS.material({ vertexColors: false, gloss: 0, rim: 0, emit: 1.0 }), 4);
+    this.fixCable = inst(new THREE.CylinderGeometry(0.012, 0.012, 1, 5), CS.material({ color: 0x1a1612, gloss: 0.3, rim: 0.3, emit: 0.05 }), 4);
     // ---- the proprietor's shield chandelier (an audience cameo)
     const sh = this.shield = new THREE.Group(); sh.visible = false; scene.add(sh);
     const shParts = [{ geo: new THREE.TorusGeometry(0.5, 0.03, 6, 24), matrix: M4(0, 0, 0, Math.PI / 2, 0, 0), color: 0xc8a040 }];
@@ -17874,7 +17904,7 @@ const RingKit = {
     for (const c of this.curtains) { c.active = false; c.m.visible = false; }
     for (const b of this.balloons) b.active = false;
     for (const g of this.gloves) { g.owner = null; g.s = 0; }
-    for (const m of [this.cannonBarrel, this.cannonCarriage, this.cannonWheels, this.cannonDrum, this.cannonCap, this.hoops, this.balStrings, this.ctrlBars, this.ctrlCross, this.gloveOpen, this.gloveFist, this.fixBody, this.fixLens, ...this.balloonMeshes]) { m.count = 0; m.visible = false; }
+    for (const m of [this.cannonBarrel, this.cannonCarriage, this.cannonWheels, this.cannonDrum, this.cannonCap, this.hoops, this.balStrings, this.ctrlBars, this.ctrlCross, this.gloveOpen, this.gloveFist, this.fixBody, this.fixLens, this.fixCable, ...this.balloonMeshes]) { m.count = 0; m.visible = false; }
     this.ballerina.visible = false; this.strings.visible = false; this.strings.geometry.instanceCount = 0; this.shield.visible = false;
   },
   flush(m, n) { m.count = n; m.visible = n > 0; if (n) { m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; } },
@@ -17933,9 +17963,15 @@ const RingKit = {
       if (n >= 4) break;
       _q1.setFromUnitVectors(RM.DOWN, f.dir); _m1.compose(f.src, _q1, _v1.setScalar(1.7));
       this.fixBody.setMatrixAt(n, _m1); this.fixLens.setMatrixAt(n, _m1);
-      this.fixLens.setColorAt(n, _c1.setHex(f.col).multiplyScalar(f.on === false ? 0.3 : 1.6)); n++;
+      this.fixLens.setColorAt(n, _c1.setHex(f.col).multiplyScalar(f.on === false ? 0.3 : 1.6));
+      // it hangs on a cable from the rigging under the roof; its lens glows
+      _v2.set(0, 0.95, 0).applyQuaternion(_q1).add(f.src); const top = btRoofY(Math.hypot(_v2.x, _v2.z)) - 0.15;
+      _m1.compose(_v3.set(_v2.x, (_v2.y + top) / 2, _v2.z), _q2.identity(), _v4.set(1, Math.max(0.05, top - _v2.y), 1)); this.fixCable.setMatrixAt(n, _m1);
+      _v2.set(0, -0.4, 0).applyQuaternion(_q1).add(f.src);
+      G.fx.glow.add(_v2.x, _v2.y, _v2.z, 0.42, _c1.r / 1.6, _c1.g / 1.6, _c1.b / 1.6, f.on === false ? 0.12 : 0.5, 0);
+      n++;
     }
-    this.flush(this.fixBody, n); this.flush(this.fixLens, n);
+    this.flush(this.fixBody, n); this.flush(this.fixLens, n); this.flush(this.fixCable, n);
   },
 };
 registerKit(RingKit, function () { this.cannons = []; this.curtains = []; this.balloons = []; this.balloonGeos = null; this.balloonMeshes = []; this.gloves = []; });
@@ -18039,6 +18075,7 @@ class JugglersCascade extends Pattern {
     this.lanes = [this.pickLane(0), this.pickLane(1)];
     for (let j = 0; j < (this.two ? 2 : 1); j++) this.preview(this.lanes[j], j ? 1 - this.hand[j] : this.hand[j]);
     this.placeGloves();
+    this.spotZ = this.lanes.map((L) => L.z); this.fix = [];
     if (this.o.tutorial) G.ui.showPrompt('THE OPENING ACT!  DODGE THE JUGGLING', 3.2, '#ffc83c');
   }
   // a lane: the arc plane (z) and its height; picked near you so you have to step out of it
@@ -18121,6 +18158,21 @@ class JugglersCascade extends Pattern {
       }
     }
     if (!this.spawning && this.isIdle()) for (const g of this.gl) if (g.owner === this) g.owner = null;
+    // a warm spotlight on each lane (it drifts to the next lane at each bar), hung from the rigging
+    if (BigTopKit.ready) {
+      const A2 = G.arena, live = this.spawning || !this.isIdle();
+      this.fix.length = 0;
+      for (let j = 0; j < (this.two ? 2 : 1); j++) {
+        this.spotZ[j] = damp(this.spotZ[j], this.lanes[j].z, 3, dt);
+        const sp = this.fixSp || (this.fixSp = [new THREE.Vector3(), new THREE.Vector3()]), dir = this.fixDir || (this.fixDir = [new THREE.Vector3(), new THREE.Vector3()]);
+        sp[j].set(A2.center.x * 0.5 + (j ? 0.7 : -0.7), A2.max.y + 5.0, this.spotZ[j] - 0.9);
+        _v4.set(A2.center.x, A2.min.y, this.spotZ[j]);
+        if (live) BigTopKit.spotOn(1 + j, sp[j], _v4, 1.25, 0xffe2b0, 0.05); else BigTopKit.spotOff(1 + j);
+        dir[j].subVectors(_v4, sp[j]).normalize();
+        this.fix.push({ src: sp[j], dir: dir[j], col: 0xffe2b0, on: live });
+      }
+      RingKit.layoutFixtures(live ? this.fix : []);
+    }
     // each glove waits where its next action is: the landing of a ball still in flight, or its next throw
     const A = G.arena, pools = [G.bullets.pools.ball, G.bullets.pools.pin];
     for (let j = 0; j < 2; j++) for (let s = 0; s < 2; s++) {
@@ -18136,7 +18188,7 @@ class JugglersCascade extends Pattern {
     }
   }
   isIdle() { return !G.bullets.pools.ball.active.some((b) => b.owner === this) && !G.bullets.pools.pin.active.some((b) => b.owner === this); }
-  onEnd() { for (const g of this.gl) if (g.owner === this) g.owner = null; this.prev.length = 0; }   // the gloves bow out (RingKit.update)
+  onEnd() { for (const g of this.gl) if (g.owner === this) g.owner = null; this.prev.length = 0; if (BigTopKit.ready) { BigTopKit.spotOff(1); BigTopKit.spotOff(2); } RingKit.layoutFixtures([]); }   // the gloves bow out (RingKit.update)
 }
 
 // 2. CLOWN CANNONS - cannons around the ring smoke for a beat, then fire rubbery
@@ -18182,6 +18234,7 @@ class ClownCannons extends Pattern {
     FX.sparks(c.muzzle, 12, 0xffd890, 2.4, 0.45, 0.016, 2, 0.05, dir, 0.7);
     FX.paper(c.muzzle, 8, 0.9, CIRCUS_PAPER, dir);
     FX.pop('BOOM!', _v5.copy(c.base).setY(c.base.y + 0.62), 0.42, 0.4);
+    FX.smoke(_v5.set(c.base.x, 0.06, c.base.z), 5, { color: 0xc8a070, size: 0.15, speed: 0.55, alpha: 0.3, rise: 0.12 });
     const alive = G.bullets.pools.ball.active.filter((b) => b.owner === this && !b.dying).length;
     if (alive >= this.maxAlive || this.skip()) return;
     const b = G.bullets.spawn('ball', c.muzzle.x, c.muzzle.y, c.muzzle.z); if (!b) return;
@@ -18229,6 +18282,7 @@ class ClownCannons extends Pattern {
       // the barrel tracks you while it smokes; it swells just before it fires (and stretches after)
       c.recoil = Math.max(0, c.recoil - dt * 4);
       c.rock = Math.max(0, c.rock - dt * 3); c.slide = Math.max(0, c.slide - dt * 2.2);
+      if (c.recoil > 0.05) FX.floorLight(c.base.x, 0.0, c.base.z, 1.4, 0xffa850, 0.5 * c.recoil);
       if (c.smoke > 0) c.bulge = Math.min(1, c.bulge + dt / (this.bd * 0.9)); else c.bulge = Math.max(0, c.bulge - dt * 6);
       const back = easeOut(c.slide) * 0.14;
       c.g.position.copy(c.base); _v1.set(0, 0, -back).applyQuaternion(c.g.quaternion); c.g.position.add(_v1);
@@ -18364,6 +18418,7 @@ class BalloonMenagerie extends Pattern {
       // rise slowly, bob (small ones bob in place so you can read them)
       b.pos.y = Math.min(A.max.y - 0.45 * b.size, b.pos.y + b.vy * dt);
       b.yaw += dt * 0.4; b.s = Math.min(1, b.s + dt * 3);
+      if (chance(dt * 1.6)) G.fx.parts.emit(b.draw.x + rand(-0.1, 0.1), b.draw.y + 0.25 * b.size, b.draw.z + rand(-0.1, 0.1), 0, rand(0.2, 0.4), 0, rand(0.7, 1.1), 0.018, 1, 0.92, 1, 0.5, -0.2, 1);
     }
     layoutBalloons();
   }
@@ -18567,6 +18622,10 @@ class MarionetteStrings extends Pattern {
         _e1.set(0, c.alongX ? 0 : Math.PI / 2, Math.sin(G.time * 1.3 + c.seed) * 0.06); _q1.setFromEuler(_e1);
         _m1.compose(_v1.set(cx, top + 0.02, cz), _q1, _v2.set(span, 1, 1)); K.ctrlBars.setMatrixAt(nc, _m1);
         _m1.compose(_v1, _q1, V_ONE); K.ctrlCross.setMatrixAt(nc, _m1); nc++;
+        for (const e of [-1, 1]) if (n < K.STR_CAP) {
+          const ex = cx + (c.alongX ? e * span / 2 : 0), ez = cz + (c.alongX ? 0 : e * span / 2);
+          K.silk(n++, ex, btRoofY(Math.hypot(ex, ez)) - 0.2, ez, ex, top + 0.03, ez, c.seed + e * 2.3, 0, 0.9, 0.78, 0.5, 0.45);
+        }
       }
       for (let i = 0; i < c.pos.length; i++) {
         const u = c.pos[i];
@@ -18632,8 +18691,9 @@ class MusicBox extends Pattern {
       b.vel.multiplyScalar(Math.sqrt(this.intensity));
     }
     G.audio.sfx.musicBoxNote();
-    // a note floats up out of the box
+    // a note floats up out of the box, the comb sparkles
     const B = RingKit.ballerina;
+    G.fx.sparkle(B.localToWorld(_v4.set(rand(-0.1, 0.1), 0.29, 0.2)), 3);
     G.fx.glyphs.emit(this.c.x + rand(-0.15, 0.15), B.position.y + 0.4 * this.S, this.c.z + rand(-0.15, 0.15), rand(-0.12, 0.12), rand(0.35, 0.55), rand(-0.12, 0.12), rand(1.4, 2.0), rand(0.07, 0.1), 1, pick([0.56, 0.95]), pick([0.82, 0.86]), GlyphAtlas.of('note'), -0.1, 0.4);
   }
   update(dt) {
@@ -18648,6 +18708,7 @@ class MusicBox extends Pattern {
     _v1.set(this.c.x, B.position.y + 0.1, this.c.z); _v2.set(this.c.x, B.position.y + 1.1 * this.S, this.c.z);
     if (this.rise > 0.5) Haz.segment(_v1, _v2, 0.22, RULE.WHITE, this.dmg, this.key);
     G.fx.glow.add(this.c.x, B.position.y + 0.95 * this.S, this.c.z, 0.6, 1, 0.55, 0.8, 0.35, 0);
+    RingKit.mbLid.localToWorld(_v4.set(0.1 * Math.sin(G.time * 0.7), 0.02, 0.23)); G.fx.glow.add(_v4.x, _v4.y, _v4.z, 0.22, 1, 0.9, 0.95, 0.35 + 0.25 * Math.sin(G.time * 2.3), 1);
     // a pink spotlight from the rigging and a soft pink light on the petals around her
     const hy = B.position.y + 0.75 * this.S;
     this.dir.set(this.c.x, A.min.y, this.c.z).sub(this.src).normalize();
@@ -18865,7 +18926,7 @@ class ShowMustGoOn extends Pattern {
   firework(when, i) {
     const to = _v1.set(rand(-7, 7), rand(6, 11), rand(-13, -9)), from = _v2.set(to.x * 0.8 + rand(-1, 1), -2, to.z + rand(-1, 1));
     const hex = pick([0xffc83c, 0xff4d8c, 0xfff4dc, 0xcc66ff, 0xff7a3c]);
-    CircusFX.rocket(from, to, hex, pick(['peony', 'ring', 'willow', 'crossette']), this.bd, 1.6);
+    const at = to.clone(); CircusFX.rocket(from, to, hex, pick(['peony', 'ring', 'willow', 'crossette']), this.bd, 1.6, () => CircusFX.flash(at, hex, 1.3, 7, 0.45));
     if (i === 0) G.audio.sfx.fireworkBoom(when + this.bd);
   }
   update(dt) {
@@ -19262,10 +19323,10 @@ const JuggleKit = {
   ready: false,
   init() {
     if (this.ready) return; this.ready = true;
-    this.pinGeo = makePinGeo();
-    this.pins = [0, 1, 2].map(() => { const m = new THREE.Mesh(this.pinGeo, new THREE.MeshBasicMaterial({ vertexColors: true })); m.scale.setScalar(0.16); m.visible = false; scene.add(m); return m; });
-    const ballGeo = new THREE.SphereGeometry(0.055, 14, 10);
-    this.balls = [0xe8283c, 0xffc83c, 0xff5fb4].map((c) => { const m = new THREE.Mesh(ballGeo, new THREE.MeshBasicMaterial({ color: c })); m.visible = false; scene.add(m); return m; });
+    this.pinGeo = makePinGeo(14);
+    this.pins = [0, 1, 2].map(() => { const m = new THREE.Mesh(this.pinGeo, CircusShade.material({ gloss: 1.0, shine: 60, rim: 0.6, emit: 0.42 })); m.scale.setScalar(0.16); m.visible = false; scene.add(m); return m; });
+    const ballGeo = CircusGeo.ball();
+    this.balls = [0xe8283c, 0xffc83c, 0xff5fb4].map((c) => { const m = new THREE.Mesh(ballGeo, CircusShade.material({ color: c, decor: true, gloss: 1.0, shine: 60, rim: 0.55, emit: 0.42 })); m.scale.setScalar(0.055); m.visible = false; scene.add(m); return m; });
     const ringGeo = new THREE.RingGeometry(0.1, 0.122, 28);
     this.rings = [0, 1, 2].map(() => { const r = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffc83c, transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); r.visible = false; scene.add(r); return r; });
     this.gauge = new TextPanel({ w: 1.0, h: 0.2, cw: 400, bg: 'rgba(40,0,10,0.85)', border: '#ffc83c', borderPx: 3, scale: 3, align: 'center', valign: 'middle', color: '#fff4dc', renderOrder: 45, depthTest: false });
@@ -19480,7 +19541,7 @@ BOSSES.ringmaster = {
     B.fight = { pins: [0, 1, 2].map((k) => ({ k, arrive: first + k, launch: first + k - 2, state: 'wait', hand: null, timing: 0, grade: '', dmg: 0, t: 0,
       p0: new THREE.Vector3(), p1: Head.rel(new THREE.Vector3(), (k % 2 ? 0.2 : -0.2) * (G.xr ? 1 : 0.8), G.xr ? -0.28 : -0.16, G.xr ? 0.42 : 0.8), vel: new THREE.Vector3(), spd: 0 })),
       done: false, sum: 0, perfect: 0, hits: 0, timeout: first + 10 };
-    JuggleKit.pins.forEach((m) => { m.visible = false; m.material.color.setScalar(1); });
+    JuggleKit.pins.forEach((m) => { m.visible = false; m.material.uniforms.uColor.value.setScalar(1); });
     G.ui.showPrompt(G.xr ? 'JUGGLE STRIKE!  CATCH EACH PIN (GRIP) ON ITS BEAT - THEN THROW IT AT HIM' : 'JUGGLE STRIKE!  CLICK AS EACH PIN REACHES YOU - ON THE BEAT', 3, '#ffc83c');
   },
   catchPin(B, P, h, tCatch) {
