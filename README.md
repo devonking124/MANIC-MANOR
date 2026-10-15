@@ -36,6 +36,11 @@ Four bosses, picked from the SAVE FILES screen, and a shop between them:
 Each boss also carries one ★ item you can't buy anywhere (HOUSE KEY, CTRL+Z, BOUQUET,
 POCKET WATCH) that only works on that boss.
 
+Each file is harder than the one before. GRANDIOSO and SUNDOWN have bigger HP bars, hit
+harder and run their acts hotter, and between their acts' own beats they aim at you: a
+gold line (GRANDIOSO's knives) or an orange one (SUNDOWN's revolver) shows each shot a
+beat before it flies at where your SOUL is. Standing still won't do; keep moving.
+
 ## Run it on Quest 3S
 
 1. Host `index.html` and `music_pack.js` side by side on any HTTPS server (GitHub Pages

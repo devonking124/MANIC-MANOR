@@ -4494,7 +4494,7 @@ class UI {
       const spareable = B && B.spare >= 100;
       const name = def.hudName ? def.hudName(B) : def.displayName;
       PixelFont.draw(g, name, Math.round((W - PixelFont.width(name, 3)) / 2), 4, 3, spareable ? P.spareName : P.name, { shadow: '#000' });
-      const bw = 520, bx = Math.round((W - bw) / 2), by = 34;
+      const bw = Math.min(640, Math.round(520 * (def.barScale || 1))), bx = Math.round((W - bw) / 2), by = 34;
       g.fillStyle = '#ffffff'; g.fillRect(bx - 3, by - 3, bw + 6, 24);
       g.fillStyle = P.hpBack; g.fillRect(bx, by, bw, 18);
       const frac = B ? clamp(this.bossHpShown / def.hp, 0, 1) : 1;
@@ -5757,6 +5757,72 @@ function rayBoxExit(p, d) {
   }
   return t === 1e9 ? 3 : t;
 }
+
+// ============================================================================
+//  Pressure - bosses 3 and 4 hunt you. On top of every act, the boss sends aimed shots at your SOUL: a line
+//  shows where each will fly (and a ring where it leaves the box's far wall) a beat ahead, then it flies on
+//  the beat. Standing still is never safe; moving is. Configured per boss (def.pressure); bosses 1 and 2
+//  have none, so they play exactly as before.
+//  def.pressure: { pool, color, every: [beats between volleys, per phase], volley: [shots per volley],
+//                  speed: [m/s], spread (m round your SOUL), skip: [attacks without it], launch(src, dir) }
+// ============================================================================
+const Pressure = {
+  pending: [], lastOnset: -9,
+  clear() { this.pending.length = 0; this.lastOnset = -9; },
+  conf(B) {
+    const P = B.def.pressure, p = B.pattern;
+    if (!P || B.state !== 'BOSS_ATTACK' || !p || !p.started) return null;
+    if ((P.skip && P.skip.includes(B.attackName)) || (p.o && p.o.tutorial)) return null;
+    return P;
+  },
+  // beats between volleys this phase (EASY: fewer, HARD: more; a tired boss eases off)
+  every(B, P) {
+    const d = Settings.data.difficulty;
+    return Math.max(1, Math.round(P.every[B.phase] * (d === 'easy' ? 1.5 : d === 'hard' ? 0.75 : 1) * (B.tired ? 2 : 1)));
+  },
+  onBeat(B, n, when) {
+    const P = this.conf(B); if (!P) return;
+    if (n < 1 || n > B.pattern.beats - 2) return;   // never on the act's first beat, nor its last two
+    if (n % this.every(B, P) !== 0) return;
+    if (B.pattern.sloppy < 1 && chance(1 - B.pattern.sloppy)) return;   // a heckled ringmaster misses some
+    this.volley(B, P, when);
+  },
+  // free-time sections (boss 3's LIGHTS OUT): strong note onsets, no closer than the phase's spacing
+  onOnset(B, t, strength) {
+    const P = this.conf(B); if (!P || strength < 1.5) return;
+    if (t - this.lastOnset < this.every(B, P) * 0.62) return;
+    this.lastOnset = t;
+    this.volley(B, P, t);
+  },
+  volley(B, P, when) {
+    const A = G.arena, s = G.soul.pos, ph = B.phase, k = P.volley[ph];
+    const lead = G.clock.beatDur * (Stats.metronome() ? 1.25 : 1) / Math.min(1, Math.max(0.6, G.bullets.speedMul));
+    const t = Math.max(when, G.audio.now) + lead;
+    const a0 = rand(0, TAU);
+    for (let i = 0; i < k; i++) {
+      // the target: your SOUL now (a volley spreads round it, so stepping aside is the dodge)
+      const a = a0 + i / k * TAU, r = k > 1 ? P.spread : 0;
+      const tgt = new THREE.Vector3(s.x + Math.cos(a) * r, s.y + Math.sin(a) * r * 0.7, s.z);
+      // the source: a point on the box's far wall, off to one side, so the shot crosses your view
+      const src = new THREE.Vector3(clamp(tgt.x + rand(-1, 1) * A.size.x * 0.45, A.min.x + 0.1, A.max.x - 0.1), clamp(tgt.y + rand(-0.5, 0.5) * A.size.y * 0.6, A.min.y + 0.1, A.max.y - 0.1), A.min.z + 0.04);
+      const dir = new THREE.Vector3().subVectors(tgt, src), len = dir.length(); dir.divideScalar(len || 1);
+      G.tele.line(src, _v1.copy(src).addScaledVector(dir, len + 1.2), 0.012, P.color, lead, { pulse: 1, alpha: 0.75 });
+      G.tele.ring(src, dir, 0.08, P.color, lead, { pulse: 1 });
+      this.pending.push({ t, src, dir, speed: P.speed[ph], pool: P.pool });
+    }
+  },
+  update(B) {
+    const now = G.audio.now;
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const p = this.pending[i]; if (now < p.t) continue;
+      this.pending.splice(i, 1);
+      if (B.state !== 'BOSS_ATTACK') continue;
+      const b = G.bullets.spawn(p.pool, p.src.x, p.src.y, p.src.z); if (!b) continue;
+      b.vel.copy(p.dir).multiplyScalar(p.speed); b.life = 4; b.dmg = B.dmg;
+      if (B.def.pressure.launch) B.def.pressure.launch(p.src, p.dir);
+    }
+  },
+};
 
 class Pattern {
   constructor(o = {}) {
@@ -9634,6 +9700,7 @@ class Battle {
     this.clearTimers();
     if (G.clock.paused || G.audio.userPaused) G.clock.release();   // leaving a paused fight (QUIT TO TITLE)
     this.softPause = false;
+    Pressure.clear();
     if (this.pattern) { this.pattern.end(); this.pattern = null; }
     G.bullets.clear(false); G.tele.clear();
     G.bullets.frozen = false; G.bullets.bugChance = 0; G.bullets.quarantine = 0; G.bullets.srcTag = null;
@@ -9989,7 +10056,7 @@ class Battle {
   attackLines(atk) { return this.def.attackLines(this, atk); }
   startAttack(name) {
     const def = this.def, P = def.attacks[name];
-    let intensity = P.intensity !== undefined ? P.intensity : def.phaseRules[this.phase].intensity + Math.min(3, this.cycle[this.phase]) * 0.05;
+    let intensity = P.intensity !== undefined ? P.intensity : (def.phaseRules[this.phase].intensity + Math.min(3, this.cycle[this.phase]) * 0.05) * (def.intensityMul || 1);
     let speedMul = Settings.data.difficulty === 'easy' ? 0.8 : 1;
     if (Stats.metronome()) speedMul *= 0.8;   // METRONOME tape: 25% more time between a telegraph and its bullets
     const mods = def.attackMods ? def.attackMods(this, name) : null;   // consumes stun / slow / item effects
@@ -10007,6 +10074,7 @@ class Battle {
     this.pendingBar = bar;
   }
   finishAttack() {
+    Pressure.clear();
     const p = this.pattern; this.pattern = null;
     if (p) p.end();
     G.bullets.clear(true); G.tele.clear();
@@ -10061,13 +10129,13 @@ class Battle {
     if (this.state === 'BOSS_ATTACK' && this.pattern) {
       const n = b - this.pattern.startBeat;
       if (n >= this.pattern.beats) this.finishAttack();
-      else if (n >= 0) this.pattern.onBeat(n, when);
+      else if (n >= 0) { this.pattern.onBeat(n, when); Pressure.onBeat(this, n, when); }
     }
     if (this.state === 'FIGHT_MINIGAME' && this.fight && !this.fight.done && b >= this.fight.start && b <= this.fight.start + 8) G.audio.sfx.tick(when);
   }
   // free-time sections: note onsets go to the running pattern (and the boss, for a little flourish)
   onOnset(t, strength, synthetic) {
-    if (this.state === 'BOSS_ATTACK' && this.pattern && this.pattern.started) this.pattern.onOnset(t, strength, synthetic);
+    if (this.state === 'BOSS_ATTACK' && this.pattern && this.pattern.started) { this.pattern.onOnset(t, strength, synthetic); if (!synthetic) Pressure.onOnset(this, t, strength); }
     if (G.boss && G.boss.onOnset) G.boss.onOnset(strength, synthetic);
   }
   onHalf(h, when) {
@@ -10348,7 +10416,7 @@ class Battle {
       case 'NARRATE': this.updateNarrate(rdt); break;
       case 'FIGHT_MINIGAME': if (this.def.fightType === 'slash') this.updateFight(); else this.def.updateFight(this, dt, rdt); break;
       case 'DANCE': this.updateDance(rdt); break;
-      case 'BOSS_ATTACK': if (this.pattern) this.pattern.update(dt); break;
+      case 'BOSS_ATTACK': if (this.pattern) this.pattern.update(dt); Pressure.update(this); break;
       case 'COUNT_IN': this.updateCountIn(); break;
       case 'EXIT_DOOR': this.updateExitDoor(dt); break;
       case 'SHOP': Shop.update(dt, rdt); break;
@@ -19427,7 +19495,14 @@ BOSSES.ringmaster = {
     { name: 'II',  hpFrac: 0.55, spare: 40, intensity: 1.40, section: 'I' },   // LIGHTS OUT (free-time)
     { name: 'III', hpFrac: 0.25, spare: 75, intensity: 1.80, section: 'F' },   // THE GRAND FINALE
   ],
-  hp: 3000, stats: { atk: 15, def: 6 }, bulletDmg: [4, 5, 6], phaseGlitch: [0, 0, 0],
+  hp: 3900, stats: { atk: 15, def: 6 }, bulletDmg: [5, 6, 7], phaseGlitch: [0, 0, 0],
+  barScale: 1.12, intensityMul: 1.2,   // harder than boss 2: a bigger bar, harder hits, hotter acts
+  // ...and between the acts' own beats he throws knives at your SOUL (a gold line shows each one a beat ahead)
+  pressure: {
+    pool: 'knife', color: 0xffc83c, every: [3, 3, 2], volley: [1, 2, 2], speed: [2.6, 2.8, 3.0], spread: 0.16,
+    skip: ['trapeze', 'encore', 'showmustgoon'],
+    launch(src) { G.audio.sfx.whoosh(src); G.fx.sparkle(src, 4); },
+  },
   transition: 'custom',
   beatsPerBar: 3,   // the brief's default meter (the procedural waltz is 3/4); the MP3's measured map sets its own (RINGMASTER_MUSIC.beatsPerBar)
   kits: [BigTopKit, StormKit, RingKit, JuggleKit, CircusFX],
@@ -25190,7 +25265,14 @@ BOSSES.outlaw = {
     { name: 'GOLDEN HOUR', hpFrac: 0.60, spare: 35, intensity: 1.45, section: 'B' },
     { name: 'MIDNIGHT',    hpFrac: 0.25, spare: 75, intensity: 1.85, section: 'C' },
   ],
-  hp: 3600, stats: { atk: 16, def: 7 }, bulletDmg: [5, 5, 6], phaseGlitch: [0, 0, 0],
+  hp: 5000, stats: { atk: 16, def: 7 }, bulletDmg: [6, 7, 8], phaseGlitch: [0, 0, 0],
+  barScale: 1.23, intensityMul: 1.3,   // the last boss, harder than boss 3: a bigger bar again, harder hits, hotter acts
+  // ...and he fires on you between them (an orange line shows each shot a beat ahead)
+  pressure: {
+    pool: 'slug', color: 0xff7a2a, every: [2, 2, 1], volley: [1, 1, 2], speed: [3.0, 3.3, 3.6], spread: 0.17,
+    skip: ['yeed'],
+    launch(src) { G.audio.sfx.revolverShot(undefined, 0.45, src); G.fx.burst(src, 6, 1, 0.8, 0.4, 0.8, 0.03); },
+  },
   transition: 'custom',
   beatsPerBar: OUTLAW_BEATS_PER_BAR,
   kits: [OFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit],
