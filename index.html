@@ -4963,7 +4963,7 @@ class UI {
     if (this.hudDirty && this.hudT <= 0) { this.drawHUD(); this.hudDirty = false; this.hudT = 0.08; }
     this.bossShake = Math.max(0, this.bossShake - rdt);
     const A = G.arena;
-    this.bossBar.mesh.position.set(A.center.x + (this.bossShake > 0 ? rand(-0.03, 0.03) : 0), A.max.y + 0.3 + (this.bossShake > 0 ? rand(-0.02, 0.02) : 0), A.min.z - 0.05);
+    this.bossBar.mesh.position.set(A.center.x + (this.bossShake > 0 ? rand(-0.03, 0.03) : 0), A.max.y + ((G.def && G.def.bossBarY) || 0.3) + (this.bossShake > 0 ? rand(-0.02, 0.02) : 0), A.min.z - 0.05);
     this.status.mesh.position.set(A.center.x, A.min.y - 0.12, A.min.z + 0.25);
     this.flavor.mesh.position.set(A.center.x, A.center.y + 0.05, A.min.z + 0.03);
     this.updateTalk(rdt);
