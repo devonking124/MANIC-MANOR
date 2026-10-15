@@ -17,7 +17,8 @@ the tear) and why you face each keeper, then the SAVE FILES screen. SKIP (or Esc
 past the opening. **FREE PLAY** is locked until you beat SUNDOWN, and has nothing in it
 yet.
 
-Four bosses, picked from the SAVE FILES screen, and a shop between them:
+Four bosses, picked from the SAVE FILES screen (a card per boss, each with its own
+animated art and a frame in its world's colours), and a shop between them:
 
 - **FILE 1 - THE MANOR**: THE PROPRIETOR, a haunted mansion in a butler's body.
 - **FILE 2 - THE SERVER**: SCR1PT_K1DD1E, a smug script kiddie who copy-pastes other

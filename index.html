@@ -3820,7 +3820,7 @@ class Button3D {
     this.face = new THREE.Mesh(UNIT_PLANE, new THREE.MeshBasicMaterial({ map: this.tex, transparent: true }));
     this.face.scale.set(this.w, this.h, 1);
     this.root.add(this.body, this.face);
-    if (this.style === 'rift') RiftUI.dress(this);
+    if (this.style === 'rift' || this.style === 'card') RiftUI.dress(this, this.style === 'card' ? o.frame : undefined);
     this.hover = false; this.disabled = false; this.flash = 0; this.pokeNear = false; this.pokeDepth = 0;
     this.armed = [true, true]; this.prevZ = [1, 1]; this.keyHL = false;
     this.draw();
@@ -4311,8 +4311,8 @@ class UI {
       { label: 'SETTINGS', icon: 'gear', style: 'rift', scale: 4, size: 0.8, onPress: () => B.openSettings('title') },
       { label: 'HOW TO PLAY', icon: 'book', style: 'rift', scale: 4, size: 0.8, onPress: () => B.openHowTo() },
     ], { yOff: -0.42 });
-    // SAVE FILES: Undertale-style file cards (pixel font, box outline)
-    const card = (id) => ({ face: { cw: 330, ch: 168, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, size: 0.82, style: 'rift', onPress: () => B.chooseFile(id) });
+    // SAVE FILES: an illustrated card per boss (BossCards) in a frame of its world's colour
+    const card = (id) => ({ face: { cw: 260, ch: 340, draw: (g, W, H, b) => this.drawFileCard(g, W, H, b, id) }, quiet: false, size: 0.92, style: 'card', frame: CARD_THEMES[id].frame, onPress: () => B.chooseFile(id) });
     // the file cards on top; KNOBS' door ("open late") and BACK below
     const files = Object.keys(BOSSES).map(card);
     this.saveMenu = new Menu(files.concat([
@@ -4416,24 +4416,7 @@ class UI {
     delete this.bossMenus[id];
   }
   // ------------------------------------------------------------------ save files
-  drawFileCard(g, W, H, b, id) {
-    const def = BOSSES[id], open = Save.unlocked(id), beat = Save.beaten(id);
-    const col = b.hover ? '#ffe600' : '#ffffff';
-    RiftUI.drawButton({ scale: 4, hover: b.hover, disabled: false, colorN: col, colorH: col, label: '', icon: null }, g, W, H);
-    PixelFont.draw(g, `FILE ${def.fileNo}`, 16, 14, 3, b.hover ? '#ffe600' : '#cbb8ff');
-    if (beat) { PixelFont.draw(g, '★', W - 40, 12, 4, '#ffd23c'); PixelFont.draw(g, beat === 'spare' ? 'SPARED' : 'DEFEATED', W - 16 - PixelFont.width(beat === 'spare' ? 'SPARED' : 'DEFEATED', 2), 50, 2, beat === 'spare' ? '#3cff6e' : '#ff4466'); }
-    if (open) {
-      PixelFont.draw(g, def.fileName, 16, 62, 3, '#ffffff');
-      PixelFont.draw(g, def.displayName, 16, 100, 2, '#bbbbbb');
-      PixelFont.draw(g, beat ? 'COMPLETE' : 'NOT CLEARED', 16, 130, 2, beat ? '#ffd23c' : '#777777');
-      if (b.hover) PixelFont.drawIcon(g, 'heart', W - 34, H - 34, 3, '#ff0033');
-    } else if (def.drawLockedCard) def.drawLockedCard(g, W, H, b);
-    else {
-      PixelFont.draw(g, '[ENCRYPTED]', 16, 64, 3, '#ff3cc8', { glitch: 0.35 * Flash.glitchMul + 0.05 });
-      PixelFont.draw(g, def.fileName, 16, 104, 2, '#3a3a3a', { glitch: 0.5 });
-      PixelFont.draw(g, 'BEAT FILE 1 TO DECRYPT', 16, 134, 2, '#777777');
-    }
-  }
+  drawFileCard(g, W, H, b, id) { BossCards.draw(g, W, H, b, id); }
   refreshSaveCards() { for (const b of this.saveMenu.buttons) if (b.face_) b.draw(); }
   refreshModeCards() { for (const b of this.modeMenu.buttons) if (b.face_) b.draw(); }
   // the mode cards: STORY MODE (the RIFT, your SOUL, how far you've got) and FREE PLAY (chained shut until the
@@ -29400,11 +29383,13 @@ const RiftUI = {
     return g;
   },
   // a button's 3D parts: the lit glass body behind the face, the bezel round it
-  dress(b) {
+  dress(b, frameHex) {
     this.mats();
     b.body.material.dispose(); b.body.material = this.bodyMat;
     b.body.position.z -= b.depth * 0.8;   // room for the face to sink into the bezel when poked
-    b.frame = new THREE.Mesh(this.frameGeo(b.w, b.h), this.frameMat);
+    let fm = this.frameMat;
+    if (frameHex !== undefined) { this.frameMats = this.frameMats || {}; fm = this.frameMats[frameHex] || (this.frameMats[frameHex] = CircusShade.material({ color: frameHex, gloss: 1.5, shine: 80, rim: 0.85, emit: 0.32, vertexColors: false })); }
+    b.frame = new THREE.Mesh(frameHex !== undefined ? this.frameGeo(b.w, b.h, 0.02, 0.02) : this.frameGeo(b.w, b.h), fm);
     b.root.add(b.frame);
   },
   // a button's face: dark glass, a glowing violet-to-teal inner edge, a sheen across the top
@@ -29881,6 +29866,269 @@ const StoryScene = {
       }
       sc.next += step; sc.i++;
     }
+  },
+};
+
+// ============================================================================
+//  BossCards - the SAVE FILES cards: one illustrated card per boss (redrawn a few times a second while the
+//  screen is up, so candles flicker, LEDs blink, bulbs chase and dust drifts). Each has its world's frame
+//  colour, a header (FILE n, a star once cleared), the art window, a name plate and a footer (status,
+//  or how to unlock it). Locked files keep their looks: an encrypted file, a SOLD OUT ticket, a torn
+//  WANTED poster.
+// ============================================================================
+const CARD_THEMES = {
+  proprietor: { frame: 0xc8a040, edge: '#e8c060', ink: '#ffd27a', sub: '#c8a8ff', bg0: '#2a0f30', bg1: '#12061a', plate: '#3a1640' },
+  kiddie: { frame: 0xd8cfb8, edge: '#2affd5', ink: '#2affd5', sub: '#9adfc8', bg0: '#04120e', bg1: '#020806', plate: '#0a2a22' },
+  ringmaster: { frame: 0xc8182c, edge: '#ffc83c', ink: '#ffe14a', sub: '#ffd8c0', bg0: '#5a0a1c', bg1: '#24040c', plate: '#6a0e20' },
+  outlaw: { frame: 0x8a5a32, edge: '#ffb347', ink: '#ffb347', sub: '#f0d0a0', bg0: '#4a1a08', bg1: '#1e0a04', plate: '#5a2a10' },
+};
+const BossCards = {
+  cache: {},
+  // an offscreen canvas built once (a static layer)
+  layer(key, w, h, fn) {
+    let c = this.cache[key];
+    if (!c) { c = this.cache[key] = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); }
+    return c;
+  },
+  // ---------------------------------------------------------------- the card
+  draw(g, W, H, b, id) {
+    const def = BOSSES[id], th = CARD_THEMES[id], open = Save.unlocked(id), beat = Save.beaten(id), hv = b.hover, t = G.time;
+    // ground and edge
+    const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, th.bg0); gr.addColorStop(1, th.bg1);
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    // header
+    PixelFont.draw(g, `FILE ${def.fileNo}`, 14, 12, 3, hv ? '#ffffff' : th.sub);
+    if (beat) PixelFont.draw(g, '★', W - 36, 10, 4, '#ffd23c', { shadow: '#5a3a00' });
+    // the art window
+    const AX = 12, AY = 42, AW = W - 24, AH = 186;
+    g.save(); g.beginPath(); g.rect(AX, AY, AW, AH); g.clip(); g.translate(AX, AY);
+    if (open) this['art_' + id](g, AW, AH, t, hv);
+    else this['lock_' + id](g, AW, AH, t, hv);
+    g.restore();
+    g.strokeStyle = open ? th.edge : '#5a5a6a'; g.lineWidth = 3; g.strokeRect(AX - 1.5, AY - 1.5, AW + 3, AH + 3);
+    // cleared: a rubber stamp across the art
+    if (beat) this.stamp(g, AX + AW / 2, AY + AH * 0.62, beat === 'spare' ? 'SPARED' : 'DEFEATED', beat === 'spare' ? '#3cff6e' : '#ff4466');
+    // name plate
+    const py = AY + AH + 10;
+    g.fillStyle = open ? th.plate : '#16141c'; g.fillRect(10, py, W - 20, 48);
+    g.fillStyle = open ? th.edge : '#3a3a46'; g.fillRect(10, py, W - 20, 2); g.fillRect(10, py + 46, W - 20, 2);
+    const name = open ? def.displayName : id === 'kiddie' ? '??????' : def.displayName;
+    const ns = PixelFont.width(name, 3) <= W - 32 ? 3 : 2;
+    PixelFont.draw(g, name, Math.round((W - PixelFont.width(name, ns)) / 2), py + (ns === 3 ? 6 : 9), ns, open ? th.ink : '#6a6a7a', { shadow: open ? '#000' : null, glitch: !open && id === 'kiddie' ? 0.3 * Flash.glitchMul + 0.05 : 0 });
+    const world = def.fileName;
+    PixelFont.draw(g, world, Math.round((W - PixelFont.width(world, 2)) / 2), py + 30, 2, open ? '#ffffff' : '#4a4a58');
+    // footer
+    const fy = py + 58;
+    let foot, fcol;
+    if (!open) { foot = id === 'kiddie' ? 'BEAT FILE 1 TO DECRYPT' : id === 'ringmaster' ? 'BEAT FILE 2 FOR A TICKET' : 'BEAT FILE 3 FIRST'; fcol = '#8a8a9a'; }
+    else if (hv) { foot = '► PLAY'; fcol = '#ffe600'; }
+    else if (beat) { foot = 'COMPLETE'; fcol = '#ffd23c'; }
+    else { foot = 'NOT CLEARED'; fcol = '#9a9aaa'; }
+    const fs = PixelFont.width(foot, 2) <= W - 24 ? 2 : 1;
+    PixelFont.draw(g, foot, Math.round((W - PixelFont.width(foot, fs)) / 2), fy, fs, fcol);
+    if (hv && open) PixelFont.drawIcon(g, 'heart', 14, fy - 2, 2, '#ff2a55');
+    // the edge: the world's colour (brighter on hover)
+    g.fillStyle = hv ? '#ffffff' : open ? th.edge : '#3a3a46';
+    const e = hv ? 4 : 3; g.fillRect(0, 0, W, e); g.fillRect(0, H - e, W, e); g.fillRect(0, 0, e, H); g.fillRect(W - e, 0, e, H);
+  },
+  stamp(g, x, y, text, col) {
+    g.save(); g.translate(x, y); g.rotate(-0.22);
+    const w = PixelFont.width(text, 4) + 24, h = 48;
+    g.globalAlpha = 0.9;
+    g.strokeStyle = col; g.lineWidth = 4; g.strokeRect(-w / 2, -h / 2, w, h);
+    g.lineWidth = 2; g.strokeRect(-w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
+    PixelFont.draw(g, text, -PixelFont.width(text, 4) / 2, -14, 4, col);
+    g.restore();
+  },
+  // ---------------------------------------------------------------- THE MANOR: damask, a storm window,
+  // THE PROPRIETOR with his chandelier head and candle eyes
+  art_proprietor(g, W, H, t) {
+    g.drawImage(this.layer('manor_bg', W, H, (c, w, h) => {
+      c.fillStyle = '#2a0f30'; c.fillRect(0, 0, w, h);
+      // damask
+      for (let y = -10; y < h; y += 28) for (let x = (y / 28) % 2 ? 0 : 14; x < w + 14; x += 28) {
+        c.fillStyle = '#3e1846'; c.beginPath(); c.moveTo(x, y - 9); c.lineTo(x + 7, y); c.lineTo(x, y + 9); c.lineTo(x - 7, y); c.fill();
+        c.fillStyle = '#5a2a5e'; c.fillRect(x - 1, y - 1, 2, 2);
+      }
+      // wainscot
+      c.fillStyle = '#3a1a10'; c.fillRect(0, h - 44, w, 44); c.fillStyle = '#c8a040'; c.fillRect(0, h - 46, w, 3);
+      for (let x = 8; x < w; x += 40) { c.strokeStyle = '#5a2a18'; c.lineWidth = 2; c.strokeRect(x, h - 38, 30, 30); }
+      // the window frame
+      c.fillStyle = '#c8a040'; c.fillRect(w / 2 - 44, 14, 88, 104); c.fillStyle = '#0a0a24'; c.fillRect(w / 2 - 39, 19, 78, 94);
+    }), 0, 0);
+    // the storm outside: a moon and slow lightning (a soft glow in Reduced flashing)
+    const flash = Flash.reduced ? 0.25 * Math.max(0, Math.sin(t * 0.7) - 0.85) * 6 : (Math.sin(t * 0.9) > 0.97 ? 1 : 0);
+    g.fillStyle = `rgba(140,150,255,${0.15 + 0.6 * flash})`; g.fillRect(W / 2 - 39, 19, 78, 94);
+    g.fillStyle = '#e8e8ff'; g.beginPath(); g.arc(W / 2 + 20, 38, 9, 0, TAU); g.fill();
+    g.fillStyle = '#c8a040'; g.fillRect(W / 2 - 1, 19, 2, 94); g.fillRect(W / 2 - 39, 64, 78, 2);
+    // THE PROPRIETOR: house-front body, mansard shoulders, bow tie, white gloves
+    const cx = W / 2, by = H - 8, bob = Math.sin(t * 1.6) * 1.5;
+    g.fillStyle = '#1c1424'; g.beginPath(); g.moveTo(cx - 52, by - 70 + bob); g.lineTo(cx + 52, by - 70 + bob); g.lineTo(cx + 40, by - 88 + bob); g.lineTo(cx - 40, by - 88 + bob); g.fill();
+    g.fillStyle = '#2a1630'; g.fillRect(cx - 44, by - 70 + bob, 88, 70);
+    g.fillStyle = '#c8a040'; g.fillRect(cx - 48, by - 72 + bob, 96, 4);
+    const lit = (x, y) => { const k = 0.8 + 0.2 * Math.sin(t * 7 + x); g.fillStyle = `rgba(255,${190 + 30 * k | 0},110,${k})`; g.fillRect(x, y, 14, 18); g.fillStyle = '#3a1a10'; g.fillRect(x + 6, y, 2, 18); };
+    lit(cx - 34, by - 60 + bob); lit(cx + 20, by - 60 + bob); lit(cx - 34, by - 32 + bob); lit(cx + 20, by - 32 + bob);
+    g.fillStyle = '#4a2010'; g.fillRect(cx - 8, by - 34 + bob, 16, 34); g.fillStyle = '#d8b04a'; g.fillRect(cx + 4, by - 18 + bob, 3, 3);
+    g.fillStyle = '#c23c8a'; g.beginPath(); g.moveTo(cx, by - 76 + bob); g.lineTo(cx - 14, by - 82 + bob); g.lineTo(cx - 14, by - 70 + bob); g.fill(); g.beginPath(); g.moveTo(cx, by - 76 + bob); g.lineTo(cx + 14, by - 82 + bob); g.lineTo(cx + 14, by - 70 + bob); g.fill();
+    g.fillStyle = '#fff4dc'; g.beginPath(); g.arc(cx - 58, by - 30 + bob, 8, 0, TAU); g.arc(cx + 58, by - 30 + bob, 8, 0, TAU); g.fill();
+    g.fillStyle = '#1c1424'; g.fillRect(cx - 62, by - 82 + bob, 8, 46); g.fillRect(cx + 54, by - 82 + bob, 8, 46);
+    // the chandelier head: a gold ring, crystal drops, two candles for eyes
+    const hy = by - 112 + bob;
+    g.strokeStyle = '#c8a040'; g.lineWidth = 4; g.beginPath(); g.ellipse(cx, hy + 6, 34, 9, 0, 0, TAU); g.stroke();
+    g.fillStyle = '#c8a040'; g.fillRect(cx - 3, hy + 6, 6, 18);
+    for (let i = 0; i < 9; i++) { const a = i / 9 * TAU + t * 0.4, x = cx + Math.cos(a) * 34, y = hy + 6 + Math.sin(a) * 9; g.fillStyle = Math.sin(a) > 0 ? '#dff8ff' : '#8ab0c8'; g.beginPath(); g.moveTo(x, y + 2); g.lineTo(x + 3, y + 8); g.lineTo(x, y + 14); g.lineTo(x - 3, y + 8); g.fill(); }
+    for (const ex of [-12, 12]) {
+      g.fillStyle = '#f4ecd8'; g.fillRect(cx + ex - 4, hy - 14, 8, 18);
+      const f = 0.8 + 0.2 * Math.sin(t * 13 + ex);
+      const fg = g.createRadialGradient(cx + ex, hy - 20, 1, cx + ex, hy - 20, 16 * f); fg.addColorStop(0, 'rgba(255,240,180,0.95)'); fg.addColorStop(0.4, 'rgba(255,170,60,0.5)'); fg.addColorStop(1, 'rgba(255,120,30,0)');
+      g.fillStyle = fg; g.beginPath(); g.arc(cx + ex, hy - 20, 16 * f, 0, TAU); g.fill();
+      g.fillStyle = '#fff6c8'; g.beginPath(); g.ellipse(cx + ex, hy - 21, 3, 6 * f, 0, 0, TAU); g.fill();
+    }
+  },
+  // ---------------------------------------------------------------- THE SERVER: racks of blinking LEDs, and
+  // SCR1PT_K1DD1E's hood over the dark void with his teal emoticon eyes, on his beige CRT
+  art_kiddie(g, W, H, t) {
+    g.drawImage(this.layer('server_bg', W, H, (c, w, h) => {
+      c.fillStyle = '#050a0e'; c.fillRect(0, 0, w, h);
+      for (const x of [6, w - 52]) { c.fillStyle = '#12161c'; c.fillRect(x, 6, 46, h - 12); for (let y = 12; y < h - 14; y += 12) { c.fillStyle = '#1c222a'; c.fillRect(x + 3, y, 40, 9); } }
+      c.fillStyle = '#0c2a24'; for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1);
+    }), 0, 0);
+    // LEDs
+    for (const x of [6, W - 52]) for (let y = 12, j = 0; y < H - 14; y += 12, j++) for (let k = 0; k < 4; k++) {
+      const on = Math.sin(t * (2 + k * 1.7 + j * 0.3) + j * 2.1 + x) > 0.1;
+      g.fillStyle = on ? (k === 3 ? '#ffb020' : k === 2 && j % 5 === 0 ? '#ff3c3c' : '#3cff6e') : '#0e2018';
+      g.fillRect(x + 6 + k * 9, y + 3, 4, 3);
+    }
+    // the CRT (beige case, curved green screen, scrolling code)
+    const cx = W / 2, sy = H - 70;
+    g.fillStyle = '#d8cfb8'; g.fillRect(cx - 50, sy, 100, 62); g.fillStyle = '#b8ae98'; g.fillRect(cx - 40, sy + 62, 80, 6);
+    g.fillStyle = '#021208'; g.fillRect(cx - 42, sy + 6, 84, 46);
+    for (let i = 0; i < 6; i++) { const w = 20 + ((i * 37 + Math.floor(t * 4)) % 50); g.fillStyle = i % 3 ? '#3cff6e' : '#2affd5'; g.fillRect(cx - 38, sy + 9 + i * 7, w, 3); }
+    g.fillStyle = '#ff3cc8'; g.fillRect(cx + 26, sy + 54, 8, 5);
+    // the hoodie, the hood, the void, the eyes
+    const hy = sy - 66, bob = Math.sin(t * 2.2) * 2;
+    g.fillStyle = '#1b3654'; g.beginPath(); g.ellipse(cx, sy - 8 + bob, 56, 26, 0, Math.PI, TAU); g.fill();
+    g.fillStyle = '#1b3654'; g.beginPath(); g.ellipse(cx, hy + 30 + bob, 40, 44, 0, 0, TAU); g.fill();
+    g.fillStyle = '#020406'; g.beginPath(); g.ellipse(cx, hy + 34 + bob, 28, 32, 0, 0, TAU); g.fill();
+    g.strokeStyle = '#1a1a22'; g.lineWidth = 5; g.beginPath(); g.arc(cx, hy + 30 + bob, 44, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+    const hue = (t * 40) % 360;
+    g.fillStyle = `hsl(${hue},100%,60%)`; g.beginPath(); g.arc(cx - 44, hy + 34 + bob, 7, 0, TAU); g.arc(cx + 44, hy + 34 + bob, 7, 0, TAU); g.fill();
+    const blink = (t % 3.2) < 0.12, mood = Math.floor(t / 2.5) % 3;
+    g.fillStyle = '#2affd5'; g.save(); g.shadowColor = '#2affd5'; g.shadowBlur = 8;
+    const eye = (x) => {
+      if (blink) { g.fillRect(x - 6, hy + 34 + bob, 12, 3); return; }
+      if (mood === 0) { g.fillRect(x - 3, hy + 26 + bob, 6, 14); }
+      else if (mood === 1) { g.beginPath(); g.moveTo(x - 7, hy + 38 + bob); g.lineTo(x, hy + 28 + bob); g.lineTo(x + 7, hy + 38 + bob); g.lineTo(x + 4, hy + 38 + bob); g.lineTo(x, hy + 32 + bob); g.lineTo(x - 4, hy + 38 + bob); g.fill(); }
+      else { g.fillRect(x - 6, hy + 30 + bob, 12, 4); g.fillRect(x - 6, hy + 36 + bob, 12, 4); }
+    };
+    eye(cx - 11); eye(cx + 11); g.restore();
+    // a glitch line now and then
+    if (Math.sin(t * 5.3) > 0.93 && !Flash.reduced) { g.fillStyle = 'rgba(255,60,200,0.35)'; g.fillRect(0, (t * 97) % H, W, 4); }
+  },
+  // ---------------------------------------------------------------- THE BIG TOP: striped canvas, chasing
+  // marquee bulbs, GRANDIOSO's tent hat and comedy mask, his cane's crystal
+  art_ringmaster(g, W, H, t) {
+    g.drawImage(this.layer('bigtop_bg', W, H, (c, w, h) => {
+      const cx = w / 2;
+      for (let i = 0; i < 16; i++) { const a0 = Math.PI * (i / 16), a1 = Math.PI * ((i + 1) / 16); c.fillStyle = i % 2 ? '#fff4dc' : '#c8182c'; c.beginPath(); c.moveTo(cx, -30); c.lineTo(cx - Math.cos(a0) * 400, -30 + Math.sin(a0) * 400); c.lineTo(cx - Math.cos(a1) * 400, -30 + Math.sin(a1) * 400); c.fill(); }
+      const sh = c.createLinearGradient(0, 0, 0, h); sh.addColorStop(0, 'rgba(40,0,10,0.15)'); sh.addColorStop(1, 'rgba(40,0,10,0.75)'); c.fillStyle = sh; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#5a0a1c'; c.fillRect(0, h - 26, w, 26); c.fillStyle = '#ffc83c'; c.fillRect(0, h - 28, w, 3);
+    }), 0, 0);
+    const cx = W / 2;
+    // the spotlight on him
+    const sg = g.createRadialGradient(cx, H - 60, 10, cx, H - 60, 110); sg.addColorStop(0, 'rgba(255,240,200,0.45)'); sg.addColorStop(1, 'rgba(255,240,200,0)'); g.fillStyle = sg; g.fillRect(0, 0, W, H);
+    // the tailcoat, the gold waistcoat, the epaulettes
+    const by = H - 8, bob = Math.sin(t * 1.4) * 1.5;
+    g.fillStyle = '#c8182c'; g.beginPath(); g.moveTo(cx - 60, by); g.lineTo(cx - 46, by - 64 + bob); g.lineTo(cx + 46, by - 64 + bob); g.lineTo(cx + 60, by); g.fill();
+    g.fillStyle = '#ffc83c'; g.beginPath(); g.moveTo(cx - 16, by); g.lineTo(cx - 12, by - 62 + bob); g.lineTo(cx + 12, by - 62 + bob); g.lineTo(cx + 16, by); g.fill();
+    g.fillStyle = '#fffaf2'; g.fillRect(cx - 7, by - 64 + bob, 14, 26);
+    for (const s of [-1, 1]) { g.fillStyle = '#ffc83c'; g.fillRect(cx + s * 46 - 14, by - 68 + bob, 28, 8); for (let i = 0; i < 5; i++) g.fillRect(cx + s * 46 - 12 + i * 6, by - 60 + bob, 2, 8); }
+    // the ruff, the mask (drawn once, then reused), the tent hat with its flag
+    const hy = by - 120 + bob;
+    g.fillStyle = '#fffaf2'; for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; g.beginPath(); g.arc(cx + Math.cos(a) * 26, hy + 56 + Math.sin(a) * 6, 7, 0, TAU); g.fill(); }
+    const mask = this.layer('mask_comedy', 96, 120, (c, w, h) => drawMaskFace(c, w, h, 'comedy', 0));
+    g.drawImage(mask, cx - 30, hy - 6, 60, 75);
+    g.fillStyle = '#8a0e1e'; g.fillRect(cx - 40, hy - 8, 80, 6);
+    for (let i = 0; i < 6; i++) { g.fillStyle = i % 2 ? '#fff4dc' : '#c8182c'; g.fillRect(cx - 26 + i * 9, hy - 38, 9, 30); }
+    g.fillStyle = '#c8182c'; g.beginPath(); g.moveTo(cx - 28, hy - 38); g.lineTo(cx, hy - 62); g.lineTo(cx + 28, hy - 38); g.fill();
+    g.fillStyle = '#fff4dc'; g.beginPath(); g.moveTo(cx - 9, hy - 38); g.lineTo(cx, hy - 62); g.lineTo(cx + 9, hy - 38); g.fill();
+    g.fillStyle = '#ffc83c'; g.fillRect(cx - 1, hy - 74, 2, 14); g.fillRect(cx + 1, hy - 74, 12 + Math.sin(t * 6) * 2, 6);
+    for (let i = 0; i < 7; i++) { const on = (i + Math.floor(t * 6)) % 2; g.fillStyle = on ? '#fff0b0' : '#7a5a20'; g.beginPath(); g.arc(cx - 36 + i * 12, hy - 4, 2.5, 0, TAU); g.fill(); }
+    // the cane and its crystal
+    g.strokeStyle = '#141018'; g.lineWidth = 4; g.beginPath(); g.moveTo(cx + 58, by - 4); g.lineTo(cx + 74, by - 96 + bob); g.stroke();
+    const cg = g.createRadialGradient(cx + 75, by - 100 + bob, 1, cx + 75, by - 100 + bob, 14); cg.addColorStop(0, 'rgba(255,250,220,1)'); cg.addColorStop(1, 'rgba(255,200,80,0)'); g.fillStyle = cg; g.beginPath(); g.arc(cx + 75, by - 100 + bob, 14, 0, TAU); g.fill();
+    // marquee bulbs chasing round the window
+    const n = 26, per = 2 * (W + H);
+    for (let i = 0; i < n; i++) {
+      let d = (i / n) * per, x, y;
+      if (d < W) { x = d; y = 4; } else if ((d -= W) < H) { x = W - 4; y = d; } else if ((d -= H) < W) { x = W - d; y = H - 4; } else { d -= W; x = 4; y = H - d; }
+      const on = (i + Math.floor(t * (Flash.reduced ? 3 : 8))) % 3 === 0;
+      g.fillStyle = on ? '#fff6c8' : '#8a6a2a'; g.beginPath(); g.arc(x, y, on ? 3.2 : 2.4, 0, TAU); g.fill();
+    }
+  },
+  // ---------------------------------------------------------------- THE FRONTIER: a sunset over banded mesas,
+  // SUNDOWN with his sun face under the brim, drifting dust
+  art_outlaw(g, W, H, t) {
+    g.drawImage(this.layer('frontier_bg', W, H, (c, w, h) => {
+      const sky = c.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, '#3a1a4a'); sky.addColorStop(0.45, '#e8603a'); sky.addColorStop(0.8, '#ffc870'); c.fillStyle = sky; c.fillRect(0, 0, w, h);
+      const m = (y0, col, seed) => { c.fillStyle = col; c.beginPath(); c.moveTo(0, h); for (let x = 0; x <= w; x += 6) { const y = y0 + Math.sin(x * 0.03 + seed) * 6 + (Math.abs(Math.sin(x * 0.011 + seed * 2)) > 0.7 ? -26 : 0); c.lineTo(x, y); } c.lineTo(w, h); c.fill(); };
+      m(h * 0.62, '#a8503a', 1); m(h * 0.72, '#7a3424', 3); m(h * 0.84, '#4a2014', 5);
+    }), 0, 0);
+    const cx = W / 2;
+    // the sun behind him (it's his face), heat shimmer
+    const sun = g.createRadialGradient(cx, 58, 6, cx, 58, 70); sun.addColorStop(0, 'rgba(255,240,180,0.9)'); sun.addColorStop(1, 'rgba(255,160,60,0)'); g.fillStyle = sun; g.fillRect(0, 0, W, H);
+    // the duster and the bandana
+    const by = H - 4, sway = Math.sin(t * 1.1) * 3;
+    g.fillStyle = '#6a4428'; g.beginPath(); g.moveTo(cx - 64 - sway, by); g.lineTo(cx - 40, by - 70); g.lineTo(cx + 40, by - 70); g.lineTo(cx + 64 + sway, by); g.fill();
+    g.fillStyle = '#4a2c18'; g.fillRect(cx - 4, by - 70, 8, 70);
+    g.fillStyle = '#c4532e'; g.beginPath(); g.moveTo(cx - 24, by - 74); g.lineTo(cx + 24, by - 74); g.lineTo(cx, by - 52); g.fill();
+    // the gunbelt and a pearl grip
+    g.fillStyle = '#3a2414'; g.fillRect(cx - 44, by - 26, 88, 8); for (let i = 0; i < 8; i++) { g.fillStyle = '#d8a84a'; g.fillRect(cx - 40 + i * 10, by - 25, 3, 6); }
+    g.fillStyle = '#f0ece0'; g.fillRect(cx + 34, by - 34, 8, 14);
+    // the sun face: a burning disc with eyes, a moustache
+    const hy = by - 110, fl = 0.9 + 0.1 * Math.sin(t * 4);
+    const rays = g.createRadialGradient(cx, hy, 18, cx, hy, 46 * fl); rays.addColorStop(0, 'rgba(255,220,90,0.9)'); rays.addColorStop(1, 'rgba(255,120,30,0)');
+    g.fillStyle = rays; g.beginPath(); g.arc(cx, hy, 46 * fl, 0, TAU); g.fill();
+    g.fillStyle = '#ffd04a'; g.beginPath(); g.arc(cx, hy, 28, 0, TAU); g.fill();
+    g.fillStyle = '#ffe88a'; g.beginPath(); g.arc(cx - 6, hy - 6, 14, 0, TAU); g.fill();
+    g.fillStyle = '#4a2410'; const blink = (t % 4) < 0.12;
+    if (blink) { g.fillRect(cx - 13, hy - 2, 8, 2); g.fillRect(cx + 5, hy - 2, 8, 2); } else { g.fillRect(cx - 12, hy - 6, 6, 8); g.fillRect(cx + 6, hy - 6, 6, 8); }
+    g.fillStyle = '#6a3414'; g.beginPath(); g.moveTo(cx - 16, hy + 10); g.quadraticCurveTo(cx, hy + 4, cx + 16, hy + 10); g.quadraticCurveTo(cx, hy + 14, cx - 16, hy + 10); g.fill();
+    // the hat: brim, crown, snakeskin band
+    g.fillStyle = '#3a2414'; g.beginPath(); g.ellipse(cx, hy - 24, 52, 8, 0, 0, TAU); g.fill();
+    g.fillStyle = '#4a2c18'; g.beginPath(); g.moveTo(cx - 26, hy - 26); g.lineTo(cx - 22, hy - 54); g.quadraticCurveTo(cx, hy - 60, cx + 22, hy - 54); g.lineTo(cx + 26, hy - 26); g.fill();
+    g.fillStyle = '#b8863c'; g.fillRect(cx - 25, hy - 34, 50, 5); g.fillStyle = '#7a5a2a'; for (let i = 0; i < 6; i++) g.fillRect(cx - 22 + i * 8, hy - 33, 3, 3);
+    // dust drifting across
+    for (let i = 0; i < 14; i++) { const x = (i * 53 + t * (14 + i % 4 * 5)) % (W + 20) - 10, y = H - 10 - ((i * 37) % 60); g.fillStyle = `rgba(255,220,160,${0.25 + 0.2 * Math.sin(t + i)})`; g.fillRect(x, y, 2, 2); }
+  },
+  // ---------------------------------------------------------------- locked looks
+  lock_proprietor(g, W, H) { g.fillStyle = '#111'; g.fillRect(0, 0, W, H); },
+  lock_kiddie(g, W, H, t) {
+    // an encrypted file: static, a padlock, [ENCRYPTED]
+    const n = this.layer('noise', 96, 72, (c, w, h) => { const d = c.createImageData(w, h); for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 90; d.data[i] = v * 0.6; d.data[i + 1] = v; d.data[i + 2] = v * 0.9; d.data[i + 3] = 255; } c.putImageData(d, 0, 0); });
+    g.imageSmoothingEnabled = false;
+    const o = Math.floor(t * 12) % 24;
+    g.drawImage(n, 0, o, 96, 72 - o, 0, 0, W, H * (72 - o) / 72); g.drawImage(n, 0, 0, 96, o, 0, H * (72 - o) / 72, W, H * o / 72);
+    g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2 - 4;
+    g.strokeStyle = '#ff3cc8'; g.lineWidth = 6; g.beginPath(); g.arc(cx, cy - 14, 16, Math.PI, TAU); g.stroke();
+    g.fillStyle = '#ff3cc8'; g.fillRect(cx - 24, cy - 14, 48, 36); g.fillStyle = '#2a0420'; g.fillRect(cx - 3, cy - 2, 6, 12);
+    PixelFont.draw(g, '[ENCRYPTED]', Math.round((W - PixelFont.width('[ENCRYPTED]', 3)) / 2), cy + 34, 3, '#ff3cc8', { glitch: 0.35 * Flash.glitchMul + 0.05 });
+  },
+  lock_ringmaster(g, W, H, t) {
+    // the dark tent, and a torn ADMIT ONE ticket stamped SOLD OUT
+    g.fillStyle = '#1a0408'; g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 10; i++) { g.fillStyle = i % 2 ? '#2a0a10' : '#3a0c16'; g.beginPath(); g.moveTo(W / 2, -10); g.lineTo(i / 10 * W * 1.6 - W * 0.3, H); g.lineTo((i + 1) / 10 * W * 1.6 - W * 0.3, H); g.fill(); }
+    const tk = this.layer('ticket_torn', 300, 140, (c, w, h) => drawAdmitTicket(c, w, h, false, true));
+    g.save(); g.translate(W / 2, H / 2); g.rotate(-0.12 + Math.sin(t * 1.3) * 0.03); g.drawImage(tk, -105, -49, 210, 98); g.restore();
+  },
+  lock_outlaw(g, W, H, t) {
+    // planks, and the WANTED poster with its reward torn off, nailed up
+    g.fillStyle = '#5a3a22'; g.fillRect(0, 0, W, H);
+    for (let y = 0; y < H; y += 22) { g.fillStyle = y % 44 ? '#4a2e1a' : '#5e3c22'; g.fillRect(0, y, W, 20); g.fillStyle = '#2a180c'; g.fillRect(0, y + 20, W, 2); }
+    const p = this.layer('wanted_torn', 120, 166, (c, w, h) => drawWantedPoster(c, w, h, { torn: true, sub: 'DEAD OR ALIVE' }));
+    g.save(); g.translate(W / 2, H / 2); g.rotate(0.05 + Math.sin(t * 0.9) * 0.01); g.drawImage(p, -60, -83, 120, 166);
+    g.fillStyle = '#c8c8c8'; g.beginPath(); g.arc(0, -78, 3, 0, TAU); g.fill(); g.restore();
   },
 };
 
