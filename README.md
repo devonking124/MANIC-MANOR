@@ -10,6 +10,13 @@ unpkg is the only dependency. The soundtrack ships next to it in `music_pack.js`
 The title is THE RIFT: you stand on a floating island in deep space, in front of a tear
 of light where the worlds leak through, and every fight starts by falling into it.
 
+START opens the mode screen. **STORY MODE** is the main game: an opening tells how the
+RIFT began (a hundred years ago SUNDOWN shot his town's clock at high noon so his day
+would never end, and the bullet tore time; everything else that refuses to end fell into
+the tear) and why you face each keeper, then the SAVE FILES screen. SKIP (or Esc) jumps
+past the opening. **FREE PLAY** is locked until you beat SUNDOWN, and has nothing in it
+yet.
+
 Four bosses, picked from the SAVE FILES screen, and a shop between them:
 
 - **FILE 1 - THE MANOR**: THE PROPRIETOR, a haunted mansion in a butler's body.
@@ -124,6 +131,7 @@ crossfade, the music is muffled behind the closed door and ducks under KNOBS' vo
 | Green dynamite | grip a green-glowing stick and throw it back at him | look at it and click |
 | The final duel | draw and shoot on the third bell toll (or keep it holstered to spare him) | Space / click on the third toll |
 | Shop | walk with the left stick or your feet, grip to pick up, poke BUY | WASD + mouse, click |
+| Skip the opening | poke SKIP | Esc, or click SKIP |
 | Pause | B / Y | Esc |
 
 Debug keys (desktop): `H` hitboxes, `G` god mode, `N` next phase (in the last phase:

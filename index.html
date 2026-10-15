@@ -4319,6 +4319,9 @@ class UI {
       { face: { cw: 330, ch: 120, draw: (g, W, H, b) => this.drawShopDoor(g, W, H, b) }, size: 0.82, style: 'rift', onPress: () => B.openShop('files') },
       { label: 'BACK', icon: 'back', style: 'rift', onPress: () => B.closeSaveFiles() },
     ]), { yOff: -0.26, radius: 1.0, deskR: 2.05, gap: 0.04, split: files.length });
+    // START: STORY MODE / FREE PLAY (big illustrated cards) and BACK
+    const mcard = (mode) => ({ face: { cw: 340, ch: 236, draw: (g, W, H, b) => this.drawModeCard(g, W, H, b, mode) }, size: 1.12, style: 'rift', onPress: () => (mode === 'story' ? B.chooseStory() : B.chooseFreePlay()) });
+    this.modeMenu = new Menu([mcard('story'), mcard('free'), { label: 'BACK', icon: 'back', style: 'rift', onPress: () => B.closeModeSelect() }], { yOff: -0.24, radius: 1.0, deskR: 2.05, gap: 0.06, split: 2 });
     this.safetyMenu = new Menu([
       { label: 'REDUCED FLASHING (RECOMMENDED)', style: 'rift', onPress: () => B.chooseFlashing('reduced'), color: '#2affd5' },
       { label: 'FULL EFFECTS', style: 'rift', onPress: () => B.chooseFlashing('full') },
@@ -4432,6 +4435,63 @@ class UI {
     }
   }
   refreshSaveCards() { for (const b of this.saveMenu.buttons) if (b.face_) b.draw(); }
+  refreshModeCards() { for (const b of this.modeMenu.buttons) if (b.face_) b.draw(); }
+  // the mode cards: STORY MODE (the RIFT, your SOUL, how far you've got) and FREE PLAY (chained shut until the
+  // story is done; then "coming soon")
+  drawModeCard(g, W, H, b, mode) {
+    const t = G.time, hv = b.hover;
+    if (mode === 'story') {
+      const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, hv ? '#2c1658' : '#1c0e3c'); gr.addColorStop(1, '#07040f');
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      for (let i = 0; i < 40; i++) { const x = (i * 97) % W, y = (i * 53) % H, k = 0.4 + 0.4 * Math.sin(t * 1.3 + i); g.fillStyle = `rgba(255,255,255,${k * 0.6})`; g.fillRect(x, y, 2, 2); }
+      // the RIFT down the right side, the SOUL beside it
+      const rx = W - 78;
+      for (let y = 8; y < H - 8; y += 2) {
+        const env = Math.sin(Math.PI * (y - 8) / (H - 16)), x = rx + Math.sin(y * 0.09 + t * 0.7) * 6 * env, w = (3 + 6 * env) * (hv ? 1.3 : 1);
+        g.fillStyle = `rgba(200,120,255,${0.25 * env})`; g.fillRect(x - w * 2.5, y, w * 5, 2);
+        g.fillStyle = `rgba(255,${200 + 40 * env | 0},255,${0.9 * env})`; g.fillRect(x - w / 2, y, w, 2);
+      }
+      const beat = 1 + 0.12 * Math.exp(-((t * 1.2) % 1) * 6);
+      g.save(); g.translate(rx - 46, H / 2 + 10); g.scale(beat, beat); PixelFont.drawIcon(g, 'heart', -14, -12, 4, '#ff2a55'); g.restore();
+      PixelFont.draw(g, 'STORY MODE', 18, 18, 4, hv ? '#ffe600' : '#ffffff', { shadow: '#5a2a9a' });
+      PixelFont.draw(g, 'THE MAIN GAME', 18, 62, 2, '#cbb8ff');
+      const n = Object.keys(BOSSES).filter((k) => Save.beaten(k)).length;
+      PixelFont.draw(g, 'FOUR WORLDS.', 18, 108, 2, '#ffffff'); PixelFont.draw(g, 'ONE RIFT.', 18, 128, 2, '#ffffff');
+      PixelFont.draw(g, `${n}/4 SONGS ENDED`, 18, 172, 2, n ? '#ffd23c' : '#9a8ab8');
+      PixelFont.draw(g, hv ? '► PLAY' : 'PLAY', 18, H - 34, 3, hv ? '#ffe600' : '#2affd5');
+    } else {
+      const open = G.battle.freePlayOpen();
+      const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, open ? (hv ? '#0e4a44' : '#0a3430') : '#1a1a24'); gr.addColorStop(1, open ? '#04120f' : '#08080c');
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      PixelFont.draw(g, 'FREE PLAY', 18, 18, 4, open ? (hv ? '#ffe600' : '#ffffff') : '#6a6a7a', { shadow: open ? '#0a4a40' : null });
+      if (open) {
+        PixelFont.draw(g, 'ANY BOSS, ANY TIME', 18, 62, 2, '#9adfc8');
+        // an infinity loop, drawn slowly
+        g.strokeStyle = '#2affd5'; g.lineWidth = 5; g.beginPath();
+        for (let i = 0; i <= 80; i++) { const a = i / 80 * TAU, x = W - 90 + Math.sin(a) * 50, y = H / 2 + Math.sin(a * 2) * 22; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+        g.stroke();
+        const a = t * 1.4, px = W - 90 + Math.sin(a) * 50, py = H / 2 + Math.sin(a * 2) * 22;
+        g.fillStyle = '#ffffff'; g.beginPath(); g.arc(px, py, 5, 0, TAU); g.fill();
+        PixelFont.draw(g, 'COMING SOON', 18, H - 34, 3, '#2affd5');
+      } else {
+        // chained shut, with a padlock
+        g.save(); g.globalAlpha = 0.85;
+        for (const [x0, y0, x1, y1] of [[0, 30, W, H - 20], [0, H - 30, W, 20]]) {
+          const n = 16, dx = (x1 - x0) / n, dy = (y1 - y0) / n, ang = Math.atan2(dy, dx);
+          for (let i = 0; i < n; i++) { g.save(); g.translate(x0 + dx * (i + 0.5), y0 + dy * (i + 0.5)); g.rotate(ang); g.strokeStyle = i % 2 ? '#7a7a8a' : '#a8a8b8'; g.lineWidth = 4; if (i % 2) g.strokeRect(-9, -2, 18, 4); else g.strokeRect(-10, -6, 20, 12); g.restore(); }
+        }
+        g.restore();
+        const cx = W - 84, cy = H / 2 + 6, sh = Math.sin(t * 2) * (hv ? 2 : 0);
+        g.strokeStyle = '#c8c8d8'; g.lineWidth = 8; g.beginPath(); g.arc(cx + sh, cy - 18, 18, Math.PI, TAU); g.stroke();
+        g.fillStyle = '#d8b04a'; g.fillRect(cx - 28 + sh, cy - 18, 56, 44); g.fillStyle = '#8a6a2a'; g.fillRect(cx - 28 + sh, cy + 20, 56, 6);
+        g.fillStyle = '#2a1a08'; g.beginPath(); g.arc(cx + sh, cy, 6, 0, TAU); g.fill(); g.fillRect(cx - 2 + sh, cy, 4, 12);
+        PixelFont.draw(g, 'LOCKED', 18, 70, 3, '#ff4466');
+        PixelFont.draw(g, 'FINISH THE STORY', 18, H - 54, 2, '#9a8ab8'); PixelFont.draw(g, 'TO UNLOCK', 18, H - 32, 2, '#9a8ab8');
+      }
+    }
+    g.fillStyle = hv ? '#ffffff' : mode === 'story' ? '#b48cff' : G.battle.freePlayOpen() ? '#2affd5' : '#3a3a46';
+    const e = hv ? 4 : 3; g.fillRect(0, 0, W, e); g.fillRect(0, H - e, W, e); g.fillRect(0, 0, e, H); g.fillRect(W - e, 0, e, H);
+  }
   // the SAVE FILES door into KNOBS' SHOP: warm light round the edges, a neon sign, "open late"
   drawShopDoor(g, W, H, b) {
     const t = G.time, hv = b.hover;
@@ -4970,6 +5030,7 @@ class UI {
     if (!frozen) { this.flavorTW.update(rdt); this.bubbleTW.update(rdt); this.bigTW.update(rdt); this.chat.update(rdt); if (this.banner) this.banner.update(rdt); if (this.sign) this.sign.update(rdt); }
     for (let i = 0; i < WINDOWS.length; i++) WINDOWS[i].update(rdt);
     if (this.saveMenu.isOpen) { this.saveDrawT -= rdt; if (this.saveDrawT <= 0) { this.saveDrawT = Flash.reduced ? 0.34 : 0.12; this.refreshSaveCards(); } }
+    if (this.modeMenu.isOpen) { this.modeDrawT = (this.modeDrawT || 0) - rdt; if (this.modeDrawT <= 0) { this.modeDrawT = Flash.reduced ? 0.34 : 0.12; this.refreshModeCards(); } }
     if (this.prompt.mesh.visible) {
       this.promptT += rdt;
       const k = this.promptT < 0.25 ? this.promptT / 0.25 : this.promptT > this.promptLife - 0.4 ? (this.promptLife - this.promptT) / 0.4 : 1;
@@ -9546,7 +9607,7 @@ class DanceUI {
 
 // ============================================================================
 //  BattleStateMachine (shared by every boss; boss specifics come from G.def)
-//  TITLE -> SAVE_FILES -> SAFETY_WARNING -> INTRO_CUTSCENE -> PLAYER_MENU ->
+//  TITLE -> MODE_SELECT -> STORY (the opening) -> SAVE_FILES -> SAFETY_WARNING -> INTRO_CUTSCENE -> PLAYER_MENU ->
 //  (FIGHT_MINIGAME | ACT_MENU | ITEM_MENU | MERCY) -> BOSS_DIALOGUE -> BOSS_ATTACK
 //  -> PLAYER_MENU ... plus PHASE_SHIFT, GAME_OVER, VICTORY_FIGHT, VICTORY_SPARE
 // ============================================================================
@@ -9578,7 +9639,7 @@ class Battle {
     Object.assign(this, def.newState());   // boss-specific state (items, mercy-route flags, ...)
   }
   // ------------------------------------------------------------------ economy
-  inFight() { return !!G.def && !['BOOT', 'TITLE', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'LOADING', 'RESULTS', 'SHOP'].includes(this.state) && !(this.state === 'PAUSED' && this.prevState === 'SHOP'); }
+  inFight() { return !!G.def && !['BOOT', 'TITLE', 'MODE_SELECT', 'STORY', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'LOADING', 'RESULTS', 'SHOP'].includes(this.state) && !(this.state === 'PAUSED' && this.prevState === 'SHOP'); }
   // every 15 grazes: +1 G, a coin flies to your wrist
   onGraze(pos) {
     if (!G.soul.active) return;
@@ -9740,7 +9801,28 @@ class Battle {
     this.setState('TITLE');
     G.ui.titleMenu.showArc();
   }
-  titleStart() { this.openSaveFiles(); }
+  titleStart() { this.openModeSelect(); }
+  // START: STORY MODE (the main game: the opening, then SAVE FILES) or FREE PLAY (locked until SUNDOWN is
+  // beaten; nothing in it yet)
+  openModeSelect() {
+    G.ui.titleMenu.hide(); G.ui.saveMenu.hide(); G.ui.showTitle(false);
+    this.setState('MODE_SELECT');
+    G.ui.showBig('CHOOSE A MODE', { scale: 5, dist: 1.8, y: 0.34, border: null, bg: null, color: '#ffffff' });
+    G.ui.refreshModeCards();
+    G.ui.modeMenu.showArc({ yOff: -0.24 });
+  }
+  closeModeSelect() { G.ui.modeMenu.hide(); G.ui.hideBig(); G.ui.showTitle(true); this.setState('TITLE'); G.ui.titleMenu.showArc(); }
+  freePlayOpen() { return !!Save.beaten('outlaw'); }
+  chooseStory() {
+    G.ui.modeMenu.hide(); G.ui.hideBig();
+    G.audio.sfx.digiWhoosh(); RiftKit.surgeT = 0.7;
+    G.fx.fadeTo(1, 3.2, 0x140826);
+    this.afterIn('MODE_SELECT', 0.4, () => StoryScene.play(() => this.openSaveFiles()));
+  }
+  chooseFreePlay() {
+    if (!this.freePlayOpen()) { G.audio.sfx.buzz(); G.ui.showPrompt('LOCKED: FINISH THE STORY (BEAT SUNDOWN) TO UNLOCK FREE PLAY', 3, '#b8a8d8'); return; }
+    G.audio.sfx.chimes(); G.ui.showPrompt('FREE PLAY: COMING SOON', 2.4, '#2affd5');
+  }
   // SAVE FILES: FILE 1 (always open) / FILE 2 (encrypted until boss 1 is beaten)
   openSaveFiles() {
     G.ui.titleMenu.hide(); G.ui.showTitle(false);
@@ -9749,7 +9831,7 @@ class Battle {
     G.ui.refreshSaveCards();
     G.ui.saveMenu.showArc({ yOff: -0.3 });
   }
-  closeSaveFiles() { G.ui.saveMenu.hide(); G.ui.hideBig(); G.ui.showTitle(true); this.setState('TITLE'); G.ui.titleMenu.showArc(); }
+  closeSaveFiles() { G.ui.saveMenu.hide(); G.ui.hideBig(); this.openModeSelect(); }
   chooseFile(id) {
     if (!Save.unlocked(id)) {
       const def = BOSSES[id]; G.audio.sfx.buzz();
@@ -10307,7 +10389,7 @@ class Battle {
   canPause() {
     const r = G.clock.seg.ramp;
     if (r && r.r1 < 0.5 && G.audio.now < r.t0 + r.dur + 0.15) return false; // mid tape-stop
-    return G.inWorld && !['BOOT', 'TITLE', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT', 'LOADING', 'SHOP_ENTER'].includes(this.state) && !(this.state === 'SHOP' && Shop.exiting);
+    return G.inWorld && !['BOOT', 'TITLE', 'MODE_SELECT', 'STORY', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT', 'LOADING', 'SHOP_ENTER'].includes(this.state) && !(this.state === 'SHOP' && Shop.exiting);
   }
   pause() {
     if (!this.canPause()) return;
@@ -10403,7 +10485,7 @@ class Battle {
       for (let i = 0; i < this.timers.length; i++) { const t = this.timers[i]; t.t -= rdt; if (t.t <= 0) { this.timers.splice(i, 1); i--; t.fn(); } }
     }
     this.debugKeys();
-    if (G.input.pauseDown()) { if (this.state === 'PAUSED') this.closeSettings(); else if (this.state === 'SETTINGS') this.closeSettings(); else if (this.canPause()) this.pause(); }
+    if (G.input.pauseDown()) { if (this.state === 'STORY') StoryScene.skip(); else if (this.state === 'PAUSED') this.closeSettings(); else if (this.state === 'SETTINGS') this.closeSettings(); else if (this.canPause()) this.pause(); }
     switch (this.state) {
       case 'INTRO_CUTSCENE': {
         const t = this.stateT;
@@ -10420,7 +10502,8 @@ class Battle {
       case 'COUNT_IN': this.updateCountIn(); break;
       case 'EXIT_DOOR': this.updateExitDoor(dt); break;
       case 'SHOP': Shop.update(dt, rdt); break;
-      case 'HOW_TO': break;
+      case 'HOW_TO': case 'MODE_SELECT': break;
+      case 'STORY': StoryScene.update(dt, rdt); break;
       default: if (this.def.updateState && !frozen) this.def.updateState(this, this.state, dt, rdt);
     }
     // lights flicker (reduced: a smooth dip instead of a strobe)
@@ -29120,7 +29203,7 @@ const RiftKit = {
     this.breath = Math.sin(t * 0.75) * (red ? 0.5 : 1);
     this.surge = damp(this.surge, this.surgeT > 0 ? 1 : 0, this.surgeT > 0 ? 3 : 2, dt); this.surgeT = Math.max(0, (this.surgeT || 0) - dt);
     // behind a panel (SAVE FILES, SETTINGS, HOW TO PLAY, the warning) the rift settles so the text in front reads; it flares back on the title
-    this.focus = damp(this.focus, G.battle.state === 'TITLE' || this.surgeT > 0 ? 1 : 0.5, 2.5, dt);
+    this.focus = damp(this.focus, G.battle.state === 'TITLE' || G.battle.state === 'STORY' || this.surgeT > 0 ? 1 : 0.5, 2.5, dt);
     const su = this.su, tu = this.tu;
     su.uTime.value = t; su.uDim.value = dim; su.uOpen.value = this.open; su.uBreath.value = this.breath;
     tu.uTime.value = t; tu.uDim.value = dim * this.focus; tu.uOpen.value = this.open * (0.75 + 0.25 * this.focus); tu.uBreath.value = this.breath; tu.uCalm.value = red ? 1 : 0; tu.uSurge.value = this.surge * (red ? 0.6 : 1);
@@ -29359,6 +29442,449 @@ const RiftUI = {
 };
 
 // ============================================================================
+//  StoryScene - STORY MODE's opening: how the RIFT began and why you face the four keepers. It plays on the
+//  title's island, in front of the real RIFT (nothing moves your view): lit dioramas float in front of you
+//  while a narrator types the story underneath, over a procedural score. SKIP (or Esc) jumps to the end.
+//  The story: a hundred years ago SUNDOWN shot his town's clock at high noon so his last day would never
+//  end; the bullet tore time, and the tear (the RIFT) caught everything else that refuses to end - a party
+//  that never stops (THE MANOR), a kid who never logs off (THE SERVER), a show that must go on (THE BIG
+//  TOP). Each world loops on its own song. You are a SOUL the RIFT caught between songs; the only way
+//  through is to give every song its ending (FIGHT or MERCY), on the beat. KNOBS keeps the songs that end.
+// ============================================================================
+const STORY_LINES = [
+  { t: 1.0, text: 'A hundred years ago, in a dusty town out west, an outlaw called SUNDOWN shot the clock tower at high noon.' },
+  { t: 9.4, text: 'He wanted his last day to never end. The bullet stopped the hands... and time itself tore open.' },
+  { t: 16.6, text: 'We call that tear the RIFT.' },
+  { t: 21.0, text: 'Everything that refused to end fell into it. A party that never stops. A kid who never logs off. A show that must go on.' },
+  { t: 29.6, text: 'Their worlds drift in the RIFT, each one stuck on its own song, playing it over and over. Forever.' },
+  { t: 37.0, text: "And you? You're a SOUL, on your way somewhere. Between one song and the next, the RIFT caught you too." },
+  { t: 45.0, text: 'There is only one way through: give every song its ending. FIGHT each keeper, or show them MERCY. Either way, the loop breaks.' },
+  { t: 54.6, text: 'In the RIFT, everything moves to the music. Dodge on the beat. Strike on the beat.' },
+  { t: 61.6, text: 'Between the worlds, a record shop stays open late. KNOBS keeps every song that ever ended. Bring him gold.' },
+  { t: 68.6, text: 'Four worlds. Four keepers. The MANOR. The SERVER. The BIG TOP. And the FRONTIER, where it all began.' },
+  { t: 77.0, text: 'Go on, little SOUL. Every song has a last note.' },
+];
+const STORY_END = 83.5;
+// where things stand (stage space: your eye at (0, 1.6, 0), looking down -z)
+const STORY_ARC = { manor: [-1.38, 1.52, -2.7], server: [0, 1.82, -3.05], bigtop: [1.38, 1.52, -2.7] };
+const STORY_ROW = { manor: [-1.6, 1.4, -2.75], server: [-0.54, 1.6, -3.0], bigtop: [0.54, 1.6, -3.0], town: [1.6, 1.4, -2.75] };
+const STORY_WS = 1.3, STORY_TS = 1.35;   // the worlds' and the town's size (the dioramas read from the island's edge)
+// each world's loop ring: colour and the tempo it pulses at (its own song)
+const STORY_LOOPS = { manor: [0xc23cff, 120], server: [0x2affd5, 117.5], bigtop: [0xffc83c, 89], town: [0xff8a3a, 89.5] };
+// the score: a wistful arpeggio in A minor at 72 BPM (eighths), one chord a bar
+const STORY_CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62], [57, 60, 64], [53, 57, 60], [50, 53, 57], [52, 56, 59]];
+const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+const easeOutBack = (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+
+// a floating slab of rock: a flat top, a bevelled rim, a jagged underside tapering to a point (lit)
+function storyRock(r, top, side, dark, seed) {
+  const jit = (geo, amt) => {
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), d = Math.hypot(x, z);
+      if (d < 1e-4) continue;
+      const h = Math.abs(Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed) * 43758.5453) % 1;
+      const k = 1 + (h - 0.5) * 2 * amt / Math.max(d, r * 0.2);
+      p.setX(i, x * k); p.setZ(i, z * k);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const P = [
+    { geo: jit(new THREE.CylinderGeometry(r, r * 0.95, r * 0.12, 26, 1), r * 0.03), matrix: M4(0, -r * 0.06, 0), color: top },
+    { geo: jit(new THREE.CylinderGeometry(r * 0.95, r * 0.6, r * 0.34, 26, 2), r * 0.07), matrix: M4(0, -r * 0.29, 0), color: side },
+    { geo: jit(new THREE.ConeGeometry(r * 0.6, r * 0.75, 20, 3), r * 0.08), matrix: M4(0, -r * 0.835, 0, Math.PI, 0, 0), color: dark },
+  ];
+  const g = mergeGeos(P);
+  for (const p of P) p.geo.dispose();
+  return g;
+}
+
+const StoryScene = {
+  on: false, root: null,
+  // ---------------------------------------------------------------- build (on play) / dispose (on the way out)
+  build() {
+    const root = this.root = new THREE.Group(); scene.add(root);
+    const lit = (o) => CircusShade.material(Object.assign({ gloss: 0.35, shine: 24, rim: 0.55, emit: 0.16 }, o));
+    this.mats = { rock: lit({ gloss: 0.2, rim: 0.45, emit: 0.38 }), prop: lit({ emit: 0.42 }) };
+    const isle = (r, top, side, dark, seed) => new THREE.Mesh(storyRock(r, top, side, dark, seed), this.mats.rock);
+    // ---- THE TOWN: a sandstone mesa-top with the clock tower, two false fronts, a cactus, and SUNDOWN
+    const town = this.town = new THREE.Group(); root.add(town);
+    town.add(isle(0.55, 0xd8a46a, 0xb8743e, 0x6a3a22, 1));
+    const T = [
+      { geo: new THREE.BoxGeometry(0.17, 0.44, 0.17), matrix: M4(0.13, 0.22, -0.06), color: 0xdcae7c },
+      { geo: new THREE.BoxGeometry(0.2, 0.03, 0.2), matrix: M4(0.13, 0.455, -0.06), color: 0xb88454 },
+      { geo: new THREE.CylinderGeometry(0, 0.15, 0.13, 4), matrix: M4(0.13, 0.535, -0.06, 0, Math.PI / 4, 0), color: 0x8a4a2a },
+      { geo: new THREE.BoxGeometry(0.008, 0.06, 0.008), matrix: M4(0.13, 0.63, -0.06), color: 0x3a2414 },
+      { geo: new THREE.BoxGeometry(0.15, 0.15, 0.1), matrix: M4(-0.22, 0.075, -0.14), color: 0xb07a4a },
+      { geo: new THREE.BoxGeometry(0.17, 0.21, 0.012), matrix: M4(-0.22, 0.105, -0.085), color: 0xc48a52 },
+      { geo: new THREE.BoxGeometry(0.04, 0.06, 0.004), matrix: M4(-0.22, 0.05, -0.078), color: 0x2a1a10 },
+      { geo: new THREE.BoxGeometry(0.12, 0.11, 0.09), matrix: M4(-0.36, 0.055, 0.08, 0, 0.5, 0), color: 0x9a6a3a },
+      { geo: new THREE.BoxGeometry(0.13, 0.15, 0.01), matrix: M4(-0.335, 0.075, 0.12, 0, 0.5, 0), color: 0xa8784a },
+      { geo: new THREE.CylinderGeometry(0.018, 0.021, 0.15, 8), matrix: M4(0.33, 0.075, 0.2), color: 0x3a7a3a },
+      { geo: new THREE.CylinderGeometry(0.011, 0.011, 0.06, 6), matrix: M4(0.36, 0.1, 0.2, 0, 0, -0.9), color: 0x3a7a3a },
+      { geo: new THREE.CylinderGeometry(0.011, 0.011, 0.05, 6), matrix: M4(0.375, 0.135, 0.2), color: 0x3a7a3a },
+    ];
+    const townProps = new THREE.Mesh(mergeGeos(T), this.mats.prop); for (const p of T) p.geo.dispose();
+    town.add(townProps);
+    // the clock face (ticking toward noon; after the shot: stopped, with a bullet hole by the 12)
+    this.clockTex = smoothTex(canvasTex(128, 128));
+    this.clock = new THREE.Mesh(new THREE.CircleGeometry(0.058, 32), new THREE.MeshBasicMaterial({ map: this.clockTex }));
+    this.clock.position.set(0.13, 0.35, 0.026); town.add(this.clock);
+    this.drawClock(-8);
+    // SUNDOWN: a long duster, a wide hat, and a face that is the sun; his gun arm swings up to fire
+    const sd = this.sundown = new THREE.Group();
+    const S = [
+      { geo: new THREE.CylinderGeometry(0.011, 0.012, 0.11, 6), matrix: M4(-0.018, 0.055, 0), color: 0x4a3a2a },
+      { geo: new THREE.CylinderGeometry(0.011, 0.012, 0.11, 6), matrix: M4(0.018, 0.055, 0), color: 0x4a3a2a },
+      { geo: new THREE.CylinderGeometry(0.036, 0.072, 0.18, 12, 1, true), matrix: M4(0, 0.17, 0), color: 0x7a5232 },
+      { geo: new THREE.CylinderGeometry(0.03, 0.036, 0.06, 10), matrix: M4(0, 0.25, 0), color: 0x6a4428 },
+      { geo: new THREE.SphereGeometry(0.03, 10, 6), matrix: M4(0, 0.27, 0, 0, 0, 0, 1.6, 0.6, 1.1), color: 0x7a5232 },
+      { geo: new THREE.CylinderGeometry(0.074, 0.074, 0.006, 18), matrix: M4(0, 0.33, 0), color: 0x3a2414 },
+      { geo: new THREE.CylinderGeometry(0.028, 0.036, 0.045, 12), matrix: M4(0, 0.355, 0), color: 0x3a2414 },
+      { geo: new THREE.CylinderGeometry(0.037, 0.037, 0.008, 12), matrix: M4(0, 0.337, 0), color: 0xb8863c },
+      { geo: new THREE.CylinderGeometry(0.009, 0.009, 0.1, 6), matrix: M4(-0.046, 0.21, 0, 0, 0, 0.12), color: 0x7a5232 },
+    ];
+    sd.add(new THREE.Mesh(mergeGeos(S), this.mats.prop)); for (const p of S) p.geo.dispose();
+    this.sunFace = new THREE.Mesh(new THREE.SphereGeometry(0.03, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffd04a }));
+    this.sunFace.position.set(0, 0.302, 0); sd.add(this.sunFace);
+    this.gunArm = new THREE.Group(); this.gunArm.position.set(0.046, 0.265, 0); sd.add(this.gunArm);
+    const A = [
+      { geo: new THREE.CylinderGeometry(0.009, 0.01, 0.1, 6), matrix: M4(0, -0.05, 0), color: 0x7a5232 },
+      { geo: new THREE.BoxGeometry(0.012, 0.03, 0.012), matrix: M4(0, -0.11, 0.004), color: 0x2a2a30 },
+      { geo: new THREE.BoxGeometry(0.008, 0.012, 0.03), matrix: M4(0, -0.12, 0.022, Math.PI / 2, 0, 0), color: 0x2a2a30 },
+    ];
+    this.gunArm.add(new THREE.Mesh(mergeGeos(A), this.mats.prop)); for (const p of A) p.geo.dispose();
+    sd.position.set(-0.05, 0, 0.22); sd.rotation.y = Math.atan2(0.13 + 0.05, -0.06 - 0.22);
+    town.add(sd);
+    // the tear: the RIFT's own shader on a small plane, ripping up from the bullet hole
+    this.tearU = { uTime: { value: 0 }, uOpen: { value: 0 }, uBreath: { value: 0 }, uCalm: { value: Flash.reduced ? 1 : 0 }, uSurge: { value: 0 }, uDim: { value: 1 } };
+    this.tear = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 1), new THREE.ShaderMaterial({
+      uniforms: this.tearU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: RIFT_TEAR_FS,
+    }));
+    this.tear.visible = false; this.tear.renderOrder = 4; root.add(this.tear);
+    // ---- the three worlds that fell into the tear
+    this.worlds = {};
+    const ring = (key, r) => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(r, 0.006, 6, 72), new THREE.MeshBasicMaterial({ color: STORY_LOOPS[key][0], transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+      m.rotation.x = Math.PI / 2 - 0.25; m.position.y = 0.12; return m;
+    };
+    const world = (key, g, mini, r) => { const w = { key, g, mini, ring: ring(key, r * 1.25), r, home: new THREE.Vector3(), broken: false, glowK: 0, pop: 0 }; g.add(w.ring); root.add(g); g.visible = false; this.worlds[key] = w; if (mini) g.add(mini.root); return w; };
+    // THE MANOR: dark stone and lawn, THE PROPRIETOR by two candle lamps
+    {
+      const g = new THREE.Group(); g.add(isle(0.36, 0x3a5a3a, 0x4a3a52, 0x241a2c, 2));
+      const L = [
+        { geo: new THREE.CylinderGeometry(0.006, 0.008, 0.2, 6), matrix: M4(-0.22, 0.1, -0.05), color: 0x1a1420 },
+        { geo: new THREE.CylinderGeometry(0.006, 0.008, 0.2, 6), matrix: M4(0.22, 0.1, -0.05), color: 0x1a1420 },
+        { geo: new THREE.BoxGeometry(0.03, 0.035, 0.03), matrix: M4(-0.22, 0.215, -0.05), color: 0xc8a040 },
+        { geo: new THREE.BoxGeometry(0.03, 0.035, 0.03), matrix: M4(0.22, 0.215, -0.05), color: 0xc8a040 },
+      ];
+      g.add(new THREE.Mesh(mergeGeos(L), this.mats.prop)); for (const p of L) p.geo.dispose();
+      const mini = buildProprietorMini(); mini.root.scale.setScalar(0.62);
+      world('manor', g, mini, 0.36);
+    }
+    // THE SERVER: a rack with blinking lights, SCR1PT_K1DD1E cross-legged with his laptop
+    {
+      const g = new THREE.Group(); g.add(isle(0.36, 0x2a3440, 0x262a34, 0x14161c, 3));
+      const R = [
+        { geo: new THREE.BoxGeometry(0.13, 0.28, 0.12), matrix: M4(-0.15, 0.14, -0.08), color: 0x15181e },
+        { geo: new THREE.BoxGeometry(0.11, 0.25, 0.006), matrix: M4(-0.15, 0.14, -0.018), color: 0x262a32 },
+        { geo: new THREE.BoxGeometry(0.13, 0.2, 0.12), matrix: M4(0.17, 0.1, -0.12), color: 0x15181e },
+      ];
+      g.add(new THREE.Mesh(mergeGeos(R), this.mats.prop)); for (const p of R) p.geo.dispose();
+      const mini = buildKiddieMini(); mini.root.scale.setScalar(0.7); mini.root.position.set(0.04, 0, 0.06);
+      world('server', g, mini, 0.36);
+    }
+    // THE BIG TOP: a little striped tent with its flag, GRANDIOSO sitting out front
+    {
+      const g = new THREE.Group(); g.add(isle(0.36, 0xc8a070, 0x8a5a3a, 0x4a2a1a, 4));
+      const RED = 0xc8182c, CREAM = 0xfff4dc;
+      const P = [
+        ...btStriped(0.17, 0.17, 0.11, 12, RED, CREAM, M4(0, 0.055, -0.1)),
+        ...btStriped(0, 0.19, 0.15, 12, RED, CREAM, M4(0, 0.185, -0.1)),
+        { geo: new THREE.CylinderGeometry(0.003, 0.003, 0.08, 4), matrix: M4(0, 0.3, -0.1), color: 0xffc83c },
+        { geo: new THREE.BoxGeometry(0.045, 0.025, 0.003), matrix: M4(0.024, 0.325, -0.1), color: 0xffc83c },
+      ];
+      g.add(new THREE.Mesh(mergeGeos(P), this.mats.prop)); for (const p of P) p.geo.dispose();
+      const mini = buildRingmasterMini(); mini.root.scale.setScalar(0.62); mini.root.position.set(0.08, 0, 0.1);
+      world('bigtop', g, mini, 0.36);
+    }
+    // ---- KNOBS' SHOP: a little lit shopfront with its neon sign
+    {
+      const g = this.shop = new THREE.Group(); g.add(isle(0.28, 0x3a2a40, 0x2a1e34, 0x170f1e, 5));
+      const P = [
+        { geo: new THREE.BoxGeometry(0.3, 0.17, 0.16), matrix: M4(0, 0.085, -0.04), color: 0x2a1a30 },
+        { geo: new THREE.BoxGeometry(0.34, 0.02, 0.2), matrix: M4(0, 0.18, -0.04), color: 0x1a1020 },
+        { geo: new THREE.BoxGeometry(0.06, 0.11, 0.005), matrix: M4(0.07, 0.055, 0.041), color: 0x5a3420 },
+        { geo: new THREE.BoxGeometry(0.1, 0.06, 0.005), matrix: M4(-0.06, 0.09, 0.041), color: 0xffb347 },
+      ];
+      g.add(new THREE.Mesh(mergeGeos(P), this.mats.prop)); for (const p of P) p.geo.dispose();
+      this.neonTex = canvasTex(256, 64, (c, w, h) => drawNeonSign(c, w, h, false));
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075), new THREE.MeshBasicMaterial({ map: this.neonTex, transparent: true, depthWrite: false }));
+      sign.position.set(0, 0.245, -0.02); g.add(sign);
+      g.visible = false; root.add(g);
+    }
+    // ---- your SOUL: a big voxel heart
+    this.heart = new THREE.Mesh(buildVoxelHeart(0.022, 0.03), new THREE.MeshBasicMaterial({ color: CONFIG.COL.red }));
+    this.heart.visible = false; root.add(this.heart);
+    // numbers over the four worlds at the end (1-4), in the game's pixel font
+    this.labels = [1, 2, 3, 4].map((n) => {
+      const tex = canvasTex(64, 64, (c) => { c.clearRect(0, 0, 64, 64); PixelFont.draw(c, String(n), 20, 14, 5, '#ffffff', { shadow: '#5a2a9a' }); });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.17), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+      m.visible = false; root.add(m); return m;
+    });
+    // the narration under the stage, and SKIP
+    this.panel = new TextPanel({ w: 2.0, h: 0.42, cw: 1000, ch: 210, scale: 4, pad: 20, align: 'center', valign: 'middle', color: '#f6eeff', drawBg: (g, W, H) => RiftUI.frameBg(g, W, H), renderOrder: 9 });
+    root.add(this.panel.mesh);
+    this.tw = new Typewriter(this.panel);
+    // SKIP is built once and kept (its glass frame shares the title buttons' materials)
+    if (!this.skipMenu) this.skipMenu = new Menu([{ label: 'SKIP', icon: 'play', style: 'rift', onPress: () => this.skip() }], { primary: false });
+  },
+  dispose() {
+    if (!this.root) return;
+    this.skipMenu.hide();
+    scene.remove(this.root); disposeObject(this.root);
+    for (const k in this.mats) this.mats[k].dispose();
+    this.root = null; this.worlds = null; this.panel = null; this.tw = null;
+  },
+  // ---------------------------------------------------------------- the clock (128 x 128)
+  drawClock(secToNoon) {
+    const g = this.clockTex.userData.ctx, w = 128, cx = 64, cy = 64, R = 60;
+    if (secToNoon >= 0) { drawClockFace(g, w, w); this.clockTex.needsUpdate = true; return; }
+    g.clearRect(0, 0, w, w);
+    const gr = g.createRadialGradient(cx, cy, 4, cx, cy, R); gr.addColorStop(0, '#f6ead0'); gr.addColorStop(1, '#d8c49a');
+    g.fillStyle = '#5a3a1e'; g.beginPath(); g.arc(cx, cy, R + 2, 0, TAU); g.fill();
+    g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, R - 3, 0, TAU); g.fill();
+    g.fillStyle = '#3a2a1a';
+    for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; g.save(); g.translate(cx + Math.sin(a) * (R - 12), cy - Math.cos(a) * (R - 12)); g.rotate(a); g.fillRect(-2, -5, 4, i % 3 === 0 ? 10 : 6); g.restore(); }
+    const s = 60 + secToNoon, hand = (a, len, wd, col) => { g.strokeStyle = col; g.lineWidth = wd; g.lineCap = 'round'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(a) * len, cy - Math.cos(a) * len); g.stroke(); };
+    hand(-(60 - s) / 43200 * TAU - 0.05, 30, 6, '#2a1a10');            // the hour hand, a hair short of 12
+    hand(-(60 - s) / 3600 * TAU - 0.02, 44, 4, '#2a1a10');             // the minute hand at 11:59
+    hand(s / 60 * TAU, 48, 2, '#a01818');                             // the seconds, sweeping up to noon
+    g.fillStyle = '#2a1a10'; g.beginPath(); g.arc(cx, cy, 4, 0, TAU); g.fill();
+    this.clockTex.needsUpdate = true;
+  },
+  // ---------------------------------------------------------------- play / skip / finish
+  play(onDone) {
+    this.onDone = onDone;
+    if (!this.root) this.build();
+    Head.update();
+    // the stage stands where you face, at your eye height
+    const eye = clamp(Head.pos.y, 0.9, 2.0);
+    this.root.position.set(Head.pos.x, eye - 1.6, Head.pos.z); this.root.rotation.set(0, Head.yaw || 0, 0);
+    this.t = 0; this.lineI = -1; this.cues = {}; this.done = false; this.sc = { next: 0, i: 0, on: false }; this.tickN = -1;
+    this.town.position.set(0, 1.32, -2.55); this.town.scale.setScalar(0.001);
+    for (const k in this.worlds) { const w = this.worlds[k]; w.g.visible = false; w.broken = false; w.ring.visible = true; w.ring.scale.setScalar(1); w.glowK = 0; }
+    this.shop.visible = false; this.heart.visible = false; this.tear.visible = false;
+    for (const l of this.labels) l.visible = false;
+    this.gunArm.rotation.x = 0;
+    this.panel.mesh.position.set(0, 0.9, -1.95); this.panel.mesh.rotation.set(-0.32, 0, 0);
+    this.panel.setText('', 0);
+    this.root.updateMatrixWorld(true);
+    this.skipMenu.showAt([this.root.localToWorld(new THREE.Vector3(0.86, 0.6, -1.86))], Head.pos.clone());
+    this.on = true;
+    G.ui.showTitle(false); G.ui.hideBig();
+    G.battle.setState('STORY');
+    G.fx.fadeT = 1; G.fx.fadeTo(0, 0.6, 0x140826);
+  },
+  skip() {
+    if (!this.on || this.done) return;
+    G.audio.sfx.select();
+    this.done = true; this.sc.on = false;
+    G.fx.fadeTo(1, 3.5, 0x140826);
+    G.battle.afterIn('STORY', 0.4, () => this.finish());
+  },
+  finish() {
+    this.on = false;
+    this.dispose();
+    G.fx.fadeT = 1; G.fx.fadeTo(0, 0.8, 0x140826);
+    const f = this.onDone; this.onDone = null;
+    if (f) f();
+  },
+  // stage space -> world (for the glow sprites)
+  W(x, y, z, out = _v6) { return out.set(x, y, z).applyMatrix4(this.root.matrixWorld); },
+  cue(name, at) { if (this.t >= at && !this.cues[name]) { this.cues[name] = true; return true; } return false; },
+  // ---------------------------------------------------------------- per frame
+  update(dt, rdt) {
+    if (!this.on) return;
+    const t = this.t += rdt, sfx = G.audio.sfx, red = Flash.reduced, glow = G.fx.glow;
+    this.root.updateMatrixWorld(true);
+    // narration
+    for (let i = STORY_LINES.length - 1; i > this.lineI; i--) if (t >= STORY_LINES[i].t) { this.lineI = i; this.tw.start(STORY_LINES[i].text, { voice: 'narrator', speed: 32 }); break; }
+    this.tw.update(rdt);
+    // ---- ACT 1: the town, the clock ticking up to noon, the shot, the tear
+    const tw = this.town;
+    const townIn = easeOutBack(clamp(t / 1.6, 0, 1));
+    if (t < 19.5) tw.scale.setScalar(Math.max(0.001, townIn * STORY_TS));
+    tw.rotation.y = Math.sin(t * 0.25) * 0.12;
+    tw.position.y = 1.32 + Math.sin(t * 0.8) * 0.012;
+    if (t < 8.4) {
+      const s = Math.floor(t - 8.4);
+      if (s !== this.tickN) { this.tickN = s; this.drawClock(s); if (t > 0.6) sfx.clockTick(); }
+    }
+    // the sun of his face; the clock's glow
+    this.sundown.localToWorld(_v6.set(0, 0.302, 0)); glow.add(_v6.x, _v6.y, _v6.z, 0.11 * tw.scale.x, 1, 0.75, 0.3, 0.8, 0);
+    this.clock.getWorldPosition(_v6); glow.add(_v6.x, _v6.y, _v6.z, 0.16 * tw.scale.x, 1, 0.86, 0.6, 0.35, 0);
+    // he draws...
+    if (t > 6.9 && t < 8.4) this.gunArm.rotation.x = -easeOut(clamp((t - 6.9) / 0.5, 0, 1)) * (Math.PI / 2 + 0.55);
+    if (this.cue('draw', 6.9)) sfx.gunDraw();
+    // ...and fires at noon: the flash, the crack, the bell, the clock stopped with a hole by the 12
+    if (this.cue('shot', 8.4)) {
+      sfx.revolverShot(); this.drawClock(0);
+      this.gunArm.localToWorld(_v5.set(0, -0.14, 0.03)); G.fx.burst(_v5, 14, 1, 0.85, 0.4, 1.4, 0.03);
+      G.battle.after(0.12, () => sfx.crack()); G.battle.after(0.5, () => sfx.bell());
+    }
+    if (t > 8.4 && t < 8.75) { this.gunArm.localToWorld(_v5.set(0, -0.14, 0.03)); glow.add(_v5.x, _v5.y, _v5.z, 0.25, 1, 0.8, 0.4, red ? 0.5 : 1, 0); }
+    if (t > 9.5 && t < 10.5) this.gunArm.rotation.x = -(Math.PI / 2 + 0.55) * (1 - easeInOut(clamp((t - 9.5) / 1, 0, 1)));
+    // the tear rips up from the bullet hole into the sky
+    if (this.cue('tear', 12.0)) { this.tear.visible = true; sfx.digiWhoosh(); sfx.tapeWow(undefined, 1.2); RiftKit.surgeT = 1.2; }
+    if (t >= 12.0 && t < 20.5) {
+      const k = easeOut(clamp((t - 12) / 3.5, 0, 1)), fade = 1 - clamp((t - 18.5) / 2, 0, 1);
+      tw.localToWorld(_v5.set(0.13, 0.4, 0.03)); this.root.worldToLocal(_v5);
+      const h = 0.15 + 3.4 * k;
+      this.tear.scale.set(1, h, 1); this.tear.position.set(_v5.x, _v5.y + h / 2 - 0.05, _v5.z + 0.02);
+      const u = this.tearU; u.uTime.value = G.time; u.uOpen.value = (0.3 + 0.7 * k) * fade; u.uSurge.value = 0.4 * (1 - k); u.uDim.value = fade;
+      this.tear.visible = fade > 0.01;
+    }
+    if (this.cue('riftFlare', 16.6)) RiftKit.surgeT = 1.4;
+    // ---- ACT 2: the town drifts back; three worlds fly in out of the RIFT and hang in an arc, looping
+    if (t >= 19.5 && t < 68.6) {
+      const k = easeInOut(clamp((t - 19.5) / 3, 0, 1));
+      tw.position.set(0, 1.32 + 1.6 * k, -2.55 - 4.5 * k); tw.scale.setScalar(Math.max(0.001, STORY_TS * (1 - 0.55 * k)));
+    }
+    ['manor', 'server', 'bigtop'].forEach((key, i) => {
+      const w = this.worlds[key], t0 = 19.8 + i * 0.7;
+      if (this.cue('in_' + key, t0)) { w.g.visible = true; sfx.whoosh(); }
+      if (t < t0) return;
+      const a = STORY_ARC[key], b = STORY_ROW[key];
+      const fly = easeOut(clamp((t - t0) / 2.6, 0, 1)), row = easeInOut(clamp((t - 68.6) / 2.5, 0, 1));
+      // from the RIFT (far, high) to the arc, then to the line-up at the end
+      const fx = lerp(0, a[0], fly), fy = lerp(6.5, a[1], fly), fz = lerp(-27, a[2], fly);
+      w.home.set(lerp(fx, b[0], row), lerp(fy, b[1], row), lerp(fz, b[2], row));
+      w.pop = Math.max(0, w.pop - rdt * 1.6);
+      const bob = Math.sin(t * 0.9 + i * 2) * 0.02;
+      w.g.position.set(w.home.x, w.home.y + bob, w.home.z);
+      w.g.scale.setScalar(lerp(0.1, 1, fly) * STORY_WS * (1 + 0.18 * easeOut(w.pop)));
+      w.g.rotation.y = Math.sin(t * 0.3 + i) * 0.25 - w.g.position.x * 0.25;
+      // the loop ring pulses at the world's own tempo until the SOUL breaks it
+      const [col, bpm] = STORY_LOOPS[key], ph = (t * bpm / 60) % 1;
+      if (!w.broken) { w.ring.rotation.z = t * 0.8 * (i % 2 ? -1 : 1); w.ring.scale.setScalar(1 + 0.06 * Math.exp(-ph * 6) * (red ? 0.5 : 1)); w.ring.material.opacity = 0.55 + 0.35 * Math.exp(-ph * 5); }
+      w.glowK = damp(w.glowK, w.broken ? 1 : 0, 2, rdt);
+      if (w.mini) { w.mini.update(rdt, w.mini); }
+      // warm light once the loop is broken
+      if (w.glowK > 0.02) { w.g.localToWorld(_v6.set(0, 0.25, 0.05)); _c1.setHex(col); glow.add(_v6.x, _v6.y, _v6.z, 0.5 * w.g.scale.x, _c1.r, _c1.g, _c1.b, 0.3 * w.glowK, 0); }
+      if (key === 'server') for (let j = 0; j < 8; j++) { w.g.localToWorld(_v6.set(-0.19 + (j % 2) * 0.05, 0.05 + Math.floor(j / 2) * 0.055, -0.014)); const on = Math.sin(t * (3 + j) + j * 1.7) > 0; glow.add(_v6.x, _v6.y, _v6.z, 0.02 * w.g.scale.x, j % 3 ? 0.2 : 1, 1, j % 3 ? 0.5 : 0.3, on ? 0.9 : 0.15, 0); }
+      if (key === 'manor') for (const sx of [-0.22, 0.22]) { w.g.localToWorld(_v6.set(sx, 0.215, -0.05)); glow.add(_v6.x, _v6.y, _v6.z, 0.07 * w.g.scale.x, 1, 0.75, 0.35, 0.85, 0); }
+      if (key === 'bigtop') for (let j = 0; j < 10; j++) { const a2 = j / 10 * TAU + t * 0.8; w.g.localToWorld(_v6.set(Math.cos(a2) * 0.19, 0.11, -0.1 + Math.sin(a2) * 0.19)); glow.add(_v6.x, _v6.y, _v6.z, 0.02 * w.g.scale.x, 1, 0.85, 0.4, (j + Math.floor(t * 6)) % 2 ? 0.95 : 0.25, 0); }
+    });
+    // named as the narrator says them
+    if (this.cue('nameManor', 23.2)) { this.worlds.manor.pop = 1; sfx.chimes(); this.worlds.manor.mini.cheerT = 1.2; }
+    if (this.cue('nameServer', 24.9)) { this.worlds.server.pop = 1; sfx.bootBeep(); G.battle.after(0.12, () => sfx.bootBeep()); this.worlds.server.mini.cheerT = 1.2; }
+    if (this.cue('nameBigtop', 26.6)) { this.worlds.bigtop.pop = 1; sfx.honk(); this.worlds.bigtop.mini.cheerT = 1.2; }
+    // ---- ACT 3: your SOUL falls in; it breaks each world's loop in turn
+    const hp = _v5;
+    if (this.cue('soul', 37.0)) { this.heart.visible = true; for (let i = 0; i < 5; i++) sfx.harp(G.audio.now + i * 0.09, 72 + [0, 3, 7, 10, 12][i]); }
+    if (t >= 37 && t < 80) {
+      let x = 0, y = lerp(3.0, 1.32, easeOut(clamp((t - 37) / 3.5, 0, 1))), z = -2.25;
+      // the visits (each loop shatters when it arrives)
+      const visits = [['manor', 46.0], ['server', 48.3], ['bigtop', 50.6]];
+      for (let i = 0; i < visits.length; i++) {
+        const [key, tv] = visits[i], w = this.worlds[key];
+        const prev = i ? this.worlds[visits[i - 1][0]].home : null;
+        if (t >= tv - 1.4 && t < tv + 0.9) {
+          const k = easeInOut(clamp((t - (tv - 1.4)) / 1.4, 0, 1));
+          const fx = prev ? prev.x : 0, fy = prev ? prev.y + 0.2 : 1.32, fz = prev ? prev.z + 0.3 : -2.25;
+          x = lerp(fx, w.home.x, k); y = lerp(fy, w.home.y + 0.2, k) + Math.sin(k * Math.PI) * 0.25; z = lerp(fz, w.home.z + 0.3, k);
+        }
+        if (this.cue('break_' + key, tv)) {
+          w.broken = true; w.ring.visible = false; w.mini.cheerT = 2.2; w.pop = 1;
+          sfx.shatter(); G.battle.after(0.25, () => sfx.chimes());
+          w.g.localToWorld(_v4.set(0, 0.12, 0)); _c1.setHex(STORY_LOOPS[key][0]);
+          for (let j = 0; j < 36; j++) { const a = j / 36 * TAU; G.fx.parts.emit(_v4.x + Math.cos(a) * 0.45, _v4.y, _v4.z + Math.sin(a) * 0.45, Math.cos(a) * 0.5, rand(-0.2, 0.4), Math.sin(a) * 0.5, rand(0.5, 1.0), 0.025, _c1.r, _c1.g, _c1.b, 1.5, -0.4, 1); }
+        }
+      }
+      if (t >= 51.5 && t < 54.6) { const k = easeInOut(clamp((t - 51.5) / 2, 0, 1)), w = this.worlds.bigtop.home; x = lerp(w.x, 0, k); y = lerp(w.y + 0.2, 1.32, k); z = lerp(w.z + 0.3, -2.25, k); }
+      // ---- ACT 4: the rules - pellets close in on the beat, the SOUL hops aside on the beat
+      const bt = 60 / 100, beatPh = t >= 54.6 && t < 61.6 ? (t - 54.6) / bt : -1;
+      if (beatPh >= 0) {
+        const n = Math.floor(beatPh), ph = beatPh - n;
+        if (n !== this.beatN) { this.beatN = n; sfx.tone({ type: 'square', f: n % 4 ? 880 : 1320, dur: 0.05, vol: 0.05 }); }
+        x += (n % 2 ? 0.09 : -0.09) * easeOut(clamp(ph * 4, 0, 1));
+        const rr = 0.32 - 0.2 * ph;
+        for (let j = 0; j < 8; j++) { const a = j / 8 * TAU + n * 0.4; this.W(Math.cos(a) * rr, 1.32 + Math.sin(a) * rr * 0.8, -2.25, _v4); glow.add(_v4.x, _v4.y, _v4.z, 0.035, 1, 1, 1, 0.9, 1); }
+      }
+      // ---- the end: it flies off toward the RIFT
+      if (t >= 79) { const k = easeIn(clamp((t - 79) / 3, 0, 1)); y = lerp(1.32, 6.5, k); z = lerp(-2.25, -26, k); }
+      { const up = clamp((t - 61.6) / 1.2, 0, 1) * (1 - clamp((t - 67.6) / 1.0, 0, 1)); y += 0.48 * easeInOut(up); }
+      const beat = Math.exp(-((t * 72 / 60) % 1) * 7);
+      hp.set(x, y + Math.sin(t * 1.4) * 0.02, z);
+      this.heart.position.copy(hp);
+      this.heart.scale.setScalar(2.2 * (1 + 0.08 * beat * (red ? 0.5 : 1)) * (t >= 79 ? 1 - 0.7 * clamp((t - 79) / 3, 0, 1) : 1));
+      this.heart.lookAt(this.W(0, 1.6, 0, _v4));
+      this.W(hp.x, hp.y, hp.z, _v4); glow.add(_v4.x, _v4.y, _v4.z, 0.3 + 0.08 * beat, 1, 0.1, 0.2, 0.55, 0);
+      if (t > 40 && Math.floor(t * 72 / 60) !== this.thumpN) { this.thumpN = Math.floor(t * 72 / 60); if (t < 54.6 || t >= 61.6) sfx.tone({ type: 'sine', f: 62, f2: 42, dur: 0.18, vol: 0.12 }); }
+    }
+    // ---- ACT 5: KNOBS' SHOP rises, lit, at the lower left
+    if (this.cue('shop', 61.6)) { this.shop.visible = true; sfx.shopBell(); }
+    if (this.shop.visible) {
+      const k = easeOutBack(clamp((t - 61.6) / 1.4, 0, 1)), out = easeIn(clamp((t - 68.6) / 1.5, 0, 1));
+      this.shop.position.set(0, lerp(0.5, 1.2, k) - out * 1.2, -2.3); this.shop.scale.setScalar(Math.max(0.001, 1.3 * k * (1 - out)));
+      this.shop.rotation.y = Math.sin(t * 0.4) * 0.12;
+      this.shop.localToWorld(_v6.set(0.07, 0.055, 0.05)); glow.add(_v6.x, _v6.y, _v6.z, 0.12 * this.shop.scale.x, 1, 0.7, 0.3, 0.7, 0);
+      this.shop.localToWorld(_v6.set(0, 0.245, 0)); glow.add(_v6.x, _v6.y, _v6.z, 0.3 * this.shop.scale.x, 1, 0.24, 0.8, 0.35 * (0.8 + 0.2 * Math.sin(t * 9)), 0);
+      if (out >= 1) this.shop.visible = false;
+    }
+    // ---- ACT 6: the line-up - the town comes back as the fourth world; numbers over each; a path of light
+    if (t >= 68.6) {
+      const k = easeInOut(clamp((t - 68.6) / 2.5, 0, 1)), b = STORY_ROW.town;
+      tw.position.set(lerp(0, b[0], k), lerp(2.92, b[1], k), lerp(-7.05, b[2], k)); tw.scale.setScalar(STORY_TS * lerp(0.45, 0.62, k));
+      if (this.cue('row', 68.6)) sfx.whoosh();
+      const homes = [this.worlds.manor.home, this.worlds.server.home, this.worlds.bigtop.home, tw.position];
+      this.labels.forEach((l, i) => {
+        const at = 71 + i * 0.5; if (t < at) return;
+        if (!l.visible) { l.visible = true; sfx.tone({ type: 'triangle', f: midiHz(72 + [0, 4, 7, 12][i]), dur: 0.3, vol: 0.06 }); }
+        const h = homes[i], s = easeOutBack(clamp((t - at) / 0.5, 0, 1));
+        l.position.set(h.x, h.y + 0.85, h.z); l.scale.setScalar(Math.max(0.001, s)); l.lookAt(this.W(0, 1.6, 0, _v4));
+      });
+      // dots of light running from you through the four worlds
+      if (t > 72.5) {
+        const pts = [[0, 1.32, -2.25], ...homes.map((h) => [h.x, h.y + 0.25, h.z])];
+        for (let s = 0; s < pts.length - 1; s++) for (let j = 0; j < 6; j++) {
+          const u = ((j / 6) + t * 0.35) % 1, a = pts[s], c = pts[s + 1];
+          this.W(lerp(a[0], c[0], u), lerp(a[1], c[1], u) + Math.sin(u * Math.PI) * 0.1, lerp(a[2], c[2], u), _v4);
+          glow.add(_v4.x, _v4.y, _v4.z, 0.03, 1, 0.5, 0.8, 0.8, 1);
+        }
+      }
+    }
+    if (t >= 79) for (const l of this.labels) l.visible = false;
+    if (this.cue('surge', 79.5)) { RiftKit.surgeT = 2.5; sfx.digiWhoosh(); }
+    // ---- the score (starts after the bell; stops for the ending)
+    if (this.cue('score', 10.6)) { this.sc.on = true; this.sc.next = G.audio.now + 0.05; this.sc.i = 0; }
+    if (t >= 80.5) this.sc.on = false;
+    this.score();
+    // the way out
+    if (!this.done && t >= 81.5) { this.done = true; G.fx.fadeTo(1, 1.2, 0x140826); }
+    if (t >= STORY_END) this.finish();
+  },
+  score() {
+    const sc = this.sc; if (!sc.on || !G.audio.ctx) return;
+    const now = G.audio.now, step = 60 / 72 / 2, sfx = G.audio.sfx;
+    while (sc.next < now + 0.3) {
+      const bar = Math.floor(sc.i / 8), e = sc.i % 8, ch = STORY_CHORDS[bar % STORY_CHORDS.length];
+      const pat = [0, 1, 2, 3, 2, 1, 3, 2], n = pat[e] === 3 ? ch[0] + 12 : ch[pat[e]];
+      sfx.tone({ type: 'triangle', f: midiHz(n + 12), t: sc.next, dur: 0.9, vol: 0.03, attack: 0.008 });
+      if (e === 0) {
+        sfx.tone({ type: 'sine', f: midiHz(ch[0] - 12), t: sc.next, dur: 3.2, vol: 0.05, attack: 0.05 });
+        if (bar % 2 === 0) sfx.tone({ type: 'sine', f: midiHz(ch[2] + 24), t: sc.next + step * 0.02, dur: 1.6, vol: 0.022, attack: 0.004 });
+      }
+      sc.next += step; sc.i++;
+    }
+  },
+};
+
+// ============================================================================
 //  boot: build every system
 // ============================================================================
 G.def = BOSSES.proprietor;        // active boss definition (switched by Battle.loadBoss)
@@ -29378,7 +29904,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
+window.__MM = { G, CONFIG, Settings, StoryScene, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)
