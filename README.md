@@ -98,7 +98,7 @@ crossfade, the music is muffled behind the closed door and ducks under KNOBS' vo
 
 | | VR | Desktop |
 |---|---|---|
-| Fly | hold grip and pull the air, release to fling | WASD + Q/E, Space to dash |
+| Fly | hold grip and pull the air, release to fling (Settings > COMFORT > SOUL DRIFT OFF: you stop where you let go) | WASD + Q/E, Space to dash (SOUL DRIFT OFF: a short dash that stops dead) |
 | Turn | right stick (snap or smooth; the sticks never move you) | mouse look |
 | Menus, pop-up [X], [ACCEPT] | poke with either hand, or point and pull the trigger | crosshair + click, keys 1-9 |
 | Move a pop-up out of the way | grip it with either hand, drag, let go | - |

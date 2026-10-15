@@ -652,6 +652,7 @@ const Settings = {
     musicVol: 0.8, sfxVol: 0.8, flashing: 'reduced', vignette: true, turn: 'snap', hand: 'right',
     difficulty: 'normal', seated: false, beatHaptics: true, refresh: 72, unlockAll: false, assists: true,
     purist: false,   // ignore LV bonuses and shop upgrades (the original challenge)
+    drift: true,     // SOUL DRIFT: you glide on after letting go of a pull / after a dash (OFF: you stop dead)
   },
   schema: [
     { key: 'musicVol', label: 'MUSIC VOLUME', type: 'num', min: 0, max: 1, step: 0.1, page: 'audio' },
@@ -659,6 +660,7 @@ const Settings = {
     { key: 'flashing', label: 'FLASHING', type: 'enum', options: ['reduced', 'full'], names: ['REDUCED', 'FULL'], page: 'comfort' },
     { key: 'vignette', label: 'COMFORT VIGNETTE', type: 'enum', options: [true, false], names: ['ON', 'OFF'], page: 'comfort' },
     { key: 'turn', label: 'TURNING', type: 'enum', options: ['snap', 'smooth'], names: ['SNAP 45', 'SMOOTH'], page: 'comfort' },
+    { key: 'drift', label: 'SOUL DRIFT', type: 'enum', options: [true, false], names: ['ON', 'OFF'], page: 'comfort' },
     { key: 'hand', label: 'DOMINANT HAND', type: 'enum', options: ['right', 'left'], names: ['RIGHT', 'LEFT'], page: 'game' },
     { key: 'difficulty', label: 'DIFFICULTY', type: 'enum', options: ['easy', 'normal', 'hard'], names: ['EASY', 'NORMAL', 'HARD'], page: 'game' },
     { key: 'seated', label: 'SEATED MODE', type: 'enum', options: [false, true], names: ['OFF', 'ON'], page: 'comfort' },
@@ -2343,9 +2345,13 @@ class PullLocomotion {
     this.ext = null;              // external driver that replaces pulling (the PINK trapeze): { update(dt) }
     this.walk = null;             // grounded walking (KNOBS' SHOP): { speed, clamp(out: Vector3 head xz) } - no flying
     this.push = new THREE.Vector3();   // wind: carries the player along (m/s), on top of any movement
+    this.burst = new THREE.Vector3(); this.burstT = 0;   // SOUL DRIFT off: the desktop dash is a short burst that stops dead
   }
-  setMode(m) { this.mode = m; this.vel.set(0, 0, 0); this.grabbing = false; this.histN = 0; this.grounded = false; }
-  stop() { this.vel.set(0, 0, 0); this.grabbing = false; this.histN = 0; }
+  // SOUL DRIFT (Settings, COMFORT): on, you glide on after letting go of a pull or after a dash; off, you stop
+  // where you let go (in blue mode a jump still flies: only the sideways glide goes)
+  get glide() { return Settings.data.drift !== false; }
+  setMode(m) { this.mode = m; this.vel.set(0, 0, 0); this.grabbing = false; this.histN = 0; this.grounded = false; this.burstT = 0; }
+  stop() { this.vel.set(0, 0, 0); this.grabbing = false; this.histN = 0; this.burstT = 0; }
   turnBy(angle) {
     Head.update();
     _v1.copy(Head.pos);
@@ -2362,6 +2368,7 @@ class PullLocomotion {
       if (this.mode === 'blue') this.vel.multiplyScalar(CONFIG.BLUE_JUMP_BOOST);
       const vmax = CONFIG.PULL_MAX_SPEED * this.boost * Stats.pullMul();
       if (this.vel.length() > vmax) this.vel.setLength(vmax);
+      if (!this.glide) { if (this.mode === 'blue') { this.vel.x = 0; this.vel.z = 0; } else this.vel.set(0, 0, 0); }
       if (this.vel.length() > 2.5) G.audio.sfx.tone({ type: 'sine', f: 220, f2: 440, dur: 0.12, vol: 0.04 });
     }
     this.grabbing = false; this.histN = 0; this.histI = 0;
@@ -2467,19 +2474,23 @@ class PullLocomotion {
           if (this.grounded || this.coyote > 0) { this.vel.y = 4.4; this.grounded = false; this.coyote = 0; this.onPlatform = null; }
         } else {
           _v2.set(0, 0, -1).applyQuaternion(camera.quaternion);
-          this.vel.addScaledVector(_v2, CONFIG.DESKTOP_DASH_SPEED * this.boost);
-          if (this.vel.length() > CONFIG.PULL_MAX_SPEED * this.boost) this.vel.setLength(CONFIG.PULL_MAX_SPEED * this.boost);
+          if (this.glide) {
+            this.vel.addScaledVector(_v2, CONFIG.DESKTOP_DASH_SPEED * this.boost);
+            if (this.vel.length() > CONFIG.PULL_MAX_SPEED * this.boost) this.vel.setLength(CONFIG.PULL_MAX_SPEED * this.boost);
+          } else { this.burst.copy(_v2).multiplyScalar(6 * this.boost); this.burstT = 0.2; }   // about 1.2 m, then a dead stop
           G.audio.sfx.tone({ type: 'sine', f: 220, f2: 440, dur: 0.12, vol: 0.04 });
         }
       }
     }
     if (!this.grabbing) {
       rig.position.addScaledVector(this.vel, dt);
+      const glide = this.glide;
       if (blue) {
-        const k = Math.exp(-(this.grounded ? 7 : 1.4) * dt); this.vel.x *= k; this.vel.z *= k;
+        const k = Math.exp(-(glide ? (this.grounded ? 7 : 1.4) : 16) * dt); this.vel.x *= k; this.vel.z *= k;
         this.vel.y -= CONFIG.BLUE_GRAVITY * dt;
-      } else this.vel.multiplyScalar(Math.exp(-CONFIG.PULL_DAMPING * dt));
+      } else this.vel.multiplyScalar(Math.exp(-(glide ? CONFIG.PULL_DAMPING : 16) * dt));
     }
+    if (this.burstT > 0) { const t = Math.min(dt, this.burstT); rig.position.addScaledVector(this.burst, t); this.burstT -= t; }
     if (this.push.x || this.push.y || this.push.z) rig.position.addScaledVector(this.push, dt);
     this.coyote = Math.max(0, this.coyote - dt);
     this.wallCd = Math.max(0, this.wallCd - dt);
