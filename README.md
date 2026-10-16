@@ -13,9 +13,9 @@ of light where the worlds leak through, and every fight starts by falling into i
 START opens the mode screen. **STORY MODE** is the main game: an opening tells how the
 RIFT began (a hundred years ago SUNDOWN shot his town's clock at high noon so his day
 would never end, and the bullet tore time; everything else that refuses to end fell into
-the tear) and why you face each keeper, then the SAVE FILES screen. SKIP (or Esc) jumps
-past the opening. **FREE PLAY** is locked until you beat SUNDOWN, and has nothing in it
-yet.
+the tear) and why you face each keeper, then the SAVE FILES screen. The opening plays
+once (SKIP or Esc jumps past it); after that STORY MODE goes straight to SAVE FILES.
+**FREE PLAY** is locked until you beat SUNDOWN, and has nothing in it yet.
 
 Four bosses, picked from the SAVE FILES screen (a card per boss: the boss's real model in
 front of its animated world, in a frame of its world's colours), and a shop between them:

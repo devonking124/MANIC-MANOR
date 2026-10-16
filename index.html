@@ -584,6 +584,7 @@ const Save = {
     soundTest: [],                             // music keys heard (KNOBS' jukebox)
     clears: {},                                // 'boss:route' -> times cleared (first clear = full reward)
     knobs: {},                                 // KNOBS' SHOP memory: lines said, lore unlocked, discounts
+    introSeen: false,                          // STORY MODE's opening has played (it plays once)
   },
   // each file unlocks when the previous boss is beaten (either ending)
   REQUIRES: { kiddie: 'proprietor', ringmaster: 'kiddie', outlaw: 'ringmaster' },
@@ -618,6 +619,7 @@ const Save = {
     D.soundTest = strs(o.soundTest, 16);
     for (const [k, v] of Object.entries(obj(o.clears))) if (num(v)) D.clears[k] = num(v);
     D.knobs = obj(o.knobs);
+    D.introSeen = o.introSeen === true;
     if (o.gold === undefined) {
       // a save from before the economy: pay out the first-clear rewards for every boss already beaten
       for (const id in D.beaten) {
@@ -9805,6 +9807,8 @@ class Battle {
   chooseStory() {
     this.modePromptN = (this.modePromptN || 0) + 1;
     G.ui.modeMenu.hide(); G.ui.hideBig(); G.ui.prompt.mesh.visible = false;
+    // the opening plays once; after that STORY MODE goes straight to the files
+    if (Save.data.introSeen) { G.audio.sfx.select(); this.openSaveFiles(); return; }
     G.audio.sfx.digiWhoosh(); RiftKit.surgeT = 0.7;
     G.fx.fadeTo(1, 3.2, 0x140826);
     this.afterIn('MODE_SELECT', 0.4, () => StoryScene.play(() => this.openSaveFiles()));
@@ -29761,6 +29765,7 @@ const StoryScene = {
   },
   finish() {
     this.on = false;
+    if (!Save.data.introSeen) { Save.data.introSeen = true; Save.write(); }   // (seen to the end or skipped: it plays once)
     this.dispose();
     G.fx.fadeT = 1; G.fx.fadeTo(0, 0.8, 0x140826);
     const f = this.onDone; this.onDone = null;
