@@ -4435,11 +4435,16 @@ class UI {
         g.fillStyle = `rgba(255,${200 + 40 * env | 0},255,${0.9 * env})`; g.fillRect(x - w / 2, y, w, 2);
       }
       const beat = 1 + 0.12 * Math.exp(-((t * 1.2) % 1) * 6);
-      g.save(); g.translate(rx - 46, H / 2 + 10); g.scale(beat, beat); PixelFont.drawIcon(g, 'heart', -14, -12, 4, '#ff2a55'); g.restore();
+      g.save(); g.translate(rx - 30, H / 2 + 12); g.scale(beat, beat); PixelFont.drawIcon(g, 'heart', -14, -12, 4, '#ff2a55'); g.restore();
       PixelFont.draw(g, 'STORY MODE', 18, 18, 4, hv ? '#ffe600' : '#ffffff', { shadow: '#5a2a9a' });
       PixelFont.draw(g, 'THE MAIN GAME', 18, 62, 2, '#cbb8ff');
       const n = Object.keys(BOSSES).filter((k) => Save.beaten(k)).length;
-      PixelFont.draw(g, 'FOUR WORLDS.', 18, 108, 2, '#ffffff'); PixelFont.draw(g, 'ONE RIFT.', 18, 128, 2, '#ffffff');
+      ['proprietor', 'kiddie', 'ringmaster', 'outlaw'].forEach((id, i) => {
+        const x = 18 + i * 47, y = 92;
+        g.fillStyle = '#0a0614'; g.fillRect(x, y, 42, 42); BossPortraits.face(g, id, x, y, 42);
+        g.strokeStyle = Save.beaten(id) ? '#ffd23c' : '#6a4aa8'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, 40, 40);
+      });
+      PixelFont.draw(g, '4 WORLDS. 1 RIFT.', 18, 146, 2, '#ffffff');
       PixelFont.draw(g, `${n}/4 SONGS ENDED`, 18, 172, 2, n ? '#ffd23c' : '#9a8ab8');
       PixelFont.draw(g, hv ? '► PLAY' : 'PLAY', 18, H - 34, 3, hv ? '#ffe600' : '#2affd5');
     } else {
@@ -29526,31 +29531,10 @@ const StoryScene = {
     this.clock = new THREE.Mesh(new THREE.CircleGeometry(0.058, 32), new THREE.MeshBasicMaterial({ map: this.clockTex }));
     this.clock.position.set(0.13, 0.35, 0.026); town.add(this.clock);
     this.drawClock(-8);
-    // SUNDOWN: a long duster, a wide hat, and a face that is the sun; his gun arm swings up to fire
-    const sd = this.sundown = new THREE.Group();
-    const S = [
-      { geo: new THREE.CylinderGeometry(0.011, 0.012, 0.11, 6), matrix: M4(-0.018, 0.055, 0), color: 0x4a3a2a },
-      { geo: new THREE.CylinderGeometry(0.011, 0.012, 0.11, 6), matrix: M4(0.018, 0.055, 0), color: 0x4a3a2a },
-      { geo: new THREE.CylinderGeometry(0.036, 0.072, 0.18, 12, 1, true), matrix: M4(0, 0.17, 0), color: 0x7a5232 },
-      { geo: new THREE.CylinderGeometry(0.03, 0.036, 0.06, 10), matrix: M4(0, 0.25, 0), color: 0x6a4428 },
-      { geo: new THREE.SphereGeometry(0.03, 10, 6), matrix: M4(0, 0.27, 0, 0, 0, 0, 1.6, 0.6, 1.1), color: 0x7a5232 },
-      { geo: new THREE.CylinderGeometry(0.074, 0.074, 0.006, 18), matrix: M4(0, 0.33, 0), color: 0x3a2414 },
-      { geo: new THREE.CylinderGeometry(0.028, 0.036, 0.045, 12), matrix: M4(0, 0.355, 0), color: 0x3a2414 },
-      { geo: new THREE.CylinderGeometry(0.037, 0.037, 0.008, 12), matrix: M4(0, 0.337, 0), color: 0xb8863c },
-      { geo: new THREE.CylinderGeometry(0.009, 0.009, 0.1, 6), matrix: M4(-0.046, 0.21, 0, 0, 0, 0.12), color: 0x7a5232 },
-    ];
-    sd.add(new THREE.Mesh(mergeGeos(S), this.mats.prop)); for (const p of S) p.geo.dispose();
-    this.sunFace = new THREE.Mesh(new THREE.SphereGeometry(0.03, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffd04a }));
-    this.sunFace.position.set(0, 0.302, 0); sd.add(this.sunFace);
-    this.gunArm = new THREE.Group(); this.gunArm.position.set(0.046, 0.265, 0); sd.add(this.gunArm);
-    const A = [
-      { geo: new THREE.CylinderGeometry(0.009, 0.01, 0.1, 6), matrix: M4(0, -0.05, 0), color: 0x7a5232 },
-      { geo: new THREE.BoxGeometry(0.012, 0.03, 0.012), matrix: M4(0, -0.11, 0.004), color: 0x2a2a30 },
-      { geo: new THREE.BoxGeometry(0.008, 0.012, 0.03), matrix: M4(0, -0.12, 0.022, Math.PI / 2, 0, 0), color: 0x2a2a30 },
-    ];
-    this.gunArm.add(new THREE.Mesh(mergeGeos(A), this.mats.prop)); for (const p of A) p.geo.dispose();
-    sd.position.set(-0.05, 0, 0.22); sd.rotation.y = Math.atan2(0.13 + 0.05, -0.06 - 0.22);
-    town.add(sd);
+    // SUNDOWN himself (his real model, shrunk): he watches you while the clock ticks, then turns, draws and fires
+    this.keepers = [];
+    this.sd = this.keeper('outlaw', 0.47, -0.17, 0.2, 0.35);
+    town.add(this.sd.pivot);
     // the tear: the RIFT's own shader on a small plane, ripping up from the bullet hole
     this.tearU = { uTime: { value: 0 }, uOpen: { value: 0 }, uBreath: { value: 0 }, uCalm: { value: Flash.reduced ? 1 : 0 }, uSurge: { value: 0 }, uDim: { value: 1 } };
     this.tear = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 1), new THREE.ShaderMaterial({
@@ -29565,8 +29549,8 @@ const StoryScene = {
       const m = new THREE.Mesh(new THREE.TorusGeometry(r, 0.006, 6, 72), new THREE.MeshBasicMaterial({ color: STORY_LOOPS[key][0], transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
       m.rotation.x = Math.PI / 2 - 0.25; m.position.y = 0.12; return m;
     };
-    const world = (key, g, mini, r) => { const w = { key, g, mini, ring: ring(key, r * 1.25), r, home: new THREE.Vector3(), broken: false, glowK: 0, pop: 0 }; g.add(w.ring); root.add(g); g.visible = false; this.worlds[key] = w; if (mini) g.add(mini.root); return w; };
-    // THE MANOR: dark stone and lawn, THE PROPRIETOR by two candle lamps
+    const world = (key, g, k, r) => { const w = { key, g, k, ring: ring(key, r * 1.25), r, home: new THREE.Vector3(), broken: false, glowK: 0, pop: 0 }; g.add(w.ring); root.add(g); g.visible = false; this.worlds[key] = w; g.add(k.pivot); return w; };
+    // THE MANOR: dark stone and lawn, THE PROPRIETOR between two candle lamps
     {
       const g = new THREE.Group(); g.add(isle(0.36, 0x3a5a3a, 0x4a3a52, 0x241a2c, 2));
       const L = [
@@ -29576,10 +29560,9 @@ const StoryScene = {
         { geo: new THREE.BoxGeometry(0.03, 0.035, 0.03), matrix: M4(0.22, 0.215, -0.05), color: 0xc8a040 },
       ];
       g.add(new THREE.Mesh(mergeGeos(L), this.mats.prop)); for (const p of L) p.geo.dispose();
-      const mini = buildProprietorMini(); mini.root.scale.setScalar(0.62);
-      world('manor', g, mini, 0.36);
+      world('manor', g, this.keeper('proprietor', 0.66, 0, 0.02, 0), 0.36);
     }
-    // THE SERVER: a rack with blinking lights, SCR1PT_K1DD1E cross-legged with his laptop
+    // THE SERVER: a rack with blinking lights, SCR1PT_K1DD1E floating over his CRT
     {
       const g = new THREE.Group(); g.add(isle(0.36, 0x2a3440, 0x262a34, 0x14161c, 3));
       const R = [
@@ -29588,22 +29571,20 @@ const StoryScene = {
         { geo: new THREE.BoxGeometry(0.13, 0.2, 0.12), matrix: M4(0.17, 0.1, -0.12), color: 0x15181e },
       ];
       g.add(new THREE.Mesh(mergeGeos(R), this.mats.prop)); for (const p of R) p.geo.dispose();
-      const mini = buildKiddieMini(); mini.root.scale.setScalar(0.7); mini.root.position.set(0.04, 0, 0.06);
-      world('server', g, mini, 0.36);
+      world('server', g, this.keeper('kiddie', 0.58, 0.05, 0.05, -0.1), 0.36);
     }
-    // THE BIG TOP: a little striped tent with its flag, GRANDIOSO sitting out front
+    // THE BIG TOP: a little striped tent with its flag, GRANDIOSO on his stilts beside it
     {
       const g = new THREE.Group(); g.add(isle(0.36, 0xc8a070, 0x8a5a3a, 0x4a2a1a, 4));
       const RED = 0xc8182c, CREAM = 0xfff4dc;
       const P = [
-        ...btStriped(0.17, 0.17, 0.11, 12, RED, CREAM, M4(0, 0.055, -0.1)),
-        ...btStriped(0, 0.19, 0.15, 12, RED, CREAM, M4(0, 0.185, -0.1)),
-        { geo: new THREE.CylinderGeometry(0.003, 0.003, 0.08, 4), matrix: M4(0, 0.3, -0.1), color: 0xffc83c },
-        { geo: new THREE.BoxGeometry(0.045, 0.025, 0.003), matrix: M4(0.024, 0.325, -0.1), color: 0xffc83c },
+        ...btStriped(0.15, 0.15, 0.1, 12, RED, CREAM, M4(-0.12, 0.05, -0.12)),
+        ...btStriped(0, 0.17, 0.14, 12, RED, CREAM, M4(-0.12, 0.17, -0.12)),
+        { geo: new THREE.CylinderGeometry(0.003, 0.003, 0.08, 4), matrix: M4(-0.12, 0.28, -0.12), color: 0xffc83c },
+        { geo: new THREE.BoxGeometry(0.045, 0.025, 0.003), matrix: M4(-0.096, 0.305, -0.12), color: 0xffc83c },
       ];
       g.add(new THREE.Mesh(mergeGeos(P), this.mats.prop)); for (const p of P) p.geo.dispose();
-      const mini = buildRingmasterMini(); mini.root.scale.setScalar(0.62); mini.root.position.set(0.08, 0, 0.1);
-      world('bigtop', g, mini, 0.36);
+      world('bigtop', g, this.keeper('ringmaster', 0.86, 0.17, 0.12, -0.3), 0.36);
     }
     // ---- KNOBS' SHOP: a little lit shopfront with its neon sign
     {
@@ -29676,12 +29657,43 @@ const StoryScene = {
     // SKIP is built once and kept (its glass frame shares the title buttons' materials)
     if (!this.skipMenu) this.skipMenu = new Menu([{ label: 'SKIP', icon: 'play', style: 'rift', onPress: () => this.skip() }], { primary: false });
   },
+  // a real boss model, shrunk to stand on a diorama. Its root keeps the arena coordinates it animates in, so a
+  // holder scales it and stands its feet (the lowest point of its visible meshes) at x, z, turned by yaw
+  keeper(id, height, x, z, yaw) {
+    const before = new Set(scene.children), m = BOSSES[id].buildModel();
+    const pivot = new THREE.Group(), holder = new THREE.Group(); pivot.add(holder);
+    for (const o of scene.children.filter((c) => !before.has(c))) { scene.remove(o); if (o === m.root) holder.add(o); }   // (GRANDIOSO's strings stay out)
+    m.root.updateMatrixWorld(true);
+    let lo = 1e9, hi = -1e9;
+    const bb = new THREE.Box3();
+    m.root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.visible) { bb.setFromObject(o, false); lo = Math.min(lo, bb.min.y); hi = Math.max(hi, bb.max.y); } });
+    const k = height / Math.max(0.01, hi - lo);
+    holder.scale.setScalar(k);
+    holder.position.set(-m.root.position.x * k, -lo * k, -m.root.position.z * k);
+    pivot.position.set(x, 0, z); pivot.rotation.y = yaw;
+    // its own lights are a little dim under the rift: lift their self-light
+    m.root.traverse((o) => { if (o.material) for (const mt of [].concat(o.material)) if (mt.uniforms && mt.uniforms.uEmit && !mt.userData.storyLit) { mt.uniforms.uEmit.value = Math.min(0.6, mt.uniforms.uEmit.value * 1.8 + 0.08); mt.userData.storyLit = true; } });
+    const kp = { id, m, pivot, holder, k, yaw, hop: 0 };
+    this.keepers.push(kp);
+    return kp;
+  },
+  // animate a keeper: its own update, with its glows shrunk to its size
+  tickKeeper(kp, rdt) {
+    kp.hop = Math.max(0, kp.hop - rdt * 1.8);
+    kp.holder.position.y = kp.holder.position.y - (kp.hopY || 0); kp.hopY = Math.abs(Math.sin(kp.hop * Math.PI * 3)) * 0.05 * kp.hop; kp.holder.position.y += kp.hopY;
+    const glow = G.fx.glow, add = glow.add, ws = kp.holder.getWorldScale(_v4).x;
+    glow.add = (x, y, z, size, ...r) => add.call(glow, x, y, z, size * ws, ...r);
+    try { kp.m.update(rdt, rdt); } finally { glow.add = add; }
+  },
   dispose() {
     if (!this.root) return;
     this.skipMenu.hide();
+    for (const kp of this.keepers) kp.m.dispose();
+    this.keepers = [];
+    if (!G.boss) { ManorTex.dispose(); DCTex.dispose(); BTTex.dispose(); }
     scene.remove(this.root); disposeObject(this.root);
     for (const k in this.mats) this.mats[k].dispose();
-    this.root = null; this.worlds = null; this.panel = null; this.tw = null;
+    this.root = null; this.worlds = null; this.panel = null; this.tw = null; this.sd = null;
   },
   // ---------------------------------------------------------------- the clock (128 x 128)
   drawClock(secToNoon) {
@@ -29730,7 +29742,7 @@ const StoryScene = {
     this.shop.visible = false; this.heart.visible = false; this.tear.visible = false;
     this.knobsMood = null; this.drawKnobsFace('eyes'); this.knobsArm.rotation.z = -2.94;
     for (const l of this.labels) l.visible = false;
-    this.gunArm.rotation.x = 0;
+    { const m = this.sd.m; m.holsterGun(0); m.setPose('idle'); m.aimSet = false; this.sd.pivot.rotation.y = this.sd.yaw; }
     this.panel.mesh.position.set(0, 0.9, -1.95); this.panel.mesh.rotation.set(-0.32, 0, 0);
     this.panel.setText('', 0);
     this.root.updateMatrixWorld(true);
@@ -29776,19 +29788,21 @@ const StoryScene = {
       if (s !== this.tickN) { this.tickN = s; this.drawClock(s); if (t > 0.6) sfx.clockTick(); }
     }
     // the sun of his face; the clock's glow
-    this.sundown.localToWorld(_v6.set(0, 0.302, 0)); glow.add(_v6.x, _v6.y, _v6.z, 0.11 * tw.scale.x, 1, 0.75, 0.3, 0.8, 0);
+    this.tickKeeper(this.sd, rdt);
     this.clock.getWorldPosition(_v6); glow.add(_v6.x, _v6.y, _v6.z, 0.16 * tw.scale.x, 1, 0.86, 0.6, 0.35, 0);
     // he draws...
-    if (t > 6.9 && t < 8.4) this.gunArm.rotation.x = -easeOut(clamp((t - 6.9) / 0.5, 0, 1)) * (Math.PI / 2 + 0.55);
-    if (this.cue('draw', 6.9)) sfx.gunDraw();
+    // he turns from you to the clock (and back after the shot), draws and aims
+    { const k = easeInOut(clamp((t - 6.2) / 0.7, 0, 1)) * (1 - easeInOut(clamp((t - 10.2) / 1.0, 0, 1))); this.sd.pivot.rotation.y = lerp(this.sd.yaw, 2.15, k); }
+    if (this.cue('draw', 6.9)) { sfx.gunDraw(); this.sd.m.drawGun(0); this.sd.m.setPose('draw'); }
+    if (t > 6.9 && t < 10.2) { this.clock.getWorldPosition(_v6); this.sd.m.aimAt(_v6); }
     // ...and fires at noon: the flash, the crack, the bell, the clock stopped with a hole by the 12
     if (this.cue('shot', 8.4)) {
-      sfx.revolverShot(); this.drawClock(0);
-      this.gunArm.localToWorld(_v5.set(0, -0.14, 0.03)); G.fx.burst(_v5, 14, 1, 0.85, 0.4, 1.4, 0.03);
+      sfx.revolverShot(); this.drawClock(0); this.sd.m.fired(0);
+      this.sd.m.gunPos(0, _v5); G.fx.burst(_v5, 14, 1, 0.85, 0.4, 1.4, 0.03);
       G.battle.after(0.12, () => sfx.crack()); G.battle.after(0.5, () => sfx.bell());
     }
-    if (t > 8.4 && t < 8.75) { this.gunArm.localToWorld(_v5.set(0, -0.14, 0.03)); glow.add(_v5.x, _v5.y, _v5.z, 0.25, 1, 0.8, 0.4, red ? 0.5 : 1, 0); }
-    if (t > 9.5 && t < 10.5) this.gunArm.rotation.x = -(Math.PI / 2 + 0.55) * (1 - easeInOut(clamp((t - 9.5) / 1, 0, 1)));
+    if (t > 8.4 && t < 8.75) { this.sd.m.gunPos(0, _v5); glow.add(_v5.x, _v5.y, _v5.z, 0.25, 1, 0.8, 0.4, red ? 0.5 : 1, 0); }
+    if (this.cue('holster', 10.2)) { this.sd.m.aimSet = false; this.sd.m.holsterGun(0); this.sd.m.setPose('idle'); }
     // the tear rips up from the bullet hole into the sky
     if (this.cue('tear', 12.0)) { this.tear.visible = true; sfx.digiWhoosh(); sfx.tapeWow(undefined, 1.2); RiftKit.surgeT = 1.2; }
     if (t >= 12.0 && t < 20.5) {
@@ -29826,7 +29840,7 @@ const StoryScene = {
       const [col, bpm] = STORY_LOOPS[key], ph = (t * bpm / 60) % 1;
       if (!w.broken) { w.ring.rotation.z = t * 0.8 * (i % 2 ? -1 : 1); w.ring.scale.setScalar(1 + 0.06 * Math.exp(-ph * 6) * (red ? 0.5 : 1)); w.ring.material.opacity = 0.55 + 0.35 * Math.exp(-ph * 5); }
       w.glowK = damp(w.glowK, w.broken ? 1 : 0, 2, rdt);
-      if (w.mini) { w.mini.update(rdt, w.mini); }
+      this.tickKeeper(w.k, rdt);
       // warm light once the loop is broken
       if (w.glowK > 0.02) { w.g.localToWorld(_v6.set(0, 0.25, 0.05)); _c1.setHex(col); glow.add(_v6.x, _v6.y, _v6.z, 0.5 * w.g.scale.x, _c1.r, _c1.g, _c1.b, 0.3 * w.glowK, 0); }
       if (key === 'server') for (let j = 0; j < 8; j++) { w.g.localToWorld(_v6.set(-0.19 + (j % 2) * 0.05, 0.05 + Math.floor(j / 2) * 0.055, -0.014)); const on = Math.sin(t * (3 + j) + j * 1.7) > 0; glow.add(_v6.x, _v6.y, _v6.z, 0.02 * w.g.scale.x, j % 3 ? 0.2 : 1, 1, j % 3 ? 0.5 : 0.3, on ? 0.9 : 0.15, 0); }
@@ -29834,9 +29848,9 @@ const StoryScene = {
       if (key === 'bigtop') for (let j = 0; j < 10; j++) { const a2 = j / 10 * TAU + t * 0.8; w.g.localToWorld(_v6.set(Math.cos(a2) * 0.19, 0.11, -0.1 + Math.sin(a2) * 0.19)); glow.add(_v6.x, _v6.y, _v6.z, 0.02 * w.g.scale.x, 1, 0.85, 0.4, (j + Math.floor(t * 6)) % 2 ? 0.95 : 0.25, 0); }
     });
     // named as the narrator says them
-    if (this.cue('nameManor', 23.2)) { this.worlds.manor.pop = 1; sfx.chimes(); this.worlds.manor.mini.cheerT = 1.2; }
-    if (this.cue('nameServer', 24.9)) { this.worlds.server.pop = 1; sfx.bootBeep(); G.battle.after(0.12, () => sfx.bootBeep()); this.worlds.server.mini.cheerT = 1.2; }
-    if (this.cue('nameBigtop', 26.6)) { this.worlds.bigtop.pop = 1; sfx.honk(); this.worlds.bigtop.mini.cheerT = 1.2; }
+    if (this.cue('nameManor', 23.2)) { const w = this.worlds.manor; w.pop = 1; w.k.hop = 1; sfx.chimes(); w.k.m.doorsPulse(); }
+    if (this.cue('nameServer', 24.9)) { const w = this.worlds.server; w.pop = 1; w.k.hop = 1; sfx.bootBeep(); G.battle.after(0.12, () => sfx.bootBeep()); w.k.m.setMood('happy'); }
+    if (this.cue('nameBigtop', 26.6)) { const w = this.worlds.bigtop; w.pop = 1; w.k.hop = 1; sfx.honk(); w.k.m.tipHat(); }
     // ---- ACT 3: your SOUL falls in; it breaks each world's loop in turn
     const hp = _v5;
     if (this.cue('soul', 37.0)) { this.heart.visible = true; for (let i = 0; i < 5; i++) sfx.harp(G.audio.now + i * 0.09, 72 + [0, 3, 7, 10, 12][i]); }
@@ -29853,7 +29867,7 @@ const StoryScene = {
           x = lerp(fx, w.home.x, k); y = lerp(fy, w.home.y + 0.2, k) + Math.sin(k * Math.PI) * 0.25; z = lerp(fz, w.home.z + 0.3, k);
         }
         if (this.cue('break_' + key, tv)) {
-          w.broken = true; w.ring.visible = false; w.mini.cheerT = 2.2; w.pop = 1;
+          w.broken = true; w.ring.visible = false; w.k.hop = 1; w.pop = 1; if (w.k.m.bow) w.k.m.bow(true); G.battle.after(1.6, () => { if (w.k.m.bow) w.k.m.bow(false); });
           sfx.shatter(); G.battle.after(0.25, () => sfx.chimes());
           w.g.localToWorld(_v4.set(0, 0.12, 0)); _c1.setHex(STORY_LOOPS[key][0]);
           for (let j = 0; j < 36; j++) { const a = j / 36 * TAU; G.fx.parts.emit(_v4.x + Math.cos(a) * 0.45, _v4.y, _v4.z + Math.sin(a) * 0.45, Math.cos(a) * 0.5, rand(-0.2, 0.4), Math.sin(a) * 0.5, rand(0.5, 1.0), 0.025, _c1.r, _c1.g, _c1.b, 1.5, -0.4, 1); }
@@ -29959,8 +29973,111 @@ const StoryScene = {
 };
 
 // ============================================================================
-//  BossCards - the SAVE FILES cards: one illustrated card per boss (redrawn a few times a second while the
-//  screen is up, so candles flicker, LEDs blink, bulbs chase and dust drifts). Each has its world's frame
+//  BossPortraits - each boss's real model, rendered once offscreen into a small transparent image for its
+//  SAVE FILES card (and the STORY MODE card). One boss per frame from boot, so nothing hitches; each model
+//  and the textures it made are freed straight after. The render has its own light (a soft key, a fill and
+//  a rim in the world's colour) and hands the shared light block back exactly as it found it.
+// ============================================================================
+const PORTRAIT_SPECS = {
+  // room above the head and below the chest (in the model's own metres), how far back, the rim light, a slight turn
+  proprietor: { top: 2.7, bottom: 0.6, zoom: 0.9, rim: [1.0, 0.72, 0.38], yaw: 0.22 },
+  kiddie: { top: 0.5, bottom: 2.0, zoom: 0.92, rim: [0.25, 1.0, 0.85], yaw: 0.18 },
+  ringmaster: { top: 1.45, bottom: 1.5, zoom: 1.0, rim: [1.0, 0.78, 0.35], yaw: -0.2 },
+  outlaw: { top: 1.7, bottom: 1.25, zoom: 1.12, rim: [1.0, 0.55, 0.25], yaw: 0.2 },
+};
+const BossPortraits = {
+  W: 472, H: 372,            // twice the card's art window
+  canvases: {}, anchors: {}, queue: null, done: false, rt: null, cam: null, lut: null,
+  get(id) { return this.canvases[id] || null; },
+  // every frame until done: render the next portrait (one per frame), then free the render target and
+  // the bosses' texture caches (nothing else is using them before the first fight)
+  tick() {
+    if (this.done) return;
+    if (!this.queue) this.queue = Object.keys(PORTRAIT_SPECS);
+    const id = this.queue.shift();
+    if (id) {
+      try { this.render(id); } catch (e) { console.warn('[SoulRift] portrait failed:', id, e); }
+    }
+    if (!this.queue.length) {
+      this.done = true;
+      if (this.rt) { this.rt.dispose(); this.rt = null; }
+      if (!G.boss) { ManorTex.dispose(); DCTex.dispose(); BTTex.dispose(); }
+    }
+  },
+  render(id) {
+    const spec = PORTRAIT_SPECS[id], before = new Set(scene.children);
+    const m = BOSSES[id].buildModel();
+    // the model's root goes into a scene of its own; anything else it hung in the world (marionette strings) stays out
+    const ps = new THREE.Scene();
+    for (const o of scene.children.filter((c) => !before.has(c))) { scene.remove(o); if (o === m.root) ps.add(o); }
+    // let it settle into its idle pose (cloth, IK, blinking), without its glows reaching the world's sprites
+    const glow = G.fx.glow, add = glow.add;
+    glow.add = () => {};
+    try { for (let i = 0; i < 45; i++) m.update(1 / 30, 1 / 30); } finally { glow.add = add; }
+    m.root.updateMatrixWorld(true);
+    // frame the head and chest, a little turned
+    const head = m.headWorldPos(new THREE.Vector3()), chest = m.chestPos(new THREE.Vector3());
+    const top = head.y + spec.top, bot = chest.y - spec.bottom, cy = (top + bot) / 2;
+    const cam = this.cam || (this.cam = new THREE.PerspectiveCamera(22, this.W / this.H, 0.1, 400));
+    const dist = spec.zoom * (top - bot) / 2 / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    const cx = (head.x + chest.x) / 2, cz = (head.z + chest.z) / 2;
+    cam.position.set(cx + Math.sin(spec.yaw) * dist, cy, cz + Math.cos(spec.yaw) * dist); cam.lookAt(cx, cy, cz);
+    cam.updateMatrixWorld(true);
+    // where its face lands in the picture (0-1, from the top left): the cards light it up
+    head.project(cam); this.anchors[id] = { x: (head.x + 1) / 2, y: (1 - head.y) / 2 };
+    // its own light, then the shared block back as it was
+    const U = CircusShade.uniforms(), saved = {};
+    for (const k of RiftKit.LIGHT_KEYS) { const v = U[k].value; saved[k] = typeof v === 'number' ? v : Array.isArray(v) ? v.map((x) => x.clone()) : v.clone(); }
+    U.uKeyDir.value.set(-0.42 + Math.sin(spec.yaw) * 0.6, 0.62, 0.66).normalize();
+    U.uKeyCol.value.set(1.08, 0.98, 0.88);
+    U.uSky.value.set(0.34, 0.32, 0.42); U.uGround.value.set(0.17, 0.13, 0.13); U.uRimCol.value.set(...spec.rim);
+    U.uHaze.value.set(0, 0, 0, 0); U.uHaze2.value.set(0, 0, 0, 0); U.uPtN.value = 0; U.uSpN.value = 0;
+    const rt = this.rt || (this.rt = new THREE.WebGLRenderTarget(this.W, this.H));
+    const xr = renderer.xr.enabled, prev = renderer.getRenderTarget(), cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
+    // twice, over black and over white: what changes between the two is the background showing through, so
+    // glows (additive) come out see-through where they're dark instead of as black boxes
+    const pk = new Uint8Array(this.W * this.H * 4), pw = new Uint8Array(this.W * this.H * 4);
+    try {
+      renderer.xr.enabled = false;   // (inside a headset session the XR camera would replace ours)
+      renderer.setRenderTarget(rt);
+      renderer.setClearColor(0x000000, 1); renderer.render(ps, cam); renderer.readRenderTargetPixels(rt, 0, 0, this.W, this.H, pk);
+      renderer.setClearColor(0xffffff, 1); renderer.render(ps, cam); renderer.readRenderTargetPixels(rt, 0, 0, this.W, this.H, pw);
+    } finally {
+      renderer.setRenderTarget(prev); renderer.setClearColor(cc, ca); renderer.xr.enabled = xr;
+      for (const k of RiftKit.LIGHT_KEYS) { const v = U[k].value; if (typeof v === 'number') U[k].value = saved[k]; else if (Array.isArray(v)) v.forEach((x, i) => x.copy(saved[k][i])); else v.copy(saved[k]); }
+      m.dispose();
+    }
+    // the target holds linear colour, bottom row first: alpha from the two backgrounds, un-premultiply, sRGB-encode, flip
+    if (!this.lut) { this.lut = new Uint8ClampedArray(4096); for (let i = 0; i < 4096; i++) { const l = i / 4095; this.lut[i] = 255 * (l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055); } }
+    const W = this.W, H = this.H, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'), img = g.createImageData(W, H), d = img.data, L = this.lut;
+    for (let y = 0; y < H; y++) {
+      const si = (H - 1 - y) * W * 4, di = y * W * 4;
+      for (let x = 0; x < W * 4; x += 4) {
+        const i = si + x, a = 255 - ((pw[i] - pk[i]) + (pw[i + 1] - pk[i + 1]) + (pw[i + 2] - pk[i + 2])) / 3;
+        if (a < 2) continue;
+        const k = 4095 / a;
+        d[di + x] = L[Math.min(4095, pk[i] * k | 0)]; d[di + x + 1] = L[Math.min(4095, pk[i + 1] * k | 0)]; d[di + x + 2] = L[Math.min(4095, pk[i + 2] * k | 0)];
+        d[di + x + 3] = a;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    this.canvases[id] = c;
+  },
+  // draw a portrait into a card (false when it isn't ready)
+  draw(g, id, x, y, w, h) { const c = this.canvases[id]; if (c) g.drawImage(c, x, y, w, h); return !!c; },
+  // just its face: a square around where its head landed
+  face(g, id, x, y, size) {
+    const c = this.canvases[id], a = this.anchors[id]; if (!c || !a) return false;
+    const s = this.H * 0.46, sx = clamp(a.x * this.W - s / 2, 0, this.W - s), sy = clamp(a.y * this.H - s * 0.45, 0, this.H - s);
+    g.drawImage(c, sx, sy, s, s, x, y, size, size); return true;
+  },
+};
+
+// ============================================================================
+//  BossCards - the SAVE FILES cards: one illustrated card per boss, with the boss's real model (its
+//  BossPortraits picture) in front of its world (redrawn a few times a second while the screen is up, so
+//  candles flicker, LEDs blink, bulbs chase and dust drifts). Each has its world's frame
 //  colour, a header (FILE n, a star once cleared), the art window, a name plate and a footer (status,
 //  or how to unlock it). Locked files keep their looks: an encrypted file, a SOLD OUT ticket, a torn
 //  WANTED poster.
@@ -29995,8 +30112,8 @@ const BossCards = {
     else this['lock_' + id](g, AW, AH, t, hv);
     g.restore();
     g.strokeStyle = open ? th.edge : '#5a5a6a'; g.lineWidth = 3; g.strokeRect(AX - 1.5, AY - 1.5, AW + 3, AH + 3);
-    // cleared: a rubber stamp across the art
-    if (beat) this.stamp(g, AX + AW / 2, AY + AH * 0.62, beat === 'spare' ? 'SPARED' : 'DEFEATED', beat === 'spare' ? '#3cff6e' : '#ff4466');
+    // cleared: a rubber stamp across the foot of the art (clear of the boss's face)
+    if (beat) this.stamp(g, AX + AW / 2, AY + AH - 34, beat === 'spare' ? 'SPARED' : 'DEFEATED', beat === 'spare' ? '#3cff6e' : '#ff4466');
     // name plate
     const py = AY + AH + 10;
     g.fillStyle = open ? th.plate : '#16141c'; g.fillRect(10, py, W - 20, 48);
@@ -30029,8 +30146,20 @@ const BossCards = {
     PixelFont.draw(g, text, -PixelFont.width(text, 4) / 2, -14, 4, col);
     g.restore();
   },
-  // ---------------------------------------------------------------- THE MANOR: damask, a storm window,
-  // THE PROPRIETOR with his chandelier head and candle eyes
+  // the boss itself: its real model's portrait (BossPortraits), breathing gently, with a live glow at its face
+  // (glow: [r, g, b, alpha, radius]); nothing until the portrait is ready (the first frames after boot)
+  boss(g, id, W, H, t, glow) {
+    const bob = Math.sin(t * 1.4) * 1.5;
+    if (!BossPortraits.draw(g, id, 0, bob, W, H)) return;
+    const a = BossPortraits.anchors[id];
+    if (!glow || !a) return;
+    const [r, gg, b, al, rad] = glow, x = a.x * W, y = a.y * H + bob;
+    const gr = g.createRadialGradient(x, y, 1, x, y, rad);
+    gr.addColorStop(0, `rgba(${r},${gg},${b},${al})`); gr.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+    g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); g.restore();
+  },
+  // ---------------------------------------------------------------- THE MANOR: damask, a storm window
+  // with slow lightning, and THE PROPRIETOR
   art_proprietor(g, W, H, t) {
     g.drawImage(this.layer('manor_bg', W, H, (c, w, h) => {
       c.fillStyle = '#2a0f30'; c.fillRect(0, 0, w, h);
@@ -30050,32 +30179,11 @@ const BossCards = {
     g.fillStyle = `rgba(140,150,255,${0.15 + 0.6 * flash})`; g.fillRect(W / 2 - 39, 19, 78, 94);
     g.fillStyle = '#e8e8ff'; g.beginPath(); g.arc(W / 2 + 20, 38, 9, 0, TAU); g.fill();
     g.fillStyle = '#c8a040'; g.fillRect(W / 2 - 1, 19, 2, 94); g.fillRect(W / 2 - 39, 64, 78, 2);
-    // THE PROPRIETOR: house-front body, mansard shoulders, bow tie, white gloves
-    const cx = W / 2, by = H - 8, bob = Math.sin(t * 1.6) * 1.5;
-    g.fillStyle = '#1c1424'; g.beginPath(); g.moveTo(cx - 52, by - 70 + bob); g.lineTo(cx + 52, by - 70 + bob); g.lineTo(cx + 40, by - 88 + bob); g.lineTo(cx - 40, by - 88 + bob); g.fill();
-    g.fillStyle = '#2a1630'; g.fillRect(cx - 44, by - 70 + bob, 88, 70);
-    g.fillStyle = '#c8a040'; g.fillRect(cx - 48, by - 72 + bob, 96, 4);
-    const lit = (x, y) => { const k = 0.8 + 0.2 * Math.sin(t * 7 + x); g.fillStyle = `rgba(255,${190 + 30 * k | 0},110,${k})`; g.fillRect(x, y, 14, 18); g.fillStyle = '#3a1a10'; g.fillRect(x + 6, y, 2, 18); };
-    lit(cx - 34, by - 60 + bob); lit(cx + 20, by - 60 + bob); lit(cx - 34, by - 32 + bob); lit(cx + 20, by - 32 + bob);
-    g.fillStyle = '#4a2010'; g.fillRect(cx - 8, by - 34 + bob, 16, 34); g.fillStyle = '#d8b04a'; g.fillRect(cx + 4, by - 18 + bob, 3, 3);
-    g.fillStyle = '#c23c8a'; g.beginPath(); g.moveTo(cx, by - 76 + bob); g.lineTo(cx - 14, by - 82 + bob); g.lineTo(cx - 14, by - 70 + bob); g.fill(); g.beginPath(); g.moveTo(cx, by - 76 + bob); g.lineTo(cx + 14, by - 82 + bob); g.lineTo(cx + 14, by - 70 + bob); g.fill();
-    g.fillStyle = '#fff4dc'; g.beginPath(); g.arc(cx - 58, by - 30 + bob, 8, 0, TAU); g.arc(cx + 58, by - 30 + bob, 8, 0, TAU); g.fill();
-    g.fillStyle = '#1c1424'; g.fillRect(cx - 62, by - 82 + bob, 8, 46); g.fillRect(cx + 54, by - 82 + bob, 8, 46);
-    // the chandelier head: a gold ring, crystal drops, two candles for eyes
-    const hy = by - 112 + bob;
-    g.strokeStyle = '#c8a040'; g.lineWidth = 4; g.beginPath(); g.ellipse(cx, hy + 6, 34, 9, 0, 0, TAU); g.stroke();
-    g.fillStyle = '#c8a040'; g.fillRect(cx - 3, hy + 6, 6, 18);
-    for (let i = 0; i < 9; i++) { const a = i / 9 * TAU + t * 0.4, x = cx + Math.cos(a) * 34, y = hy + 6 + Math.sin(a) * 9; g.fillStyle = Math.sin(a) > 0 ? '#dff8ff' : '#8ab0c8'; g.beginPath(); g.moveTo(x, y + 2); g.lineTo(x + 3, y + 8); g.lineTo(x, y + 14); g.lineTo(x - 3, y + 8); g.fill(); }
-    for (const ex of [-12, 12]) {
-      g.fillStyle = '#f4ecd8'; g.fillRect(cx + ex - 4, hy - 14, 8, 18);
-      const f = 0.8 + 0.2 * Math.sin(t * 13 + ex);
-      const fg = g.createRadialGradient(cx + ex, hy - 20, 1, cx + ex, hy - 20, 16 * f); fg.addColorStop(0, 'rgba(255,240,180,0.95)'); fg.addColorStop(0.4, 'rgba(255,170,60,0.5)'); fg.addColorStop(1, 'rgba(255,120,30,0)');
-      g.fillStyle = fg; g.beginPath(); g.arc(cx + ex, hy - 20, 16 * f, 0, TAU); g.fill();
-      g.fillStyle = '#fff6c8'; g.beginPath(); g.ellipse(cx + ex, hy - 21, 3, 6 * f, 0, 0, TAU); g.fill();
-    }
+    // THE PROPRIETOR himself, his candles flickering
+    this.boss(g, 'proprietor', W, H, t, [255, 190, 90, 0.32 + 0.12 * Math.sin(t * 11) * Math.sin(t * 7.3), 34]);
   },
   // ---------------------------------------------------------------- THE SERVER: racks of blinking LEDs, and
-  // SCR1PT_K1DD1E's hood over the dark void with his teal emoticon eyes, on his beige CRT
+  // SCR1PT_K1DD1E on his CRT
   art_kiddie(g, W, H, t) {
     g.drawImage(this.layer('server_bg', W, H, (c, w, h) => {
       c.fillStyle = '#050a0e'; c.fillRect(0, 0, w, h);
@@ -30088,34 +30196,13 @@ const BossCards = {
       g.fillStyle = on ? (k === 3 ? '#ffb020' : k === 2 && j % 5 === 0 ? '#ff3c3c' : '#3cff6e') : '#0e2018';
       g.fillRect(x + 6 + k * 9, y + 3, 4, 3);
     }
-    // the CRT (beige case, curved green screen, scrolling code)
-    const cx = W / 2, sy = H - 70;
-    g.fillStyle = '#d8cfb8'; g.fillRect(cx - 50, sy, 100, 62); g.fillStyle = '#b8ae98'; g.fillRect(cx - 40, sy + 62, 80, 6);
-    g.fillStyle = '#021208'; g.fillRect(cx - 42, sy + 6, 84, 46);
-    for (let i = 0; i < 6; i++) { const w = 20 + ((i * 37 + Math.floor(t * 4)) % 50); g.fillStyle = i % 3 ? '#3cff6e' : '#2affd5'; g.fillRect(cx - 38, sy + 9 + i * 7, w, 3); }
-    g.fillStyle = '#ff3cc8'; g.fillRect(cx + 26, sy + 54, 8, 5);
-    // the hoodie, the hood, the void, the eyes
-    const hy = sy - 66, bob = Math.sin(t * 2.2) * 2;
-    g.fillStyle = '#1b3654'; g.beginPath(); g.ellipse(cx, sy - 8 + bob, 56, 26, 0, Math.PI, TAU); g.fill();
-    g.fillStyle = '#1b3654'; g.beginPath(); g.ellipse(cx, hy + 30 + bob, 40, 44, 0, 0, TAU); g.fill();
-    g.fillStyle = '#020406'; g.beginPath(); g.ellipse(cx, hy + 34 + bob, 28, 32, 0, 0, TAU); g.fill();
-    g.strokeStyle = '#1a1a22'; g.lineWidth = 5; g.beginPath(); g.arc(cx, hy + 30 + bob, 44, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
-    const hue = (t * 40) % 360;
-    g.fillStyle = `hsl(${hue},100%,60%)`; g.beginPath(); g.arc(cx - 44, hy + 34 + bob, 7, 0, TAU); g.arc(cx + 44, hy + 34 + bob, 7, 0, TAU); g.fill();
-    const blink = (t % 3.2) < 0.12, mood = Math.floor(t / 2.5) % 3;
-    g.fillStyle = '#2affd5'; g.save(); g.shadowColor = '#2affd5'; g.shadowBlur = 8;
-    const eye = (x) => {
-      if (blink) { g.fillRect(x - 6, hy + 34 + bob, 12, 3); return; }
-      if (mood === 0) { g.fillRect(x - 3, hy + 26 + bob, 6, 14); }
-      else if (mood === 1) { g.beginPath(); g.moveTo(x - 7, hy + 38 + bob); g.lineTo(x, hy + 28 + bob); g.lineTo(x + 7, hy + 38 + bob); g.lineTo(x + 4, hy + 38 + bob); g.lineTo(x, hy + 32 + bob); g.lineTo(x - 4, hy + 38 + bob); g.fill(); }
-      else { g.fillRect(x - 6, hy + 30 + bob, 12, 4); g.fillRect(x - 6, hy + 36 + bob, 12, 4); }
-    };
-    eye(cx - 11); eye(cx + 11); g.restore();
+    // SCR1PT_K1DD1E on his CRT, his eyes' teal light
+    this.boss(g, 'kiddie', W, H, t, [42, 255, 213, 0.22 + 0.08 * Math.sin(t * 3), 30]);
     // a glitch line now and then
     if (Math.sin(t * 5.3) > 0.93 && !Flash.reduced) { g.fillStyle = 'rgba(255,60,200,0.35)'; g.fillRect(0, (t * 97) % H, W, 4); }
   },
-  // ---------------------------------------------------------------- THE BIG TOP: striped canvas, chasing
-  // marquee bulbs, GRANDIOSO's tent hat and comedy mask, his cane's crystal
+  // ---------------------------------------------------------------- THE BIG TOP: striped canvas, a spotlight,
+  // GRANDIOSO, chasing marquee bulbs
   art_ringmaster(g, W, H, t) {
     g.drawImage(this.layer('bigtop_bg', W, H, (c, w, h) => {
       const cx = w / 2;
@@ -30126,26 +30213,8 @@ const BossCards = {
     const cx = W / 2;
     // the spotlight on him
     const sg = g.createRadialGradient(cx, H - 60, 10, cx, H - 60, 110); sg.addColorStop(0, 'rgba(255,240,200,0.45)'); sg.addColorStop(1, 'rgba(255,240,200,0)'); g.fillStyle = sg; g.fillRect(0, 0, W, H);
-    // the tailcoat, the gold waistcoat, the epaulettes
-    const by = H - 8, bob = Math.sin(t * 1.4) * 1.5;
-    g.fillStyle = '#c8182c'; g.beginPath(); g.moveTo(cx - 60, by); g.lineTo(cx - 46, by - 64 + bob); g.lineTo(cx + 46, by - 64 + bob); g.lineTo(cx + 60, by); g.fill();
-    g.fillStyle = '#ffc83c'; g.beginPath(); g.moveTo(cx - 16, by); g.lineTo(cx - 12, by - 62 + bob); g.lineTo(cx + 12, by - 62 + bob); g.lineTo(cx + 16, by); g.fill();
-    g.fillStyle = '#fffaf2'; g.fillRect(cx - 7, by - 64 + bob, 14, 26);
-    for (const s of [-1, 1]) { g.fillStyle = '#ffc83c'; g.fillRect(cx + s * 46 - 14, by - 68 + bob, 28, 8); for (let i = 0; i < 5; i++) g.fillRect(cx + s * 46 - 12 + i * 6, by - 60 + bob, 2, 8); }
-    // the ruff, the mask (drawn once, then reused), the tent hat with its flag
-    const hy = by - 120 + bob;
-    g.fillStyle = '#fffaf2'; for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; g.beginPath(); g.arc(cx + Math.cos(a) * 26, hy + 56 + Math.sin(a) * 6, 7, 0, TAU); g.fill(); }
-    const mask = this.layer('mask_comedy', 96, 120, (c, w, h) => drawMaskFace(c, w, h, 'comedy', 0));
-    g.drawImage(mask, cx - 30, hy - 6, 60, 75);
-    g.fillStyle = '#8a0e1e'; g.fillRect(cx - 40, hy - 8, 80, 6);
-    for (let i = 0; i < 6; i++) { g.fillStyle = i % 2 ? '#fff4dc' : '#c8182c'; g.fillRect(cx - 26 + i * 9, hy - 38, 9, 30); }
-    g.fillStyle = '#c8182c'; g.beginPath(); g.moveTo(cx - 28, hy - 38); g.lineTo(cx, hy - 62); g.lineTo(cx + 28, hy - 38); g.fill();
-    g.fillStyle = '#fff4dc'; g.beginPath(); g.moveTo(cx - 9, hy - 38); g.lineTo(cx, hy - 62); g.lineTo(cx + 9, hy - 38); g.fill();
-    g.fillStyle = '#ffc83c'; g.fillRect(cx - 1, hy - 74, 2, 14); g.fillRect(cx + 1, hy - 74, 12 + Math.sin(t * 6) * 2, 6);
-    for (let i = 0; i < 7; i++) { const on = (i + Math.floor(t * 6)) % 2; g.fillStyle = on ? '#fff0b0' : '#7a5a20'; g.beginPath(); g.arc(cx - 36 + i * 12, hy - 4, 2.5, 0, TAU); g.fill(); }
-    // the cane and its crystal
-    g.strokeStyle = '#141018'; g.lineWidth = 4; g.beginPath(); g.moveTo(cx + 58, by - 4); g.lineTo(cx + 74, by - 96 + bob); g.stroke();
-    const cg = g.createRadialGradient(cx + 75, by - 100 + bob, 1, cx + 75, by - 100 + bob, 14); cg.addColorStop(0, 'rgba(255,250,220,1)'); cg.addColorStop(1, 'rgba(255,200,80,0)'); g.fillStyle = cg; g.beginPath(); g.arc(cx + 75, by - 100 + bob, 14, 0, TAU); g.fill();
+    // GRANDIOSO in the spotlight
+    this.boss(g, 'ringmaster', W, H, t, null);
     // marquee bulbs chasing round the window
     const n = 26, per = 2 * (W + H);
     for (let i = 0; i < n; i++) {
@@ -30166,27 +30235,8 @@ const BossCards = {
     const cx = W / 2;
     // the sun behind him (it's his face), heat shimmer
     const sun = g.createRadialGradient(cx, 58, 6, cx, 58, 70); sun.addColorStop(0, 'rgba(255,240,180,0.9)'); sun.addColorStop(1, 'rgba(255,160,60,0)'); g.fillStyle = sun; g.fillRect(0, 0, W, H);
-    // the duster and the bandana
-    const by = H - 4, sway = Math.sin(t * 1.1) * 3;
-    g.fillStyle = '#6a4428'; g.beginPath(); g.moveTo(cx - 64 - sway, by); g.lineTo(cx - 40, by - 70); g.lineTo(cx + 40, by - 70); g.lineTo(cx + 64 + sway, by); g.fill();
-    g.fillStyle = '#4a2c18'; g.fillRect(cx - 4, by - 70, 8, 70);
-    g.fillStyle = '#c4532e'; g.beginPath(); g.moveTo(cx - 24, by - 74); g.lineTo(cx + 24, by - 74); g.lineTo(cx, by - 52); g.fill();
-    // the gunbelt and a pearl grip
-    g.fillStyle = '#3a2414'; g.fillRect(cx - 44, by - 26, 88, 8); for (let i = 0; i < 8; i++) { g.fillStyle = '#d8a84a'; g.fillRect(cx - 40 + i * 10, by - 25, 3, 6); }
-    g.fillStyle = '#f0ece0'; g.fillRect(cx + 34, by - 34, 8, 14);
-    // the sun face: a burning disc with eyes, a moustache
-    const hy = by - 110, fl = 0.9 + 0.1 * Math.sin(t * 4);
-    const rays = g.createRadialGradient(cx, hy, 18, cx, hy, 46 * fl); rays.addColorStop(0, 'rgba(255,220,90,0.9)'); rays.addColorStop(1, 'rgba(255,120,30,0)');
-    g.fillStyle = rays; g.beginPath(); g.arc(cx, hy, 46 * fl, 0, TAU); g.fill();
-    g.fillStyle = '#ffd04a'; g.beginPath(); g.arc(cx, hy, 28, 0, TAU); g.fill();
-    g.fillStyle = '#ffe88a'; g.beginPath(); g.arc(cx - 6, hy - 6, 14, 0, TAU); g.fill();
-    g.fillStyle = '#4a2410'; const blink = (t % 4) < 0.12;
-    if (blink) { g.fillRect(cx - 13, hy - 2, 8, 2); g.fillRect(cx + 5, hy - 2, 8, 2); } else { g.fillRect(cx - 12, hy - 6, 6, 8); g.fillRect(cx + 6, hy - 6, 6, 8); }
-    g.fillStyle = '#6a3414'; g.beginPath(); g.moveTo(cx - 16, hy + 10); g.quadraticCurveTo(cx, hy + 4, cx + 16, hy + 10); g.quadraticCurveTo(cx, hy + 14, cx - 16, hy + 10); g.fill();
-    // the hat: brim, crown, snakeskin band
-    g.fillStyle = '#3a2414'; g.beginPath(); g.ellipse(cx, hy - 24, 52, 8, 0, 0, TAU); g.fill();
-    g.fillStyle = '#4a2c18'; g.beginPath(); g.moveTo(cx - 26, hy - 26); g.lineTo(cx - 22, hy - 54); g.quadraticCurveTo(cx, hy - 60, cx + 22, hy - 54); g.lineTo(cx + 26, hy - 26); g.fill();
-    g.fillStyle = '#b8863c'; g.fillRect(cx - 25, hy - 34, 50, 5); g.fillStyle = '#7a5a2a'; for (let i = 0; i < 6; i++) g.fillRect(cx - 22 + i * 8, hy - 33, 3, 3);
+    // SUNDOWN, his face burning
+    this.boss(g, 'outlaw', W, H, t, [255, 200, 90, 0.2 + 0.1 * Math.sin(t * 4), 44]);
     // dust drifting across
     for (let i = 0; i < 14; i++) { const x = (i * 53 + t * (14 + i % 4 * 5)) % (W + 20) - 10, y = H - 10 - ((i * 37) % 60); g.fillStyle = `rgba(255,220,160,${0.25 + 0.2 * Math.sin(t + i)})`; g.fillRect(x, y, 2, 2); }
   },
@@ -30241,7 +30291,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, StoryScene, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
+window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)
@@ -30477,6 +30527,7 @@ function frame(t) {
     const frozen = G.battle.isFrozen();
     const dt = frozen ? 0 : rdt * G.timeScale;
     G.dt = dt; G.gameTime += dt;
+    BossPortraits.tick();
     G.fx.glow.begin();
     G.input.update(rdt);
     G.audio.update(rdt);
