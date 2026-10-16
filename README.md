@@ -306,5 +306,23 @@ Hidden inside boss 2.
   fallen to. Reduced flashing slows or softens every one of these.
 - The pitch wobble is a slow vibrato on the music bus (a modulated delay), not a change of
   playback rate, so the beat clock and every attack stay exactly on the beat.
+- **At -100 the black hole opens** (a script on the audio clock, so a pause holds it):
+  the music cuts mid-bar, every bullet freezes and the HUD drains letter by letter into
+  underscores. "wait." ... "thats not my code." The box peels apart into floating pixels
+  and a single black pixel hums in the hall. Over 3 s it opens into an event horizon: a
+  black sphere, a blazing photon ring, an accretion disk (white to cyan to magenta,
+  Doppler-bright on the side coming toward you) and a lens that shows the stars warped
+  round it. Then everything goes in, stretched toward it: the frozen bullets, the menus,
+  the HP bar, his chat ("NONONONO"), his CRT, him, the hall itself, piece by piece. You
+  never move: the world goes in around you, the vignette closes, your SOUL stretches
+  toward it last, and it all fades to black over 1.5 s.
+- **The fall** is the secret track from 0:00: darkness, a few motes drifting slowly up
+  past you (the only motion), a faint grid sphere that stays put, and deleted words
+  floating by ("deleted", "unsaved", "0 bytes", "not responding"...). The song's IMPACT at
+  0:11 is scheduled on the audio clock, and THE NULL appears exactly on it: an endless
+  white wireframe grid sagging toward a black hole that hangs huge in the sky, over a
+  procedural starfield lensed round it (the bending happens in the sky's own shader, so
+  there's an Einstein ring for almost nothing). Every shader is compiled, and drawn
+  unseen for a few frames, while it's dark, so nothing hitches on the reveal.
 - Debug: `\` in boss 2's fight plays the tape (on your turn), then each press takes
   MERCY down another 25; in the shop it puts a tape in your bag.
