@@ -131,7 +131,7 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 // ============================================================================
 //  MUSIC OVERRIDES
 //  Every track is built in: music_pack.js (next to index.html) defines
-//  window.MANIC_MUSIC = { proprietor, kiddie, ringmaster, outlaw, shop } as MP3
+//  window.MANIC_MUSIC = { proprietor, kiddie, ringmaster, outlaw, shop, secret } as MP3
 //  data URIs, so nothing has to be loaded by hand. These constants are optional
 //  overrides that win over the pack: paste a base64 data URI of an MP3
 //  ("data:audio/mpeg;base64,....") into a slot, or set a *_URL to a same-origin
@@ -152,6 +152,9 @@ const MUSIC_URL_OUTLAW = "";
 // KNOBS' SHOP: "made this beat to practice mastering"
 const MUSIC_DATA_URI_SHOP = "";
 const MUSIC_URL_SHOP = "";
+// the secret: "_____"
+const MUSIC_DATA_URI_SECRET = "";
+const MUSIC_URL_SECRET = "";
 
 // ============================================================================
 //  CONFIG (shared by every boss; boss-specific tuning lives in BOSSES.*)
@@ -388,6 +391,7 @@ const PixelFont = (() => {
     'é': '00010|00100|01110|10001|11111|10000|01110',
     '♥': '00000|01010|11111|11111|01110|00100|00000',
     '█': '11111|11111|11111|11111|11111|11111|11111',
+    '▓': '10101|01010|10101|01010|10101|01010|10101',
     '▲': '00000|00100|00100|01110|01110|11111|00000',
     '▼': '00000|11111|01110|01110|00100|00100|00000',
     '◄': '00010|00110|01110|11110|01110|00110|00010',
@@ -414,7 +418,7 @@ const PixelFont = (() => {
   };
   const icons = {};
   for (const k in iconRaw) icons[k] = iconRaw[k].split('|').map((r) => r.split('').map((c) => c === '#'));
-  const MAP = { '—': '-', '–': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...' };
+  const MAP = { '—': '-', '–': '-', '−': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...' };
   const GLITCH = '#$%&@*!?/\\|<>01=+~^';
   const F = {
     ADV: 6, LINE: 10, glyphs, icons,
@@ -806,7 +810,19 @@ class AudioEngine {
       this.onsetAn = c.createAnalyser(); this.onsetAn.fftSize = 1024; this.onsetAn.smoothingTimeConstant = 0;
       // duck: -6 dB while a character talks over the music (setDuck)
       this.duck = c.createGain();
-      this.musicGain.connect(this.duck); this.duck.connect(this.musicFilter); this.musicFilter.connect(this.onsetAn); this.onsetAn.connect(this.analyser); this.analyser.connect(this.comp);
+      // the BLOTCHED TAPE (setCorrupt): beside the dry path, a slow vibrato (a modulated delay: the pitch wobbles, the
+      // beat stays where it was) and a bit-crushed copy of it. Both silent until something corrupts the music.
+      this.corDry = c.createGain(); this.corWob = c.createGain(); this.corCrush = c.createGain();
+      this.corWob.gain.value = 0; this.corCrush.gain.value = 0;
+      this.corDelay = c.createDelay(0.05); this.corDelay.delayTime.value = 0.006;
+      this.corLfo = c.createOscillator(); this.corLfo.frequency.value = 0.5; this.corLfoG = c.createGain(); this.corLfoG.gain.value = 0;
+      this.corLfo.connect(this.corLfoG); this.corLfoG.connect(this.corDelay.delayTime); this.corLfo.start();
+      this.corShaper = c.createWaveShaper();
+      { const n = 1024, cv = new Float32Array(n); for (let i = 0; i < n; i++) cv[i] = Math.round((i / (n - 1) * 2 - 1) * 7) / 7; this.corShaper.curve = cv; }
+      this.duck.connect(this.corDry); this.corDry.connect(this.musicFilter);
+      this.duck.connect(this.corDelay); this.corDelay.connect(this.corWob); this.corWob.connect(this.musicFilter);
+      this.corDelay.connect(this.corShaper); this.corShaper.connect(this.corCrush); this.corCrush.connect(this.musicFilter);
+      this.musicGain.connect(this.duck); this.musicFilter.connect(this.onsetAn); this.onsetAn.connect(this.analyser); this.analyser.connect(this.comp);
       this.onsetCur = new Float32Array(this.onsetAn.frequencyBinCount); this.onsetPrev = new Float32Array(this.onsetAn.frequencyBinCount).fill(-100);
       this.sfxGain = c.createGain(); this.sfxGain.connect(this.comp);
       this.freq = new Uint8Array(this.analyser.frequencyBinCount);
@@ -871,6 +887,20 @@ class AudioEngine {
     if (!this.ctx) return;
     const d = this.duck.gain, t = this.ctx.currentTime;
     d.cancelScheduledValues(t); d.setTargetAtTime(on ? 0.5 : 1, t, 0.06);
+  }
+  // the music, corrupted: crush 0-1 (bit-crushed), wob 0-1 (into the wobbling copy), depth 1 = a +/-1.5% pitch swing
+  setCorrupt(crush, wob, depth = 1) {
+    if (!this.ctx || !this.corDry) return;
+    crush = clamp(crush, 0, 1); wob = clamp(wob, 0, 1);
+    const key = Math.round(crush * 50) * 10000 + Math.round(wob * 50) * 100 + Math.round(depth * 20);
+    if (key === this.corKey) return;
+    this.corKey = key;
+    const t = this.ctx.currentTime, wet = Math.max(crush, wob);
+    this.corDry.gain.setTargetAtTime(1 - wet, t, 0.05);
+    this.corWob.gain.setTargetAtTime(wet * (1 - crush * 0.7), t, 0.05);
+    this.corCrush.gain.setTargetAtTime(crush * 0.9, t, 0.05);
+    // a delay swinging by A at f Hz bends the pitch by 2*pi*f*A: 1.5% at 0.5 Hz is A = 4.8 ms (around the 6 ms base)
+    this.corLfoG.gain.setTargetAtTime(wob * depth * 0.015 / (TAU * 0.5), t, 0.08);
   }
   // like playSegment, but the current source fades out over `dur` while the new one fades in
   crossfadeSegment(pos, loopStart, loopEnd, when, dur, loop = true) {
@@ -1100,13 +1130,14 @@ const AudioCache = {
 //  decoded - the current boss track and the shop track - and retain() drops every other
 //  decoded buffer (every reference) when a scene changes.
 // ============================================================================
-const MUSIC_KEYS = ['proprietor', 'kiddie', 'ringmaster', 'outlaw', 'shop'];
+const MUSIC_KEYS = ['proprietor', 'kiddie', 'ringmaster', 'outlaw', 'shop', 'secret'];
 const MUSIC_INFO = {
   proprietor: { label: 'BOSS 1', title: 'M4N1C M4N0R', uri: MUSIC_DATA_URI_PROPRIETOR, url: MUSIC_URL_PROPRIETOR },
   kiddie: { label: 'BOSS 2', title: 'SCR1PT_KIDDIE', uri: MUSIC_DATA_URI_KIDDIE, url: MUSIC_URL_KIDDIE },
   ringmaster: { label: 'BOSS 3', title: 'THE CIRCUS IN THE SKY', uri: MUSIC_DATA_URI_RINGMASTER, url: MUSIC_URL_RINGMASTER },
   outlaw: { label: 'BOSS 4', title: 'Yeed Your Last Haw', uri: MUSIC_DATA_URI_OUTLAW, url: MUSIC_URL_OUTLAW },
   shop: { label: 'SHOP', title: 'made this beat to practice mastering', uri: MUSIC_DATA_URI_SHOP, url: MUSIC_URL_SHOP },
+  secret: { label: '▓▓▓▓▓', title: '_____', uri: MUSIC_DATA_URI_SECRET, url: MUSIC_URL_SECRET },
 };
 const MusicLibrary = {
   live: {},       // key -> decoded (or synthesized) track, only the ones in use
@@ -1114,7 +1145,7 @@ const MusicLibrary = {
   cached: {},     // key -> { name } for each copy in IndexedDB (read once at boot)
   session: {},    // key -> { name, bytes } a file picked in Settings > MUSIC this session
   listeners: [],  // f(key): a track's status changed (settings panels redraw)
-  def(key) { return key === 'shop' ? SHOP_DEF : BOSSES[key]; },
+  def(key) { return key === 'shop' ? SHOP_DEF : key === 'secret' ? (BOSSES.secret || SECRET_DEF) : BOSSES[key]; },
   title(key) { return MUSIC_INFO[key] ? MUSIC_INFO[key].title : key; },
   pack(key) { const P = window.MANIC_MUSIC; return P && typeof P[key] === 'string' && P[key].startsWith('data:') ? P[key] : ''; },
   // where a track comes from: 'file' (picked this session) | 'override' | 'pack' | 'cache' | 'fallback'
@@ -3040,7 +3071,7 @@ class Arena {
       if (f.t >= 1) this.themeFade = null;
     }
     this.halfJit = Math.max(0, this.halfJit - dt * 9);
-    this.jitter = fx.glitch * Flash.glitchMul * 0.025 + this.halfJit * 0.014 * Flash.glitchMul;
+    this.jitter = fx.glitch * Flash.glitchMul * 0.025 + this.halfJit * 0.014 * Flash.glitchMul + (this.extraJitter || 0);
     this.layout();
     this.group.visible = this.visible;
     this.edges.visible = this.glowEdges.visible = !this.theme.hideEdges;
@@ -4404,6 +4435,7 @@ class UI {
     this.closeBag();
     const B = G.battle, inv = Save.data.inventory, kinds = Object.keys(CONSUMABLES).filter((k) => inv.includes(k));
     const defs = kinds.map((k) => ({ label: `${CONSUMABLES[k].name} x${inv.filter((x) => x === k).length}`, color: CONSUMABLES[k].color === '#2a2a2a' ? '#c8c8d8' : CONSUMABLES[k].color, onPress: () => B.useBag(k) }));
+    if (inv.includes('blotch')) defs.push({ label: `${BLOTCH.tag} x1`, color: '#8a8a96', onPress: () => B.useBag('blotch') });
     defs.push({ label: 'BACK', icon: 'back', onPress: () => B.closeBagToItems() });
     this.bagMenu = new Menu(defs, { yOff: -0.42, radius: 0.8, gap: 0.03 });
     return this.bagMenu;
@@ -4554,10 +4586,13 @@ class UI {
         for (const ph of def.phaseRules.slice(1)) { g.fillStyle = '#000'; g.fillRect(bx + Math.round(bw * ph.hpFrac) - 1, by, 2, 18); }
         if (realFrac < frac) { g.fillStyle = '#ffd23c'; g.fillRect(bx + Math.round(bw * realFrac), by, Math.round(bw * (frac - realFrac)), 18); }
         const mw = 220, mx = Math.round((W - mw) / 2) + 40, my = 64;
-        PixelFont.draw(g, 'MERCY', mx - 82, my, 2, '#ffd23c');
-        g.fillStyle = '#5a3a00'; g.fillRect(mx, my, mw, 14);
-        g.fillStyle = '#ffd23c'; g.fillRect(mx, my, Math.round(mw * B.spare / 100), 14);
-        PixelFont.draw(g, `${Math.floor(B.spare)}%`, mx + mw + 10, my, 2, '#ffd23c');
+        if (B.corrupt) Corrupt.drawMercy(g, B, W);
+        else {
+          PixelFont.draw(g, 'MERCY', mx - 82, my, 2, '#ffd23c');
+          g.fillStyle = '#5a3a00'; g.fillRect(mx, my, mw, 14);
+          g.fillStyle = '#ffd23c'; g.fillRect(mx, my, Math.round(mw * B.spare / 100), 14);
+          PixelFont.draw(g, `${Math.floor(B.spare)}%`, mx + mw + 10, my, 2, '#ffd23c');
+        }
       }
       this.bossBar.tex.needsUpdate = true;
     }
@@ -5323,6 +5358,8 @@ class BulletPools {
     const hitR = soul.hitR, grazeR = soul.grazeR;
     const soulLive = soul.active && soul.alive;
     const frozen = this.frozen, glBlue = glitchIsBlue(), metro = Stats.metronome();
+    // the BLOTCHED TAPE at -75: half the bullets at a time flicker into black shapes with a white outline (glow)
+    const flick = this.outlineFlick, flickB = flick ? Math.floor(G.clock.beat * (flick > 1 ? 0.5 : 2)) : 0;
     this.quarantine = Math.max(0, this.quarantine - dt);
     this.shootables.length = 0;
     let total = 0;
@@ -5391,10 +5428,13 @@ class BulletPools {
         _s1.set(s, s * b.stretch, s);
         _m1.compose(b.pos, _q1, _s1);
         mesh.setMatrixAt(n, _m1);
-        if (b.bugT > 0 && !b.dying && (Math.floor(b.age * (Flash.reduced ? 5 : 12)) & 1)) mesh.setColorAt(n, _c2.setHex(0xff3cc8));
+        const ol = flick && !b.dying && ((b.i + flickB) & 1);
+        if (ol) mesh.setColorAt(n, _c2.setRGB(0, 0, 0));
+        else if (b.bugT > 0 && !b.dying && (Math.floor(b.age * (Flash.reduced ? 5 : 12)) & 1)) mesh.setColorAt(n, _c2.setHex(0xff3cc8));
         else mesh.setColorAt(n, b.color);
         if (pool.glyphArr) pool.glyphArr[n] = b.glyph;
-        if (b.glowSize > 0) glow.add(b.pos.x, b.pos.y, b.pos.z, b.glowSize * grow * shrink, b.glowCol.r, b.glowCol.g, b.glowCol.b, b.glowA * shrink, 0);
+        if (ol) glow.add(b.pos.x, b.pos.y, b.pos.z, Math.max(b.glowSize, b.r * 2.6) * grow * shrink, 1, 1, 1, 0.7 * shrink, 0);
+        else if (b.glowSize > 0) glow.add(b.pos.x, b.pos.y, b.pos.z, b.glowSize * grow * shrink, b.glowCol.r, b.glowCol.g, b.glowCol.b, b.glowA * shrink, 0);
         if (dbg) glow.add(b.pos.x, b.pos.y, b.pos.z, b.r * 2, 1, 0.2, 0.2, 0.9, 3);
         n++;
       }
@@ -9626,6 +9666,7 @@ class Battle {
     // economy: GOLD found during this fight (grazes, critical hits) is banked when it ends
     this.fightGold = 0; this.grazeGold = 0; this.reward = null;
     this.windUsed = false; this.horseshoe = false; this.minHp = 0;
+    this.corrupt = null;   // the BLOTCHED TAPE is playing (boss 2 only): Corrupt
     Object.assign(this, def.newState());   // boss-specific state (items, mercy-route flags, ...)
   }
   // ------------------------------------------------------------------ economy
@@ -9759,6 +9800,7 @@ class Battle {
     G.clock.setFreeTime(false); G.fx.tunnelBoost = 0; G.loco.ext = null; G.loco.push.set(0, 0, 0); G.soul.tpMul = 1;
     this.fightUI.hide(); this.danceUI.hide(); this.exitDoor.hide();
     if (this.def.cleanup) this.def.cleanup(this);
+    if (this.corrupt) { Corrupt.clear(); this.corrupt = null; }
     if (Shop.active) Shop.teardown();
     const U = G.ui;
     U.hideAllMenus(); U.hideFlavor(); U.hideBubble(); U.hideBig(); U.closeSettingsPanel(); U.closeHowTo(); U.hideAsk(); U.closeBag();
@@ -9895,7 +9937,8 @@ class Battle {
   }
   restoreSnapshot() {
     const s = this.snapshot; if (!s) return;
-    Object.assign(this, { phase: s.phase, bossHp: s.bossHp, spare: s.spare, rot: s.rot.slice(), cycle: s.cycle.slice(), finalDone: s.finalDone, tired: s.tired });
+    // (while the BLOTCHED TAPE plays, a retry keeps the MERCY it had fallen to)
+    Object.assign(this, { phase: s.phase, bossHp: s.bossHp, spare: this.corrupt ? this.spare : s.spare, rot: s.rot.slice(), cycle: s.cycle.slice(), finalDone: s.finalDone, tired: s.tired });
     this.def.restore(this, s.extra);
     G.ui.bossHpShown = this.bossHp;
   }
@@ -9947,6 +9990,7 @@ class Battle {
   // ------------------------------------------------------------------ player turn
   flavorText() {
     if (this.flavorOverride) { const f = this.flavorOverride; this.flavorOverride = null; return f; }
+    if (this.corrupt) return Corrupt.flavor(this);
     return this.def.flavor(this);
   }
   newTurn() {
@@ -9955,6 +9999,7 @@ class Battle {
     this.setState('PLAYER_MENU');
     G.loco.enabled = false; G.loco.stop();
     if (this.def.onNewTurn) this.def.onNewTurn(this);   // per-turn effects (heal over time, sulking, ...)
+    if (this.corrupt && Corrupt.onTurn(this)) return;   // the tape keeps playing (at -100 it takes the turn)
     this.lastFlavor = this.flavorText();
     G.ui.showFlavor(this.lastFlavor);
     this.refreshMenus();
@@ -9962,6 +10007,7 @@ class Battle {
   }
   refreshMenus() {
     this.def.refreshMenus(this);
+    if (this.corrupt) Corrupt.menus(this);
     const sp = G.ui.mercyMenu.buttons[0];
     sp.colorN = this.spare >= 100 ? '#ffe600' : '#ff9d1a'; sp.draw();
     const bag = G.ui.itemMenu.buttons.find((b) => b.isBag);
@@ -9992,6 +10038,7 @@ class Battle {
   useBag(id) {
     const inv = Save.data.inventory, i = inv.indexOf(id);
     if (i < 0) { G.audio.sfx.buzz(); return; }
+    if (id === 'blotch') { G.ui.closeBag(); Corrupt.use(this); return; }   // (only boss 2's fight takes it)
     inv.splice(i, 1); Save.write();
     G.ui.closeBag();
     const s = G.soul; let text, h = 0;
@@ -10008,13 +10055,14 @@ class Battle {
     this.narrate(text, () => this.afterAction([this.def.itemLine(this)]));
   }
   addSpare(x) {
+    if (this.corrupt) { if (x < 0) Corrupt.lower(this, -x); return; }   // the tape: MERCY only goes one way
     const cap = this.def.spareCap(this);
     this.spare = clamp(this.spare + x, 0, Math.max(cap, this.spare));
     G.ui.refreshHUD();
   }
-  act(k) { this.def.act(this, k); }
+  act(k) { if (this.corrupt) { Corrupt.act(this, k); return; } this.def.act(this, k); }
   useItem(k) { this.def.useItem(this, k); }
-  mercy(k) { this.def.mercy(this, k); }
+  mercy(k) { if (this.corrupt && k === 'spare' && this.spare < 0) { Corrupt.cantSpare(this); return; } this.def.mercy(this, k); }
   // ------------------------------------------------------------------ FIGHT (slash minigame)
   startFight() {
     this.setState('FIGHT_MINIGAME');
@@ -10128,10 +10176,12 @@ class Battle {
     return this.phase;
   }
   afterAction(reaction) {
+    if (this.corrupt) reaction = Corrupt.take(this, reaction);   // his scared lines first; from -75 words lose letters
     const tp = this.targetPhase();
     if (tp > this.phase) { this.phaseShift(this.phase + 1, reaction); return; }
     const atk = this.chooseAttack();
-    this.talk((reaction || []).concat(this.attackLines(atk)), () => this.startAttack(atk));
+    const lines = this.attackLines(atk);
+    this.talk((reaction || []).concat(this.corrupt ? Corrupt.take(this, lines) : lines), () => this.startAttack(atk));
   }
   chooseAttack() { return this.def.chooseAttack(this); }
   attackLines(atk) { return this.def.attackLines(this, atk); }
@@ -10287,6 +10337,7 @@ class Battle {
   fightVictory() {
     this.setState('VICTORY_FIGHT');
     this.clearTimers();
+    if (this.corrupt) { Corrupt.clear(); this.corrupt = null; }   // the fight ended first: the tape is simply used up
     G.ui.hideAllMenus(); G.ui.hideFlavor();
     this.grantClear('fight');
     Save.setBeaten(this.def.id, 'fight');
@@ -10295,6 +10346,7 @@ class Battle {
   spareEnding() {
     this.setState('VICTORY_SPARE');
     this.clearTimers();
+    if (this.corrupt) { Corrupt.clear(); this.corrupt = null; }
     G.ui.hideAllMenus(); G.ui.hideFlavor();
     this.grantClear('spare');
     Save.setBeaten(this.def.id, 'spare');
@@ -10445,8 +10497,18 @@ class Battle {
     }
     if (I.keyDown('KeyP')) G.debug.stats = !G.debug.stats;
     if (I.keyDown('KeyN')) this.debugNextPhase();
+    if (I.keyDown('Backslash')) this.debugTape();
     if (I.keyDown('BracketLeft')) this.nudgeOffset(-0.005);
     if (I.keyDown('BracketRight')) this.nudgeOffset(0.005);
+  }
+  // \ : boss 2's fight: play the BLOTCHED TAPE (on your turn), then each press takes MERCY down 25 more; in the shop: one in your bag
+  debugTape() {
+    if (this.state === 'SHOP') { if (!Save.data.inventory.includes('blotch')) { Save.data.inventory.push('blotch'); Save.write(); Shop.refreshShelves(); } G.ui.showPrompt('DEBUG: A BLOTCHED TAPE IN YOUR BAG', 1.8, '#ffffff'); return; }
+    if (!G.def || G.def.id !== 'kiddie') return;
+    if (this.corrupt) { Corrupt.lower(this, 25); G.ui.showPrompt(`DEBUG: MERCY ${Math.floor(this.spare)}%`, 1.4, '#ffffff'); return; }
+    if (this.state !== 'PLAYER_MENU') return;
+    G.ui.hideAllMenus(); G.ui.hideFlavor();
+    Corrupt.start(this);
   }
   debugNextPhase() {
     const ok = ['PLAYER_MENU', 'ACT_MENU', 'ITEM_MENU', 'MERCY', 'BOSS_ATTACK', 'ATTACK_WAIT', 'BOSS_DIALOGUE', 'NARRATE', 'ATTACK_END', 'FIGHT_MINIGAME', 'DANCE', 'TEACH'];
@@ -10505,6 +10567,7 @@ class Battle {
       case 'STORY': StoryScene.update(dt, rdt); break;
       default: if (this.def.updateState && !frozen) this.def.updateState(this, this.state, dt, rdt);
     }
+    if (this.corrupt && !frozen) Corrupt.update(this, dt, rdt);
     // lights flicker (reduced: a smooth dip instead of a strobe)
     if (this.flickerT > 0 && !frozen) {
       this.flickerT -= rdt;
@@ -14181,7 +14244,7 @@ BOSSES.kiddie = {
   actPrompt(B) { return B.phase >= 2 && B.teachDone ? '* What will you do?\n* (Maybe he just wants someone to say it.)' : '* What will you do?'; },
   itemPrompt() { return '* Your inventory smells like a LAN party.\n* (★ = found on THE SERVER. Not for sale anywhere.)'; },
   itemLine() { return { text: pick(KLINES.item) }; },
-  mercyPrompt(B) { return B.spare >= 100 ? "* SCR1PT_K1DD1E's status: online." : `* Mercy: ${Math.floor(B.spare)}%.`; },
+  mercyPrompt(B) { if (B.corrupt) return Corrupt.mercyPrompt(B); return B.spare >= 100 ? "* SCR1PT_K1DD1E's status: online." : `* Mercy: ${Math.floor(B.spare)}%.`; },
   spareCap(B) { return B.gg ? 100 : 75; },
   act(B, k) {
     const U = G.ui;
@@ -14338,6 +14401,7 @@ BOSSES.kiddie = {
     G.fx.damageNumber(numPos, String(dmg), hacked ? '#3cff6e' : '#ff2244', hacked ? 3.0 : 2.3);
     G.input.pulseAll(0.8, 120);
     if (B.bossHp <= 0) { B.afterIn('FIGHT_MINIGAME', 0.2, () => B.fightVictory()); return; }
+    if (B.corrupt) { Corrupt.fightHit(B); if (B.corrupt.event) return; }   // the tape: every hit -5 MERCY
     const line = hacked && chance(0.6) ? { text: pick(KLINES.hacked), mood: 'angry' } : this.fightLine(B, 'hit');
     B.afterIn('FIGHT_MINIGAME', 1.4, () => B.afterAction([line]));
   },
@@ -26817,6 +26881,7 @@ class KnobsModel {
     this.mood = new THREE.Vector4(0.15, 0, 0, 0.1); this.mouthV = new THREE.Vector4(1, 0, 0, 0); this._t4 = new THREE.Vector4(); this._qa = new THREE.Quaternion();
   }
   onBeat(b) {
+    if (this.still) return;   // the BLOTCHED TAPE is out of its crate: he stops nodding
     this.nod = 1; this.beatK = 1;
     if (this.task === 'knobs' && chance(0.35)) this.taskT = 0;
     if (b % 4 === 0) for (const k of this.headKnobs) k.to = rand(-1.1, 1.1);
@@ -26877,10 +26942,11 @@ class KnobsModel {
     const A = this.act; if (A) { A.t += rdt; A.tap = Math.max(0, A.tap - rdt * 5); if (A.t > A.dur) this.act = null; }
     // ---- the body: a nod and a bob on every beat, a sway every two
     const nodK = Math.pow(this.nod, 2), ph = c.running ? c.beat : t * 1.6;
+    this.swayK = damp(this.swayK === undefined ? 1 : this.swayK, this.still ? 0 : 1, 3, rdt);
     this.hips.position.y = 0.95 - 0.012 * nodK;
-    this.hips.rotation.z = 0.025 * Math.sin(ph * Math.PI * 0.5);
+    this.hips.rotation.z = 0.025 * Math.sin(ph * Math.PI * 0.5) * this.swayK;
     this.spine.rotation.x = 0.04 * nodK + (A && A.kind === 'haggle' ? 0.08 : 0);
-    this.chest.rotation.y = 0.04 * Math.sin(ph * Math.PI * 0.5 + 0.6) + (A && A.kind === 'point' && A.at ? clamp(Math.atan2(A.at.x - this.root.position.x, A.at.z - this.root.position.z), -0.5, 0.5) * 0.4 : 0);
+    this.chest.rotation.y = 0.04 * Math.sin(ph * Math.PI * 0.5 + 0.6) * this.swayK + (A && A.kind === 'point' && A.at ? clamp(Math.atan2(A.at.x - this.root.position.x, A.at.z - this.root.position.z), -0.5, 0.5) * 0.4 : 0);
     this.chest.position.y = 0.2 + (A && A.kind === 'shrug' ? 0.03 * Math.sin(Math.min(1, A.t * 3) * Math.PI * 0.5) * (A.t < A.dur - 0.3 ? 1 : 0) : 0);
     // ---- look: down at the gear, up at you every few seconds (always while talking or reacting)
     this.glanceT -= rdt;
@@ -27988,6 +28054,7 @@ const ShopKit = {
     this.knobs = new KnobsModel(); root.add(this.knobs.root);
     shopBuildPanels(this, root);
     shopBuildItems(this);
+    BlotchShop.build(this);   // (hidden until boss 2 is beaten)
     this.lightK = 1;   // 0 inside, 1 outside (the light blends as you walk through the door)
     this.ready = true;
   },
@@ -28197,6 +28264,10 @@ const KNOBS_LINES = {
   idle: ["every track ends, friend. that's what makes the loop hit.", 'that rack is alphabetical. kinda.', "the lava lamp's older than me.", 'try the lemonade. trust.', "don't mind the crates. they're load-bearing.", 'this one goes out to the night shift.'],
   headphones: ['these? ...hey, have you tried the lemonade?', 'what headphones.', 'long story. short shop.', "they're for listening. mostly.", "ask me again later. ...no wait, don't.", 'oh look, a customer. oh. it\'s you. hi.'],
   mirror: ['looking good.', 'that one suits you.', 'very you.'],
+  blotchPick: ["...where'd that come from. that's not one of mine."],
+  blotchBought: ["your call. there's no sound on that tape. ...or there's too much."],
+  blotchPrice: ["...i don't have a price for that. one gold. sure. one gold."],
+  haveOne: ['you already got one of those. ...one is plenty.'],
 };
 const KNOBS_TOPICS = [
   { id: 'shop', label: 'THE SHOP', lines: [["i built this place out of old speaker boxes. it floats. don't ask me how.", 'i just do the books.'], ["it's always late here. so i'm always open.", 'convenient.']] },
@@ -28267,6 +28338,7 @@ const Shop = {
   },
   teardown() {
     this.closeSub(); this.stopHaggle();
+    BlotchShop.teardown();
     if (ShopKit.console) ShopKit.console.hide();
     G.loco.walk = null;
     G.audio.setDuck(false);
@@ -28300,8 +28372,9 @@ const Shop = {
   },
   fill(l, it) { return l.replace('{P}', this.price(it)).replace('{N}', it ? this.itemName(it).toLowerCase() : ''); },
   // ------------------------------------------------------------ stock + prices
-  itemName(it) { return (it.kind === 'tape' ? TAPES : it.kind === 'cons' ? CONSUMABLES : PINS)[it.id].name; },
+  itemName(it) { return it.kind === 'blotch' ? BLOTCH.name : (it.kind === 'tape' ? TAPES : it.kind === 'cons' ? CONSUMABLES : PINS)[it.id].name; },
   price(it) {
+    if (it.kind === 'blotch') return BLOTCH.price;
     let base;
     if (it.kind === 'tape') { base = TAPES[it.id].prices[Save.data.upgrades[it.id] || 0]; if (base === undefined) return 0; }
     else base = (it.kind === 'cons' ? CONSUMABLES : PINS)[it.id].price;
@@ -28313,6 +28386,7 @@ const Shop = {
   // why you can't buy it right now (null: you can)
   whyNot(it) {
     const D = Save.data;
+    if (it.kind === 'blotch') return D.inventory.includes('blotch') ? 'haveOne' : D.inventory.length >= Stats.slots() ? 'bagFull' : D.gold < BLOTCH.price ? 'short' : null;
     if (it.kind === 'tape' && (D.upgrades[it.id] || 0) >= TAPES[it.id].prices.length) return 'maxed';
     if (it.kind === 'cons' && !(D.knobs.stock[it.id] > 0)) return 'soldOut';
     if (it.kind === 'cons' && D.inventory.length >= Stats.slots()) return 'bagFull';
@@ -28326,6 +28400,7 @@ const Shop = {
       if (it.state === 'sold') continue;
       if (it.kind === 'cons') it.mesh.visible = Save.data.knobs.stock[it.id] > 0;
       if (it.kind === 'pin' && PINS[it.id].needs) it.mesh.visible = !!Save.beaten(PINS[it.id].needs);
+      if (it.kind === 'blotch' && it.state === 'home') it.mesh.visible = BlotchShop.available();
     }
   },
   // ------------------------------------------------------------ the console on the counter (BUY + the rest)
@@ -28368,6 +28443,7 @@ const Shop = {
     let line = pick(KNOBS_LINES.bought);
     if (it.kind === 'tape') { D.upgrades[it.id] = (D.upgrades[it.id] || 0) + 1; line = pick(KNOBS_LINES.tapeIn); }
     else if (it.kind === 'cons') { D.inventory.push(it.id); D.knobs.stock[it.id]--; line = pick(KNOBS_LINES.bag); }
+    else if (it.kind === 'blotch') { D.inventory.push('blotch'); line = KNOBS_LINES.blotchBought[0]; }
     else { D.cosmetics.owned.push(it.id); D.cosmetics.equipped = it.id; line = pick(KNOBS_LINES.pinOn); }
     Save.write(); G.ui.refreshHUD();
     // coins fly from your wrist into the drawer; the till rings on the next beat after they land
@@ -28414,13 +28490,16 @@ const Shop = {
     } else if (it.kind === 'pin') {
       G.soul.applyPin(it.id); G.soul.glowT = 1.2;
       G.ui.showPrompt(`${PINS[it.id].name}: EQUIPPED`, 2.2, PINS[it.id].color);
+    } else if (it.kind === 'blotch') {
+      G.ui.showPrompt(`${BLOTCH.tag} -> YOUR BAG (${D.inventory.length}/${Stats.slots()})`, 2.2, '#8a8a96');
+      G.audio.sfx.blotchHiss();
     } else {
       G.ui.showPrompt(`${CONSUMABLES[it.id].name} -> YOUR BAG (${D.inventory.length}/${Stats.slots()})`, 2.2, '#2affd5');
       G.audio.sfx.pick();
     }
     // back on the shelf if there's more of it (sold-out snacks stay gone until the next restock)
     it.state = 'home'; it.mesh.position.copy(it.home); it.mesh.quaternion.copy(it.homeQ);
-    it.mesh.visible = it.kind !== 'cons' || D.knobs.stock[it.id] > 0;
+    it.mesh.visible = it.kind === 'blotch' ? BlotchShop.available() : it.kind !== 'cons' || D.knobs.stock[it.id] > 0;
     this.refreshShelves();
   },
   // ------------------------------------------------------------ the pad
@@ -28443,6 +28522,7 @@ const Shop = {
   // KNOBS slid it over: he names the price (or why not)
   priceCheck(it) {
     const why = this.whyNot(it);
+    if (it.kind === 'blotch' && !why) { ShopKit.knobs.react('shifty'); this.say(KNOBS_LINES.blotchPrice[0], null, true); return; }
     ShopKit.knobs.react(why === 'short' || why === 'soldOut' || why === 'locked' ? 'shrug' : 'point', { at: it.mesh.position });
     if (why && why !== 'short') { this.say(this.fill(pick(KNOBS_LINES[why]), it), null, true); return; }
     if (why === 'short') { this.say(this.fill(pick(KNOBS_LINES.short), it), null, true); return; }
@@ -28592,6 +28672,7 @@ const Shop = {
     K.update(dt, rdt);
     this.updateTalk(rdt);
     this.updateItems(rdt);
+    BlotchShop.update(rdt);
     this.updateMirror();
     if (this.hag && !this.hag.done) this.updateHaggleTaps();
     // idle chatter, now and then
@@ -28686,6 +28767,7 @@ const Shop = {
     if (it.grabOff.length() > 0.06) it.grabOff.setLength(0.06);
     it.grabQ = _q2.clone().multiply(it.mesh.quaternion);
     h.pulse(0.4, 25); G.audio.sfx.pick();
+    if (it.kind === 'blotch') { BlotchShop.picked(); h.pulse(0.8, 60); }
   },
   release(it) {
     it.hand = null;
@@ -28741,6 +28823,7 @@ const Shop = {
       I.desk.click = false;
       if (this.padItem === hit.item) this.padItem = null;
       hit.item.state = 'held'; this.deskHeld = hit.item; G.audio.sfx.pick();
+      if (hit.item.kind === 'blotch') BlotchShop.picked();
       return;
     }
     // the mirror: click it to try on your pins
@@ -28753,6 +28836,7 @@ const Shop = {
     P.mesh.visible = true;
     P.mesh.position.copy(it.mesh.position); P.mesh.position.y += it.state === 'held' && G.desktop ? 0.13 : 0.17;
     P.mesh.lookAt(Head.pos);
+    if (it.kind === 'blotch') { const bk = 'blotch|' + Math.floor(G.time * (Flash.reduced ? 1 : 4)); if (K.tagItem !== bk) { K.tagItem = bk; BlotchShop.drawTag(P); } return; }
     const key = it.id + '|' + it.state + '|' + Save.data.gold + '|' + (Save.data.upgrades[it.id] || 0) + '|' + (this.visit.haggle || 0) + '|' + Save.data.inventory.length + '|' + (Save.data.knobs.stock[it.id] || 0) + '|' + Save.data.cosmetics.equipped;
     if (K.tagItem === key) return;
     K.tagItem = key;
@@ -28833,6 +28917,564 @@ const Shop = {
     } else if (I.desk.click || I.keyDown('Space')) { this.hagTap(I.desk.click ? I.desk.clickAt || G.audio.now : I.desk.pressedAt.Space || G.audio.now); I.desk.click = false; }
   },
 };
+
+// @@SECRET (v5: the secret boss hidden inside boss 2)
+// ============================================================================
+//  THE SECRET TRACK: "_____" (2:14.4), the darkest track in the game, for the secret boss.
+//  Measured from the file: 176.0 BPM (beat 0.3409 s, bar 1.364 s) with a heavy half-time feel at 88 BPM;
+//  beat 0 of the grid sits at 0.016 s (an onset fold over the whole song; it drifts less than 10 ms).
+//  G minor. Every section starts on a bar line of that grid (beats of its own count):
+//    VOID      0 - 32    a near-silent sub rumble (the fall)
+//    IMPACT    32        one huge hit (10.92 s): landing in THE NULL, its eye opens
+//    BUILD     32 - 64   low and tense (the intro + the first turn; loops from 36, a bar after the hit)
+//    (gap)     64 - 68   near silence before the drop
+//    DROP      68 - 132  phase 1, ending on the big hit at beat 132 (45.01 s)
+//    BREAKDOWN 132 - 164 hollow (phase 2, part 1)
+//    REBUILD   164 - 196 a hit on 164 (55.92 s), rising (phase 2, part 2)
+//    PEAK      196 - 260 the loudest moment of the soundtrack (phase 3)
+//    WAVE      260 - 324 the second wave (phase 4)
+//    FINAL     324       the last hit (110.47 s): the finishing move
+//    OUTRO     324 - 392 a long, near-silent rumble (the endings)
+//  Tunables: SECRET_BPM, SECRET_OFFSET (secret.offset), SECRET_BEATS.
+// ============================================================================
+const SECRET_BPM = 176.0;
+const SECRET_OFFSET = 0.016;
+const SECRET_BEATS = { IMPACT: 32, BUILD_END: 64, DROP: 68, HIT: 132, REBUILD: 164, PEAK: 196, WAVE: 260, FINAL: 324, END: 392 };
+function secretMap(off, bpm, end) {
+  const t = (b) => off + b * 60 / bpm, S = SECRET_BEATS;
+  return {
+    sections: {
+      BUILD: { start: t(S.IMPACT + 4), end: t(S.BUILD_END), exact: true }, // the fall plays into it from 0 (VOID); (the IMPACT itself never loops)
+      DROP: { start: t(S.DROP), end: t(S.HIT), exact: true },             // phase 1
+      BREAK: { start: t(S.HIT), end: t(S.PEAK), exact: true },            // phase 2: BREAKDOWN into REBUILD
+      PEAK: { start: t(S.PEAK), end: t(S.WAVE), exact: true },            // phase 3
+      WAVE: { start: t(S.WAVE), end: t(S.FINAL), exact: true },           // phase 4
+      OUTRO: { start: t(S.FINAL), end: Math.min(end, t(S.END)), exact: true },
+    },
+    marks: { IMPACT: t(S.IMPACT), GAP: t(S.BUILD_END), DROP: t(S.DROP), HIT: t(S.HIT), REBUILD: t(S.REBUILD), PEAK: t(S.PEAK), WAVE: t(S.WAVE), FINAL: t(S.FINAL) },
+    labels: [[0, 'VOID'], [t(S.IMPACT), 'BUILD'], [t(S.BUILD_END), 'GAP'], [t(S.DROP), 'DROP'], [t(S.HIT), 'BREAKDOWN'], [t(S.REBUILD), 'REBUILD'], [t(S.PEAK), 'PEAK'], [t(S.WAVE), 'SECOND WAVE'], [t(S.FINAL), 'OUTRO']],
+    mapOffset: off,
+  };
+}
+const SECRET_MUSIC = Object.assign({
+  bpm: SECRET_BPM, offset: SECRET_OFFSET, beatsPerBar: 4, songLength: 134.37,
+  // a different file in this slot: the same structure, stretched to its length (whole bars)
+  adapt(d) {
+    const beat = 60 / SECRET_BPM, nb = Math.max(96, Math.floor((d - SECRET_OFFSET) / beat)), k = nb / SECRET_BEATS.END;
+    const S = {}; for (const key in SECRET_BEATS) S[key] = Math.round(SECRET_BEATS[key] * k / 4) * 4;
+    const saved = Object.assign({}, SECRET_BEATS); Object.assign(SECRET_BEATS, S);
+    const m = secretMap(SECRET_OFFSET, SECRET_BPM, d);
+    Object.assign(SECRET_BEATS, saved);
+    return m;
+  },
+}, secretMap(SECRET_OFFSET, SECRET_BPM, 134.37));
+// the track's owner until the boss itself is defined (MusicLibrary.def)
+const SECRET_DEF = { id: 'secret', songTitle: '_____', music: SECRET_MUSIC, beatsPerBar: 4, fallbackMusic() { return synthSecretFallback(SECRET_BPM); }, fallbackLabel: 'drum and bass, G minor' };
+
+// ---------------------------------------------------------------------------
+//  procedural fallback: drum and bass at 176 BPM in G minor, in the same 392-beat shape, so every seek and
+//  hit lands where the real song's would. A broken breakbeat (kick / snare / hats from sine and noise), a
+//  detuned reese bass (two slightly detuned saws through a low-pass), sparse dissonant stabs, bit-crushed
+//  glitch fills every 8 bars, a near-silent sub rumble at both ends, a hollow breakdown and a peak. 22.05 kHz mono.
+// ---------------------------------------------------------------------------
+function synthSecretFallback(bpm) {
+  const SR = 22050, beat = 60 / bpm, OFF = 0.05, S = SECRET_BEATS, NB = S.END;
+  const tB = (b) => OFF + b * beat;
+  const len = Math.ceil((tB(NB) + 1.5) * SR);
+  const out = new Float32Array(len);
+  const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  const add = (i, v) => { if (i >= 0 && i < len) out[i] += v; };
+  let seed = 1234567;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+  function kick(t0, vol, long = 0) {
+    const i0 = Math.floor(t0 * SR), n = Math.floor((0.28 + long) * SR); let ph = 0;
+    for (let i = 0; i < n; i++) { const t = i / SR; ph += (42 + 150 * Math.exp(-t * 38)) / SR; add(i0 + i, Math.sin(TAU * ph) * vol * Math.exp(-t * (long ? 3 : 9))); }
+  }
+  function noise(t0, dur, vol, decay, hp, lp = 0.5) {
+    const i0 = Math.floor(t0 * SR), n = Math.floor(dur * SR); let a = 0, prev = 0;
+    for (let i = 0; i < n; i++) { const w = rnd(); a += (w - a) * lp; const v = hp ? a - prev : a; prev = a; add(i0 + i, v * vol * Math.exp(-i / (decay * SR))); }
+  }
+  function snare(t0, vol) {
+    noise(t0, 0.22, vol, 0.07, true, 0.85);
+    const i0 = Math.floor(t0 * SR), n = Math.floor(0.12 * SR); let ph = 0;
+    for (let i = 0; i < n; i++) { ph += (230 - 60 * i / n) / SR; add(i0 + i, Math.sin(TAU * ph) * vol * 0.5 * Math.exp(-i / (0.035 * SR))); }
+  }
+  const hat = (t0, vol) => noise(t0, 0.05, vol, 0.012, true, 0.95);
+  // the reese: two saws a few cents apart through a one-pole low-pass that opens with `bright`
+  function reese(t0, dur, midi, vol, bright) {
+    const i0 = Math.floor(t0 * SR), n = Math.floor(dur * SR), f = mtof(midi);
+    let p1 = 0, p2 = 0.37, lp = 0, lp2 = 0;
+    const a = 0.02 + 0.2 * bright;
+    for (let i = 0; i < n; i++) {
+      p1 += f * 1.007 / SR; p2 += f * 0.993 / SR; p1 -= Math.floor(p1); p2 -= Math.floor(p2);
+      const x = (p1 * 2 - 1) + (p2 * 2 - 1);
+      lp += (x - lp) * a; lp2 += (lp - lp2) * a;
+      const e = Math.min(1, i / 300) * Math.min(1, (n - i) / 400);
+      add(i0 + i, lp2 * vol * e);
+    }
+  }
+  function sub(t0, dur, midi, vol) {
+    const i0 = Math.floor(t0 * SR), n = Math.floor(dur * SR), f = mtof(midi); let ph = 0;
+    for (let i = 0; i < n; i++) { ph += f / SR; add(i0 + i, Math.sin(TAU * ph) * vol * Math.min(1, i / 600) * Math.min(1, (n - i) / 900)); }
+  }
+  // a short, dissonant stab: a minor second on top of the root, a fast decay
+  function stab(t0, midi, vol) {
+    for (const d of [0, 1, 6]) {
+      const i0 = Math.floor(t0 * SR), n = Math.floor(0.22 * SR), f = mtof(midi + d); let ph = 0;
+      for (let i = 0; i < n; i++) { ph += f / SR; ph -= Math.floor(ph); add(i0 + i, (ph < 0.5 ? 1 : -1) * vol * 0.33 * Math.exp(-i / (0.06 * SR))); }
+    }
+  }
+  // a hit: a long kick, a wash of noise, a falling sine
+  function hit(t0, vol) {
+    kick(t0, vol, 0.9); noise(t0, 1.6, vol * 0.5, 0.35, false, 0.4);
+    const i0 = Math.floor(t0 * SR), n = Math.floor(1.4 * SR); let ph = 0;
+    for (let i = 0; i < n; i++) { ph += (320 * Math.exp(-i / (0.25 * SR)) + 30) / SR; add(i0 + i, Math.sin(TAU * ph) * vol * 0.35 * Math.exp(-i / (0.5 * SR))); }
+  }
+  // the low rumble of the void (both ends): a sub that breathes, dark filtered noise
+  function rumble(t0, t1, vol) {
+    const i0 = Math.floor(t0 * SR), i1 = Math.min(len, Math.floor(t1 * SR)); let ph = 0, a = 0;
+    for (let i = i0; i < i1; i++) {
+      const t = (i - i0) / SR; ph += (mtof(31) + 1.5 * Math.sin(t * 0.7)) / SR;
+      a += (rnd() - a) * 0.004;
+      const e = Math.min(1, t / 1.5) * Math.min(1, (i1 - i) / (SR * 1.5));
+      out[i] += (Math.sin(TAU * ph) * (0.55 + 0.45 * Math.sin(t * 1.3)) + a * 6) * vol * e;
+    }
+  }
+  // the progression (one chord root a bar, G minor): G - Eb - Bb - F
+  const ROOTS = [31, 27, 34, 29];
+  const root = (b) => ROOTS[Math.floor(b / 4) % 4];
+  // the breakbeat: the kick on 1 and the "and" of 3, the snare on 2 and 4 (the half-time backbeat), 16th hats
+  function drums(b, vol, busy) {
+    const t = tB(b), k = ((b % 4) + 4) % 4;
+    if (k === 0) kick(t, vol);
+    if (k === 2 && busy) kick(t + beat * 0.5, vol * 0.85);
+    if (k === 1 || k === 3) snare(t, vol * 0.75);
+    for (let i = 0; i < (busy ? 4 : 2); i++) hat(t + i * beat / (busy ? 4 : 2), vol * (i % 2 ? 0.16 : 0.24));
+    if (busy && k === 3 && rnd() > 0.4) snare(t + beat * 0.75, vol * 0.35);   // ghost notes
+  }
+  rumble(0, tB(S.IMPACT) + 0.5, 0.06);
+  for (let b = 0; b < NB; b++) {
+    const t = tB(b), k = ((b % 4) + 4) % 4;
+    if (b === S.IMPACT || b === S.HIT || b === S.FINAL) hit(t, b === S.FINAL ? 0.9 : 0.75);
+    if (b === S.REBUILD || b === S.DROP || b === S.PEAK || b === S.WAVE) kick(t, 0.75, 0.4);
+    if (b < S.IMPACT || b >= S.FINAL) continue;
+    if (b >= S.BUILD_END && b < S.DROP) continue;   // the gap before the drop
+    if (b < S.BUILD_END) {
+      // BUILD: sub pulses on the half-time beat, hats creeping in, a riser into the gap
+      if (k % 2 === 0) sub(t, beat * 1.8, root(b), 0.22);
+      if (b >= S.IMPACT + 16) hat(t + beat * 0.5, 0.08);
+      if (b >= S.BUILD_END - 8) noise(t, beat, 0.03 + 0.012 * (b - S.BUILD_END + 8), 0.5, true, 0.6);
+      continue;
+    }
+    const peak = b >= S.PEAK && b < S.WAVE, drop = b < S.HIT, breakdown = b >= S.HIT && b < S.REBUILD, wave = b >= S.WAVE;
+    if (breakdown) {
+      // hollow: a long sub per bar, a thin hat, a stab now and then
+      if (k === 0) { sub(t, beat * 3.8, root(b), 0.26); reese(t, beat * 3.6, root(b) + 12, 0.05, 0.1); }
+      hat(t + beat * 0.5, 0.06);
+      if (b % 16 === 6) stab(t, root(b) + 36, 0.12);
+      continue;
+    }
+    const vol = peak ? 0.62 : wave ? 0.54 : drop ? 0.56 : 0.48;
+    drums(b, vol, true);
+    // the reese on every half-time beat (two-beat notes), brighter at the peak
+    if (k % 2 === 0) reese(t, beat * 1.95, root(b) + 12 + (k === 2 && b % 8 >= 4 ? 3 : 0), peak ? 0.2 : 0.16, peak ? 0.7 : wave ? 0.5 : 0.4);
+    if (k === 0) sub(t, beat * 3.9, root(b), 0.2);
+    if ((peak && b % 4 === 3) || (!peak && b % 8 === 7)) stab(t + beat * 0.5, root(b) + 36, peak ? 0.16 : 0.12);
+    // the REBUILD rises: a snare roll in its last two bars
+    if (b >= S.PEAK - 8 && b < S.PEAK) for (let i = 0; i < 4; i++) snare(t + i * beat / 4, 0.12 + 0.03 * (b - S.PEAK + 8));
+  }
+  // glitch fills: every 8 bars the last half beat is bit-crushed and stuttered (never across a hit)
+  for (let b = S.DROP + 31; b < S.FINAL - 1; b += 32) {
+    if (b >= S.HIT - 1 && b < S.REBUILD) continue;
+    const i0 = Math.floor((tB(b) + beat * 0.5) * SR), n = Math.floor(beat * 0.5 * SR), sl = Math.floor(beat * 0.125 * SR);
+    if (i0 + n >= len) continue;
+    const slice = out.slice(i0, i0 + sl);   // repeat the first 16th, sample-and-held and quantized
+    for (let i = 0; i < n; i++) { const j = Math.floor((i % sl) / 6) * 6; out[i0 + i] = Math.round(slice[j] * 6) / 6; }
+  }
+  rumble(tB(S.FINAL) + 0.3, tB(NB) + 1.2, 0.07);
+  let pk = 0; for (let i = 0; i < len; i++) pk = Math.max(pk, Math.abs(out[i]));
+  const kk = pk > 0 ? 0.85 / pk : 1;
+  const buffer = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: SR });
+  const ch = buffer.getChannelData(0); for (let i = 0; i < len; i++) ch[i] = out[i] * kk;
+  const m = secretMap(OFF, bpm, buffer.duration);
+  return { name: 'procedural drum and bass (fallback)', buffer, bpm, offset: OFF, beatsPerBar: 4, duration: buffer.duration, fallback: true, boss: 'secret',
+    rawSections: m.sections, sections: {}, marks: m.marks, autoSynced: null, labels: m.labels, mapOffset: OFF };
+}
+
+// ============================================================================
+//  THE BLOTCHED TAPE - a cassette nobody stocked. It turns up in KNOBS' SHOP (a crate in the dark back corner,
+//  on its own) once boss 2 has been beaten. Black ink crawls over it, its reels turn backwards, the room is a
+//  little darker round it, and the shop's music bit-crushes and wobbles as your hand gets near it. Its tag reads
+//  BL█TCH_D T█PE / ??? / ?? G (it costs 1 G). You can carry one; it restocks once it's used. Held up in any
+//  fight but boss 2's, nothing happens. Played in boss 2's fight, it corrupts his MERCY (Corrupt, below).
+// ============================================================================
+const BLOTCH = { id: 'blotch', name: 'BLOTCHED TAPE', tag: 'BL█TCH_D T█PE', effect: '???', price: 1, color: '#6a6a78',
+  CRATE: new THREE.Vector3(-1.45, 0.62, -0.64) };   // the nook between the counter's end and the record wall, up on two dead speakers
+// the crawling ink: object-space noise thresholded into blots that spread and shrink, with drips running down
+const BLOTCH_FS = `
+  varying vec3 vP; varying vec3 vN; varying vec3 vCol;
+  uniform float uTime; uniform float uCover; uniform float uLight;
+  float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float vnoise(vec3 x) {
+    vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }
+  float fbm(vec3 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 1.7; a *= 0.5; } return s; }
+  void main() {
+    vec3 p = vP * 42.0;
+    float t = uTime;
+    // the ink field drifts and its edge breathes; long drips slide down from the blots
+    float n = fbm(vec3(p.x + t * 0.05, p.y * 0.5 + t * 0.09, p.z + t * 0.03));
+    float drip = fbm(vec3(p.x * 3.2, p.y * 0.22 + t * 0.16, p.z * 3.2));
+    float thr = 0.48 - 0.05 * sin(t * 0.37) - 0.06 * uCover;
+    n += 0.16 * smoothstep(0.56, 0.78, drip) * smoothstep(thr + 0.22, thr - 0.04, n);
+    float blot = smoothstep(thr - 0.012, thr + 0.012, n);
+    float l = 0.35 + 0.65 * max(dot(normalize(vN), normalize(vec3(0.3, 0.8, 0.6))), 0.0);
+    vec3 ink = vec3(0.01, 0.009, 0.012) + 0.05 * pow(max(dot(normalize(vN), normalize(vec3(0.2, 0.5, 1.0))), 0.0), 12.0);
+    float edge = blot * (1.0 - blot) * 4.0;
+    vec3 c = mix(vCol * l * uLight, ink, blot) + edge * vec3(0.05, 0.0, 0.025);
+    gl_FragColor = vec4(c, 1.0);
+    #include <colorspace_fragment>
+  }`;
+const BLOTCH_VS = `
+  varying vec3 vP; varying vec3 vN; varying vec3 vCol;
+  void main() {
+    vP = position; vN = normal;
+    #ifdef USE_COLOR
+      vCol = color;
+    #else
+      vCol = vec3(1.0);
+    #endif
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`;
+const BlotchShop = {
+  item: null,
+  // unlocked once boss 2 is beaten; one at a time (it comes back once the one you carry has been used)
+  available() { return !!Save.beaten('kiddie') && !Save.data.inventory.includes('blotch'); },
+  // built with the shop: the crate, the tape in it, the shadow that makes the corner a little darker
+  build(K) {
+    const root = K.root, C = BLOTCH.CRATE;
+    // two dead speaker cabinets stacked in the corner (so it sits at hand height), a small slatted crate on top, its lid knocked askew
+    const P = [];
+    for (const [y, h, ry, col] of [[0, 0.34, 0.05, 0x241a16], [0.34, 0.28, -0.1, 0x2c201a]]) {
+      const S = M4(C.x + 0.03, y + h / 2, C.z, 0, ry, 0);
+      P.push({ geo: new THREE.BoxGeometry(0.38, h, 0.34), matrix: S, color: col });
+      P.push({ geo: new THREE.TorusGeometry(h * 0.27, 0.012, 5, 18).rotateY(Math.PI / 2), matrix: S.clone().multiply(M4(0.192, 0, 0)), color: 0x4a4650 });
+      P.push({ geo: new THREE.CircleGeometry(h * 0.26, 18).rotateY(Math.PI / 2), matrix: S.clone().multiply(M4(0.191, 0, 0)), color: 0x0e0c10 });
+    }
+    const M = M4(C.x, C.y, C.z, 0, 0.35, 0), sub = (geo, m, col) => P.push({ geo, matrix: M.clone().multiply(m), color: col });
+    for (let i = 0; i < 3; i++) for (const s of [-1, 1]) {
+      sub(new THREE.BoxGeometry(0.3, 0.06, 0.015), M4(0, 0.045 + i * 0.075, s * 0.12), i === 1 ? 0x4a3420 : 0x5a3e24);
+      sub(new THREE.BoxGeometry(0.015, 0.06, 0.25), M4(s * 0.145, 0.045 + i * 0.075, 0), 0x4e3620);
+    }
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) sub(new THREE.BoxGeometry(0.025, 0.24, 0.025), M4(a * 0.14, 0.12, b * 0.115), 0x3a2814);
+    sub(new THREE.BoxGeometry(0.28, 0.01, 0.23), M4(0, 0.012, 0), 0x2a1c10);
+    sub(new THREE.BoxGeometry(0.26, 0.15, 0.2), M4(0, 0.09, 0), 0x141016);                                // junk under it (dead tape, cables)
+    sub(new THREE.BoxGeometry(0.1, 0.014, 0.064), M4(-0.07, 0.172, -0.04, 0.1, 0.6, 0.2), 0x2a2630);       // a smashed shell
+    sub(new THREE.BoxGeometry(0.32, 0.016, 0.27), M4(0.02, 0.4, -0.16, 1.3, 0.1, 0.15), 0x5a3e24);         // the lid, hanging open
+    K.blotchCrate = new THREE.Mesh(mergeGeos(P), K.lit({ gloss: 0.12, emit: 0.04 }));
+    root.add(K.blotchCrate);
+    // the corner is darker: soft shadows on the floor and both walls
+    const shTex = canvasTex(64, 64, (g, w, h) => { const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+    const shMat = new THREE.MeshBasicMaterial({ map: shTex, transparent: true, depthWrite: false, opacity: 0.8 });
+    const shadow = (w, h, x, y, z, rx, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), shMat); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); m.renderOrder = 1; root.add(m); };
+    shadow(1.2, 1.2, C.x - 0.05, 0.004, C.z - 0.05, -Math.PI / 2, 0);
+    shadow(0.9, 0.8, -1.692, 0.4, C.z - 0.05, 0, Math.PI / 2);   // on the record wall's base beside it
+    shadow(0.6, 0.95, -1.205, 0.47, -0.85, 0, -Math.PI / 2);    // and on the counter's end
+    // the tape itself: the shop's cassette, a dirty label, every face under the crawling ink; its own reels on top
+    this.U = { uTime: { value: 0 }, uCover: { value: 0 }, uLight: { value: 0.8 } };
+    const mat = new THREE.ShaderMaterial({ uniforms: this.U, vertexShader: BLOTCH_VS, fragmentShader: BLOTCH_FS, vertexColors: true });
+    this.mat = mat;
+    const m = new THREE.Mesh(cassetteGeo(0x9a8e70, null), mat);
+    m.position.set(C.x + 0.01, C.y + 0.225, C.z + 0.03); m.rotation.set(-0.42, 0.35 + 0.15, 0.12, 'YXZ');   // propped up, its top half showing
+    root.add(m);
+    // the reels (they turn backwards, on their own)
+    this.reels = [-1, 1].map((sx) => {
+      const r = new THREE.Mesh(mergeGeos([{ geo: new THREE.CylinderGeometry(0.0074, 0.0074, 0.002, 12).rotateX(Math.PI / 2), color: 0xd8d0c0 },
+        ...[0, 1, 2].map((k) => ({ geo: new THREE.BoxGeometry(0.0026, 0.012, 0.0024), matrix: M4(0, 0, 0.0004, 0, 0, k / 3 * Math.PI), color: 0x1a1418 }))]), mat);
+      r.position.set(sx * 0.0165, -0.004, 0.0075); m.add(r); return r;
+    });
+    const it = { id: 'blotch', kind: 'blotch', mesh: m, home: m.position.clone(), homeQ: m.quaternion.clone(), state: 'home', hand: null, t: 0, r: 0.08 };
+    K.items.push(it);
+    this.item = it; this.near = 0; this.shown = false;
+    m.visible = this.available();
+  },
+  // per frame (the shop's update): the ink crawls, the reels turn back, the music crushes as a hand gets close,
+  // and KNOBS goes still while it's out of its crate
+  update(rdt) {
+    const it = this.item; if (!it) return;
+    const U = this.U;
+    U.uTime.value += rdt;
+    U.uCover.value = it.state === 'home' ? 0 : 1;
+    for (const r of this.reels) r.rotation.z += rdt * 2.2;   // counter-clockwise, seen from the front: backwards
+    let k = 0;
+    if (it.mesh.visible) {
+      const p = it.mesh.getWorldPosition(_v6);
+      let d = 9;
+      if (G.xr) { for (const h of G.input.hands) if (h.connected) d = Math.min(d, h.pos.distanceTo(p)); }
+      else d = Shop.deskHeld === it ? 0 : Head.pos.distanceTo(p) - 0.45;
+      if (it.state === 'held') d = 0;
+      k = smooth01((0.75 - d) / 0.6);
+    }
+    this.near = damp(this.near, k, 6, rdt);
+    G.audio.setCorrupt(this.near * 0.85, this.near);
+    const K = ShopKit.knobs; if (K) K.still = it.mesh.visible && (it.state !== 'home' || this.near > 0.55);
+  },
+  // picked up: KNOBS has never seen it before
+  picked() {
+    G.audio.sfx.blotchHiss();
+    if (Shop.visit.blotchSeen) return;
+    Shop.visit.blotchSeen = true;
+    ShopKit.knobs.react('shifty', { dur: 3 });
+    Shop.say(KNOBS_LINES.blotchPick, null, true);
+  },
+  // the info tag: garbled, and no honest price
+  drawTag(P) {
+    const g = P.ctx, W = P.o.cw, H = P.o.ch;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(4,3,5,0.96)'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#5a5a66'; g.fillRect(0, 0, W, 3); g.fillRect(0, H - 3, W, 3); g.fillRect(0, 0, 3, H); g.fillRect(W - 3, 0, 3, H);
+    PixelFont.draw(g, BLOTCH.tag, 12, 12, 2, '#d8d8e0', { glitch: Flash.reduced ? 0.05 : 0.12 });
+    PixelFont.draw(g, BLOTCH.effect, 12, 36, 2, '#6a6a78');
+    PixelFont.draw(g, 'STOCK ?', 12, 58, 2, '#5a5a66');
+    PixelFont.draw(g, '?? G', 12, H - 30, 3, '#8a8a96');
+    P.tex.needsUpdate = true;
+  },
+  teardown() { this.item = null; this.reels = null; this.U = null; this.mat = null; if (G.audio.ctx) G.audio.setCorrupt(0, 0); },
+};
+
+// ============================================================================
+//  Corrupt - the BLOTCHED TAPE played in boss 2's fight. His MERCY meter is CORRUPTED: it can go below 0, down to
+//  -100 (the tape: -20 at once, -10 at the start of every turn, every ACT -15, every FIGHT hit -5; no SPARE while
+//  it's negative). As it falls the fight comes apart (every stage honours Reduced flashing):
+//    -25  the box's edges jitter, the music wobbles in pitch (a slow +/-1.5% vibrato)
+//    -50  his chat glitches and he gets scared; holes open in the hall around you
+//    -75  bullets flicker into black outlines, the menu buttons drift, words lose their letters
+//    -100 the event (SecretEvent)
+// ============================================================================
+const CORRUPT_ACTS = { check: 'CH█CK', rate: 'R█TE H_S C0DE', report: 'REP0RT_B█G', ctrlz: 'CTRL+█', teach: 'T█ACH H█M', gg: 'S_Y "█G"' };
+const CORRUPT_LINES = [
+  ['uh. what is that sound', 'is that ur tape?? turn it off'],
+  ['why is my music doing that', 'TURN IT DOWN', 'its wobbling. why is it wobbling'],
+  ['stop. stop playing that. its eating my files', 'my logs are gone. like GONE gone', 'pls. i mean it. stop'],
+  ['THATS NOT MY CODE. THATS NOT ANYONES CODE', 'theres something in the tape', 'i cant close it i cant close it'],
+];
+const CORRUPT_FLAVOR = [
+  ['* The tape is still playing.\n* Nobody pressed play.', '* Something on the tape is listening back.'],
+  ['* The music bends like a warped record.', '* The box hums a note that isn\'t in the song.'],
+  ['* There are holes in the hall.\n* Nothing is behind them.', '* SCR1PT_K1DD1E keeps checking his files.'],
+  ['* The words are falling out of everything.', '* It isn\'t his code.\n* It isn\'t anyone\'s.'],
+];
+const Corrupt = {
+  stageOf(v) { return v <= -100 ? 4 : v <= -75 ? 3 : v <= -50 ? 2 : v <= -25 ? 1 : 0; },
+  // boss 2 only: the tape starts playing
+  start(B) {
+    B.corrupt = { stage: 0, turn: B.turn, lines: [], wob: 0, crush: 0, burst: 1.1 };
+    G.audio.sfx.blotchBurst();
+    G.input.pulseAll(0.6, 120);
+    Head.update(); Head.rel(_v1, 0.12, -0.2, 0.45);
+    for (let i = 0; i < 20; i++) G.fx.parts.emit(_v1.x, _v1.y, _v1.z, rand(-0.6, 0.6), rand(-0.2, 0.6), rand(-0.6, 0.6), rand(0.5, 1.1), 0.03, 0.02, 0.02, 0.03, 1.5, 0.4, 1);
+    this.lower(B, 20);
+    G.ui.refreshHUD();
+    B.narrate('* You play the BLOTCHED TAPE.\n* There\'s no sound on it. ...Or there\'s too much.\n* MERCY is going the wrong way. (-20%)', () => B.afterAction([{ text: 'uh. what is that sound', mood: 'shock' }]));
+  },
+  // ITEM > BAG > the tape: only boss 2's fight takes it (anywhere else it stays in the bag and costs no turn)
+  use(B) {
+    if (B.def.id !== 'kiddie' || B.corrupt) {
+      G.audio.sfx.blotchHiss();
+      B.narrate("* You hold up the BLOTCHED TAPE.\n* It doesn't like it here.", () => B.backToMain());
+      return;
+    }
+    const inv = Save.data.inventory; inv.splice(inv.indexOf('blotch'), 1); Save.write();
+    this.start(B);
+  },
+  // MERCY down by x; a new stage starts its effects (and queues his line for the next reaction)
+  lower(B, x) {
+    B.spare = clamp(B.spare - x, -100, 100);
+    G.ui.refreshHUD();
+    const s = this.stageOf(B.spare), C = B.corrupt;
+    if (s <= C.stage) return;
+    C.stage = s;
+    if (s >= 1 && s <= 3) { C.lines.push({ text: this.garble(pick(CORRUPT_LINES[s]), s), mood: s >= 3 ? 'angry' : 'shock', glitch: 0.06 * s }); G.audio.sfx.glitch(); }
+    if (s === 2) CorruptHoles.start();
+    if (s === 4) C.event = SecretEvent.trigger(B) === true;   // true: the event has taken over the fight
+  },
+  // his queued lines, ahead of whatever he was about to say
+  take(B, base) { const C = B.corrupt, L = C.lines.splice(0); return L.concat(base || []).map((l) => (typeof l === 'string' ? { text: this.garble(l, C.stage) } : Object.assign({}, l, { text: this.garble(l.text, C.stage) }))); },
+  // from -75 his words lose letters (and from -50 they glitch)
+  garble(text, s) {
+    if (s < 3) return text;
+    let o = ''; for (const ch of text) o += /[a-z]/i.test(ch) && Math.random() < 0.18 ? '_' : ch;
+    return o;
+  },
+  // the start of every player turn: the tape keeps playing (true: the event took over the turn)
+  onTurn(B) {
+    if (B.turn <= B.corrupt.turn) return false;
+    this.lower(B, 10);
+    if (B.corrupt.event) return true;
+    G.ui.showPrompt('THE TAPE KEEPS PLAYING   MERCY -10%', 2.2, '#8a8a96');
+    G.audio.sfx.blotchHiss();
+    return false;
+  },
+  // every ACT is corrupted: a garbled name, -15 MERCY
+  act(B, k) {
+    G.ui.actMenu.hide();
+    const name = CORRUPT_ACTS[k] || '█████';
+    G.audio.sfx.blotchHiss(); G.audio.sfx.glitch();
+    this.lower(B, 15);
+    if (B.corrupt.event) return;   // (the event took over)
+    B.narrate(`* You try to ${name}.\n* The tape plays over it. (MERCY -15%)`, () => B.afterAction([{ text: pick(['what are u DOING', 'thats not a real command', 'stop pressing things', '...']), mood: 'shock' }]));
+  },
+  fightHit(B) { this.lower(B, 5); },
+  cantSpare(B) {
+    G.ui.mercyMenu.hide(); G.audio.sfx.buzz();
+    B.narrate("* You can't SPARE anyone.\n* Not while the tape is still playing.", () => B.afterAction([]));
+  },
+  mercyPrompt(B) { return this.garble(`* MERCY: ${Math.floor(B.spare)}%. CORRUPTED.\n* It's going the wrong way.`, B.corrupt.stage); },
+  flavor(B) { return this.garble(pick(CORRUPT_FLAVOR[Math.min(3, B.corrupt.stage)]), B.corrupt.stage); },
+  // the MERCY bar, corrupted: 0 in the middle, below it a black and red glitch running left to -100
+  drawMercy(g, B, W) {
+    const my = 64, half = 140, x0 = Math.round(W / 2) + 20, v = B.spare, red = Flash.reduced;
+    PixelFont.draw(g, 'MERCY', x0 - half - 70, my, 2, '#ffd23c');
+    g.fillStyle = '#5a3a00'; g.fillRect(x0, my, half, 14);
+    g.fillStyle = '#140608'; g.fillRect(x0 - half, my, half, 14);
+    if (v > 0) { g.fillStyle = '#ffd23c'; g.fillRect(x0, my, Math.round(half * v / 100), 14); }
+    if (v < 0) {
+      const w = Math.round(half * -v / 100), t = Math.floor(G.time * (red ? 2 : 6));
+      for (let x = 0; x < w; x += 4) {
+        const h = Math.sin((x + 1) * 12.9898 + t * 78.233) * 43758.5453, r = h - Math.floor(h);
+        g.fillStyle = r < 0.45 ? '#000000' : r < 0.8 ? '#c8001e' : r < 0.95 ? '#ff2a4a' : '#ffffff';
+        g.fillRect(x0 - 4 - x, my, 4, 14);
+        if (r > 0.7) { g.fillStyle = '#000000'; g.fillRect(x0 - 4 - x, my + ((t + x) % 3) * 4, 4, 3); }
+      }
+    }
+    g.fillStyle = '#ffffff'; g.fillRect(x0 - 1, my - 3, 2, 20);
+    PixelFont.draw(g, `${Math.floor(v)}%`, x0 + half + 10, my, 2, v < 0 ? '#ff2a4a' : '#ffd23c');
+  },
+  // the ACT menu, garbled (and every ACT can be pressed: none of them works anyway)
+  menus(B) {
+    const am = G.ui.actMenu.buttons, keys = BOSSES.kiddie.acts.map((a) => a.key);
+    keys.forEach((k, i) => { const b = am[i]; if (!b) return; b.setLabel(CORRUPT_ACTS[k] || '█████'); b.setDisabled(false); });
+  },
+  // per frame while it plays: the music's wobble and crush, the box, the chat, the holes, the bullets, the menus
+  update(B, dt, rdt) {
+    const C = B.corrupt; if (!C) return;
+    const s = C.stage, red = Flash.reduced;
+    C.burst = Math.max(0, C.burst - rdt);
+    // the bar's glitch keeps moving (a few redraws a second)
+    C.hudT = (C.hudT || 0) - rdt; if (C.hudT <= 0 && B.spare < 0) { C.hudT = red ? 0.5 : 0.17; G.ui.refreshHUD(); }
+    // the music: a burst of crush when the tape starts, then from -25 a slow pitch wobble (the beat stays exact)
+    C.wob = damp(C.wob, s >= 1 ? 1 : 0, 1.6, rdt);
+    G.audio.setCorrupt(Math.max(C.burst > 0 ? 0.8 : 0, s >= 3 ? 0.25 : 0), C.wob, 1);
+    // the box's edges jitter (Reduced: one small twitch a beat instead)
+    G.arena.extraJitter = s >= 1 && !red ? 0.008 * (1 + 0.5 * (s - 1)) : 0;
+    if (s >= 1 && red && G.clock.beatIndex !== C.lastBeat) { C.lastBeat = G.clock.beatIndex; G.arena.halfJit = Math.max(G.arena.halfJit, 0.7); }
+    G.ui.chat.win.glitch = s >= 2 ? (red ? 0.15 : 0.45) : 0;
+    G.bullets.outlineFlick = s >= 3 ? (red ? 2 : 1) : 0;
+    // the menus drift
+    const k = s >= 3 ? 1 : 0;
+    for (const m of [G.ui.mainMenu, G.ui.actMenu, G.ui.itemMenu, G.ui.mercyMenu]) {
+      if (!m || !m.group) continue;
+      if (!m.home) m.home = new THREE.Vector3();
+      if (!k) { if (m.drifted) { m.group.position.copy(m.home); m.drifted = false; } continue; }
+      if (!m.drifted) { m.home.copy(m.group.position); m.drifted = true; }
+      const t = G.time;
+      m.group.position.set(m.home.x + 0.012 * Math.sin(t * 1.3), m.home.y + 0.01 * Math.sin(t * 1.7 + 1), m.home.z + 0.008 * Math.sin(t * 0.9 + 2));
+    }
+    CorruptHoles.update(rdt, s);
+  },
+  // the fight is over (any way): everything back to normal
+  clear() {
+    if (G.audio.ctx) G.audio.setCorrupt(0, 0);
+    // his ACT menu gets its real words back
+    const m = G.ui.bossMenus && G.ui.bossMenus.kiddie;
+    if (m) BOSSES.kiddie.acts.forEach((a, i) => { const b = m.act.buttons[i]; if (b) b.setLabel(a.label); });
+    G.arena.extraJitter = 0; G.bullets.outlineFlick = 0;
+    if (G.ui.chat) G.ui.chat.win.glitch = 0;
+    for (const m of [G.ui.mainMenu, G.ui.actMenu, G.ui.itemMenu, G.ui.mercyMenu]) if (m && m.drifted) { m.group.position.copy(m.home); m.drifted = false; }
+    CorruptHoles.dispose();
+  },
+};
+// -100: the event (SecretEvent). Until it exists the tape just plays on at -100.
+const SecretEvent = { trigger() { return false; } };
+// -50: holes open in the hall around you, one by one, slowly: black, with a fringe of static in the corrupt colours
+const CorruptHoles = {
+  mesh: null, list: null,
+  start() {
+    if (this.mesh) return;
+    const N = 9, geo = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uRate: { value: 8 } }, transparent: true, depthWrite: false,
+      vertexShader: `attribute float aK; varying vec2 vUv; varying float vK; void main(){ vUv = uv; vK = aK; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec2 vUv; varying float vK; uniform float uTime; uniform float uRate;
+        float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        void main(){
+          vec2 p = vUv - 0.5; float r = length(p) * 2.0, a = atan(p.y, p.x);
+          float edge = 0.62 + 0.08 * sin(a * 7.0 + uTime * 0.6 + vK * 9.0) + 0.05 * sin(a * 13.0 - uTime * 0.9);
+          if (r > edge + 0.18) discard;
+          float stat = h(floor(vUv * 48.0) + floor(uTime * uRate));
+          float fringe = smoothstep(edge + 0.18, edge, r) * (1.0 - smoothstep(edge, edge - 0.06, r));
+          vec3 c = mix(vec3(0.0), mix(vec3(0.0, 1.0, 0.94), vec3(1.0, 0.0, 0.78), stat) * stat, fringe);
+          float al = r < edge ? 1.0 : fringe * 0.8;
+          gl_FragColor = vec4(c, al * vK);
+          #include <colorspace_fragment>
+        }`,
+    });
+    this.mesh = new THREE.InstancedMesh(geo, mat, N);
+    const ka = new THREE.InstancedBufferAttribute(new Float32Array(N), 1); ka.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('aK', ka);
+    this.kAttr = ka; this.mesh.frustumCulled = false; this.mesh.renderOrder = -1; this.mesh.count = N;
+    scene.add(this.mesh);
+    // inside the hall, round the box (off to the sides, up high, behind him), each one opening at its own moment
+    const C = G.arena.center, OFF = [[-2.6, 1.0, -1.5], [2.7, 1.4, -2.5], [-2.8, 1.9, -4.0], [2.5, 0.5, -4.8], [-1.7, 2.7, -5.5], [1.9, 2.9, -3.0], [-3.0, 0.1, -2.6], [0.5, 3.1, -6.5], [3.0, 2.1, -6.0]];
+    this.list = OFF.map((o, i) => ({ p: new THREE.Vector3(C.x + o[0], C.y + o[1], C.z + o[2]), size: rand(0.55, 1.3), t: -i * 2.2, k: 0 }));
+  },
+  update(rdt, s) {
+    if (!this.mesh) return;
+    const U = this.mesh.material.uniforms; U.uTime.value += rdt; U.uRate.value = Flash.reduced ? 2 : 8;   // (the static: slower in Reduced)
+    Head.update();
+    for (let i = 0; i < this.list.length; i++) {
+      const H = this.list[i]; H.t += rdt;
+      const want = H.t > 0 ? Math.min(1, H.t / 6) * (s >= 3 ? 1.35 : 1) : 0;
+      H.k = damp(H.k, want, 1.2, rdt);
+      _m1.lookAt(Head.pos, H.p, UP); _q1.setFromRotationMatrix(_m1);   // (+z, its face, toward you)
+      _s1.setScalar(Math.max(0.001, H.size * H.k)); _m1.compose(H.p, _q1, _s1);
+      this.mesh.setMatrixAt(i, _m1); this.kAttr.array[i] = Math.min(1, H.k * 1.5);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true; this.kAttr.needsUpdate = true;
+  },
+  dispose() { if (!this.mesh) return; scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh.dispose(); this.mesh = null; this.list = null; },
+};
+
+// the tape's sounds: one second of something played backwards, bit-crushed (built once); a short reversed hiss
+Object.assign(Sfx.prototype, {
+  blotchBurst(t) {
+    const c = this.c; if (!c) return;
+    if (!this.blotchBuf) {
+      const SR = c.sampleRate, n = Math.floor(SR), b = c.createBuffer(1, n, SR), d = b.getChannelData(0);
+      // a decaying hit (a low cluster, a bent fifth, noise) written backwards so it swells into a cut; held and quantized
+      let hold = 0;
+      for (let i = 0; i < n; i++) {
+        const t = (n - 1 - i) / SR, e = Math.exp(-t * 3.2);
+        const x = (Math.sin(TAU * 98 * t) * 0.5 + Math.sin(TAU * 103.8 * t) * 0.4 + Math.sin(TAU * 146.8 * t * (1 + 0.02 * Math.sin(t * 9))) * 0.3 + (Math.random() * 2 - 1) * 0.35 * Math.exp(-t * 6)) * e;
+        if (i % 9 === 0) hold = Math.round(x * 5) / 5;
+        d[i] = hold * 0.6;
+      }
+      for (let i = 0; i < 240; i++) d[n - 1 - i] *= i / 240;
+      this.blotchBuf = b;
+    }
+    const at = t !== undefined ? Math.max(t, c.currentTime) : c.currentTime;
+    const s = c.createBufferSource(); s.buffer = this.blotchBuf;
+    const g = c.createGain(); g.gain.value = 0.55;
+    s.connect(g); g.connect(this.a.sfxGain); s.start(at);
+  },
+  blotchHiss() {
+    if (!this.c || !this.a.gate('blotchHiss', 0.3)) return;
+    this.noise({ type: 'highpass', f: 1800, f2: 500, dur: 0.5, vol: 0.12, attack: 0.42 });
+    this.tone({ type: 'square', f: 62, f2: 44, dur: 0.5, vol: 0.03, attack: 0.4 });
+  },
+});
+// @@/SECRET
 
 // ============================================================================
 //  RiftKit - the SoulRift title. You stand on a floating island of dark stone in deep space, in front of
@@ -30296,7 +30938,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
+window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, SECRET: { Corrupt, BlotchShop, CorruptHoles, SecretEvent, SECRET_MUSIC, BLOTCH }, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)

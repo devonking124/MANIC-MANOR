@@ -220,6 +220,31 @@ and a quiet outro).
 **The shop, "made this beat to practice mastering":** 106 BPM, bar 0 at 1.656 s; it
 loops 6.184-87.693 s (bars 2-38) with a 0.15 s crossfade at the seam.
 
+**The secret, "_____":** 176.0 BPM (beat 0.3409 s, bar 1.3636 s) with a heavy half-time
+feel at 88 BPM, first beat at 0.016 s (`SECRET_OFFSET`), G minor, 2:14.4. The design
+brief's 172.3 BPM / 0.07 s grid slides off the kick within a few bars: folding the song's
+onsets over its whole length scores 176.0 BPM at 2.35x the on-beat/off-beat contrast of
+172.3 (1.28x). Every section starts on a bar line of the 176 grid (beat numbers in
+`SECRET_BEATS`):
+
+| Section | Beats | Time (s) | Use |
+|---|---|---|---|
+| VOID | 0-32 | 0.0-10.92 | the fall through the black hole |
+| IMPACT | 32 | 10.92 | landing in THE NULL; its eye opens |
+| BUILD | 32-64 | 10.92-21.83 | the intro and the first turn (loops from beat 36) |
+| (gap) | 64-68 | 21.83-23.19 | near silence before the drop |
+| DROP | 68-132 | 23.19-45.01 | phase 1 loop; ends on the big hit at 45.01 s |
+| BREAKDOWN / REBUILD | 132-196 | 45.01-66.83 | phase 2 loop (the rebuild's hit is at 55.92 s) |
+| PEAK | 196-260 | 66.83-88.65 | phase 3 loop, the loudest point of the soundtrack |
+| SECOND WAVE | 260-324 | 88.65-110.47 | phase 4 loop |
+| FINAL HIT | 324 | 110.47 | the last blow (either ending) |
+| OUTRO | 324-392 | 110.47 to the end | under the endings |
+
+The procedural fallback is drum and bass in G minor at 176 BPM in the same 392-beat shape
+(a broken breakbeat, a detuned reese bass, dissonant stabs, bit-crushed stutter fills, a
+sub rumble at both ends, a hollow breakdown and a peak), so every seek lands where the
+real song's would.
+
 ## SUNDOWN, the Last Outlaw
 
 - **The frontier.** You stand in the corral on top of your own sandstone mesa, and he
@@ -256,3 +281,30 @@ loops 6.184-87.693 s (bars 2-38) with a 0.15 s crossfade at the seam.
   midnight, the clock tower bell tolls every 2 beats, and you draw on the third toll.
   Too early: he sidesteps (3 damage); too late or wide: he grazes you (4 damage); either
   restarts the count, and your HP never drops below 1 there.
+
+## _____ (the secret boss; spoilers)
+
+Hidden inside boss 2.
+
+- **The BLOTCHED TAPE.** Once you've beaten SCR1PT_K1DD1E (either ending), a cassette
+  nobody stocked turns up in KNOBS' SHOP: half-hidden in a crate on two dead speakers, in
+  the dark nook between the end of the counter and the record wall. Black ink crawls over
+  it, its reels turn backwards, the corner's a little darker, and the shop's music
+  bit-crushes and wobbles in pitch as your hand gets close. Its tag reads `BL█TCH_D T█PE`,
+  `???`, `?? G`; it costs 1 G. KNOBS stops nodding to the beat while it's out of its crate
+  ("...where'd that come from. that's not one of mine."). You can carry one, and another
+  turns up once it's used.
+- **In any other fight** (ITEM > BAG) it does nothing, isn't used up and costs no turn:
+  "It doesn't like it here."
+- **In boss 2's fight** it corrupts his MERCY: -20 at once, -10 at the start of every
+  turn, every ACT garbled and -15, every FIGHT hit -5, and no SPARE while it's negative.
+  The bar runs left past zero in a black-and-red glitch, down to -100%. As it falls the
+  fight comes apart: at -25 the box's edges jitter and the music wobbles +/-1.5% in pitch;
+  at -50 his chat glitches, he gets scared and holes open in the hall; at -75 bullets
+  flicker into black outlines, the menu buttons drift and words lose their letters. End
+  the fight normally first and the tape is simply used up. A retry keeps the MERCY it had
+  fallen to. Reduced flashing slows or softens every one of these.
+- The pitch wobble is a slow vibrato on the music bus (a modulated delay), not a change of
+  playback rate, so the beat clock and every attack stay exactly on the beat.
+- Debug: `\` in boss 2's fight plays the tape (on your turn), then each press takes
+  MERCY down another 25; in the shop it puts a tape in your bag.
