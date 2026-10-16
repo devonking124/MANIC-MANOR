@@ -2793,8 +2793,8 @@ class Soul {
     if (!this.alive || !this.active || this.invuln > 0 || G.debug.god) return false;
     if (Party.on && Party.blockHit()) return false;   // an ally's F1REWALL
     if (this.vinyl) { this.breakVinyl(); return false; }
-    let hp = this.hp - Stats.taken(dmg);
     const B = G.battle;
+    let hp = this.hp - Stats.taken(B && B.takenMul && B.takenMul !== 1 ? Math.max(1, Math.round(dmg * B.takenMul)) : dmg);
     if (hp <= 0 && B && B.lethalSave) { const sv = B.lethalSave(); if (sv) { hp = sv.hp; this.lethalSaved(sv); } }
     if (B && B.minHp) hp = Math.max(hp, B.minHp);   // e.g. a scene where you can't fall (SUNDOWN's final duel)
     this.hp = Math.max(0, hp);
@@ -2870,6 +2870,16 @@ class Soul {
         s.mesh.position.copy(this.pos).add(_v1);
         s.mesh.position.x += rand(-0.002, 0.002);
       } else {
+        if (this.shatterStyle === 'blank') {
+          // the secret: the SOUL is deleted - it turns into underscores, and they fade
+          if (!this.hexBurst) {
+            this.hexBurst = true;
+            const u = GlyphAtlas.of('_');
+            for (let k = 0; k < 16; k++) G.fx.glyphs.emit(this.pos.x + rand(-0.06, 0.06), this.pos.y + rand(-0.05, 0.05), this.pos.z, rand(-0.1, 0.1), rand(-0.04, 0.1), rand(-0.04, 0.04), rand(1.8, 2.8), 0.05, 1, 0.13, 0.27, u, 0, 1.4);
+            G.audio.sfx.tk();
+          }
+          s.mesh.visible = false; continue;
+        }
         if (this.shatterStyle === 'hex' || this.shatterStyle === 'confetti' || this.shatterStyle === 'sun') {
           // boss 2: the soul shatters into hex characters; boss 3: into confetti; boss 4: into sparks of sunlight
           if (!this.hexBurst) {
@@ -2926,6 +2936,9 @@ const ARENA_THEMES = {
   // boss 4: weathered fence beams and rope over the desert (drawn by FenceKit)
   frontier: { edge: 0xe8b37a, glow: 0xff9a4a, face: 0xc4532e, faceOpacity: 0.02, floor: 0xe8c890, whiteGrid: true, outline: null, packets: false, jitter: false, hideEdges: true },
   frontierNight: { edge: 0xcfd8ff, glow: 0x6a78c8, face: 0x1b1840, faceOpacity: 0.03, floor: 0xa8b0d8, whiteGrid: true, outline: null, packets: false, jitter: false, hideEdges: true },
+  // the secret: THE NULL (its broken box is NullKit's); nullInv: the phase 3 inversion (black grid on white)
+  null: { edge: 0xffffff, glow: 0x000000, face: 0x000000, faceOpacity: 0, floor: 0xffffff, whiteGrid: true, outline: null, packets: false, jitter: false, hideEdges: true },
+  nullInv: { edge: 0x000000, glow: 0x000000, face: 0xffffff, faceOpacity: 0, floor: 0x000000, whiteGrid: true, outline: null, packets: false, jitter: false, hideEdges: true },
 };
 
 // ============================================================================
@@ -3708,6 +3721,10 @@ class Telegraphs {
   clear() { for (const r of this.rings) r.t = r.life; for (const l of this.lines) l.t = l.life; }
   update(dt) {
     const pulseHz = Flash.reduced ? 1.7 : 3.4;
+    // dark: drawn over a white world (the secret's phase 3) - normal blending, fading into the white instead of out of black
+    const dark = !!this.dark;
+    if (dark !== !!this.wasDark) { this.wasDark = dark; for (const m of [this.ringMesh, this.lineMesh]) { m.material.blending = dark ? THREE.NormalBlending : THREE.AdditiveBlending; m.material.needsUpdate = true; } }
+    const tint = (c, k) => (dark ? _c1.setRGB(1, 1, 1).lerp(_c2.copy(c).multiplyScalar(0.42), clamp(k, 0, 1)) : _c1.copy(c).multiplyScalar(k));
     let n = 0;
     for (let i = 0; i < this.rings.length; i++) {
       const r = this.rings[i];
@@ -3719,7 +3736,7 @@ class Telegraphs {
       _s1.set(s, s, s); _m1.compose(r.p, r.q, _s1); this.ringMesh.setMatrixAt(n, _m1);
       const pulse = r.pulse ? (0.55 + 0.45 * Math.cos(r.t * TAU * pulseHz)) : 1;
       const fade = Math.min(1, (r.life - r.t) * 6) * Math.min(1, r.t * 8);
-      this.ringMesh.setColorAt(n, _c1.copy(r.c).multiplyScalar(pulse * fade * r.alpha));
+      this.ringMesh.setColorAt(n, tint(r.c, pulse * fade * r.alpha));
       n++;
     }
     this.ringMesh.count = n;
@@ -3737,7 +3754,7 @@ class Telegraphs {
       _s1.set(l.w, l.w, len); _m1.compose(_v1, _q1, _s1); this.lineMesh.setMatrixAt(n, _m1);
       const pulse = l.pulse ? (0.55 + 0.45 * Math.cos(l.t * TAU * pulseHz)) : 1;
       const fade = Math.min(1, (l.life - l.t) * 6) * Math.min(1, l.t * 10);
-      this.lineMesh.setColorAt(n, _c1.copy(l.c).multiplyScalar(pulse * fade * l.alpha));
+      this.lineMesh.setColorAt(n, tint(l.c, pulse * fade * l.alpha));
       n++;
     }
     this.lineMesh.count = n;
@@ -4600,6 +4617,7 @@ class UI {
         if (realFrac < frac) { g.fillStyle = '#ffd23c'; g.fillRect(bx + Math.round(bw * realFrac), by, Math.round(bw * (frac - realFrac)), 18); }
         const mw = 220, mx = Math.round((W - mw) / 2) + 40, my = 64;
         if (B.corrupt) Corrupt.drawMercy(g, B, W);
+        else if (def.drawMercy) def.drawMercy(g, B, W);
         else {
           PixelFont.draw(g, 'MERCY', mx - 82, my, 2, '#ffd23c');
           g.fillStyle = '#5a3a00'; g.fillRect(mx, my, mw, 14);
@@ -4613,9 +4631,12 @@ class UI {
     {
       const p = this.wristHP, g = p.ctx; g.fillStyle = '#000'; g.fillRect(0, 0, 128, 96);
       g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 3); g.fillRect(0, 93, 128, 3); g.fillRect(0, 0, 3, 96); g.fillRect(125, 0, 3, 96);
-      PixelFont.draw(g, 'HP', 8, 8, 2, '#ffffff');
-      g.fillStyle = '#c80024'; g.fillRect(36, 8, 84, 14); g.fillStyle = '#ffe600'; g.fillRect(36, 8, Math.round(84 * soul.hp / soul.maxHp), 14);
-      const t = `${Math.ceil(soul.hp)}/${soul.maxHp}`; PixelFont.draw(g, t, Math.round((128 - PixelFont.width(t, 3)) / 2), 30, 3, '#ffffff');
+      const del = this.hudDel;   // (DELETE UI: what it took is just gone)
+      PixelFont.draw(g, 'HP', 8, 8, 2, del && del.hp ? '#444444' : '#ffffff');
+      if (del && del.hp) PixelFont.draw(g, '_____', 34, 30, 3, '#444444'); else {
+        g.fillStyle = '#c80024'; g.fillRect(36, 8, 84, 14); g.fillStyle = '#ffe600'; g.fillRect(36, 8, Math.round(84 * soul.hp / soul.maxHp), 14);
+        const t = `${Math.ceil(soul.hp)}/${soul.maxHp}`; PixelFont.draw(g, t, Math.round((128 - PixelFont.width(t, 3)) / 2), 30, 3, '#ffffff');
+      }
       g.fillStyle = '#3a3a3a'; g.fillRect(8, 60, 112, 2);
       const gold = this.goldNow(); this.goldShown = gold;
       const gt = `${gold}G`, gs = PixelFont.width(gt, 3) > 92 ? 2 : 3;
@@ -4623,14 +4644,17 @@ class UI {
       p.tex.needsUpdate = true;
       const q = this.wristTP, h = q.ctx; h.fillStyle = '#000'; h.fillRect(0, 0, 48, 148);
       h.fillStyle = '#fff'; h.fillRect(0, 0, 48, 3); h.fillRect(0, 145, 48, 3); h.fillRect(0, 0, 3, 148); h.fillRect(45, 0, 3, 148);
-      PixelFont.draw(h, 'TP', 13, 6, 2, '#ff9d1a');
+      PixelFont.draw(h, 'TP', 13, 6, 2, del && del.tp ? '#444444' : '#ff9d1a');
+      if (!(del && del.tp)) {
       h.fillStyle = '#3a1d00'; h.fillRect(12, 22, 24, 100);
       const fh = Math.round(100 * soul.tp / 100); h.fillStyle = soul.tp >= 40 ? '#ffd23c' : '#ff9d1a'; h.fillRect(12, 122 - fh, 24, fh);
       h.fillStyle = '#ffffff'; h.fillRect(8, 122 - 40, 32, 2);
       const tt = `${Math.floor(soul.tp)}`; PixelFont.draw(h, tt, Math.round((48 - PixelFont.width(tt, 2)) / 2), 128, 2, '#ffffff');
+      }
       q.tex.needsUpdate = true;
     }
-    this.deskHud.textContent = PixelFont.drained(`LV ${Save.data.lv}   HP ${Math.ceil(soul.hp)}/${soul.maxHp}   TP ${Math.floor(soul.tp)}%   ${this.goldNow()} G`);
+    const dl = this.hudDel;
+    this.deskHud.textContent = PixelFont.drained(`LV ${Save.data.lv}   HP ${dl && dl.hp ? '_____' : `${Math.ceil(soul.hp)}/${soul.maxHp}`}   TP ${dl && dl.tp ? '___' : `${Math.floor(soul.tp)}%`}   ${this.goldNow()} G`);
     if (this.statsPanel.mesh.visible) this.drawStats();
   }
   // the gold your wrist shows: banked + found this fight, minus coins still flying in
@@ -4681,11 +4705,12 @@ class UI {
     if (s === 'chat') return this.chat;
     if (s === 'banner') { if (!this.banner) this.banner = new BannerBox(); return this.banner; }
     if (s === 'sign') { if (!this.sign) this.sign = new SignBox(); return this.sign; }
+    if (s === 'face') { if (!this.faceBox) this.faceBox = new FaceBox(); return this.faceBox; }   // the secret's empty text field
     return null;
   }
   // the dialogue box on screen right now (bubble, chat window or banner), if any
   talkBox() {
-    const s = G.def && G.def.dialogueStyle, b = s === 'chat' ? this.chat : s === 'banner' ? this.banner : s === 'sign' ? this.sign : this.bubbleBox;
+    const s = G.def && G.def.dialogueStyle, b = s === 'chat' ? this.chat : s === 'banner' ? this.banner : s === 'sign' ? this.sign : s === 'face' ? this.faceBox : this.bubbleBox;
     return b && b.visible ? b : null;
   }
   // ------------------------------------------------------------------ dialogue box placement
@@ -4757,7 +4782,7 @@ class UI {
     this.bubble.mesh.visible = true;
     this.bubbleTW.start(text, { voice: 'boss', speed: o.speed || 30, onChar: () => G.boss && G.boss.talkBlip() });
   }
-  hideBubble() { this.bubble.mesh.visible = false; this.bubbleTW.done = true; this.chat.hide(); if (this.banner) this.banner.hide(); if (this.sign) this.sign.hide(); }
+  hideBubble() { this.bubble.mesh.visible = false; this.bubbleTW.done = true; this.chat.hide(); if (this.banner) this.banner.hide(); if (this.sign) this.sign.hide(); if (this.faceBox) this.faceBox.hide(); }
   showPrompt(text, life = 2.5, color) {
     this.prompt.o.color = color || '#ffd23c';
     this.prompt.setText(text);
@@ -5065,7 +5090,7 @@ class UI {
     this.status.mesh.position.set(A.center.x, A.min.y - 0.12, A.min.z + 0.25);
     this.flavor.mesh.position.set(A.center.x, A.center.y + 0.05, A.min.z + 0.03);
     this.updateTalk(rdt);
-    if (!frozen) { this.flavorTW.update(rdt); this.bubbleTW.update(rdt); this.bigTW.update(rdt); this.chat.update(rdt); if (this.banner) this.banner.update(rdt); if (this.sign) this.sign.update(rdt); }
+    if (!frozen) { this.flavorTW.update(rdt); this.bubbleTW.update(rdt); this.bigTW.update(rdt); this.chat.update(rdt); if (this.banner) this.banner.update(rdt); if (this.sign) this.sign.update(rdt); if (this.faceBox) this.faceBox.update(rdt); }
     for (let i = 0; i < WINDOWS.length; i++) WINDOWS[i].update(rdt);
     if (this.saveMenu.isOpen) { this.saveDrawT -= rdt; if (this.saveDrawT <= 0) { this.saveDrawT = Flash.reduced ? 0.34 : 0.12; this.refreshSaveCards(); } }
     if (this.modeMenu.isOpen) { this.modeDrawT = (this.modeDrawT || 0) - rdt; if (this.modeDrawT <= 0) { this.modeDrawT = Flash.reduced ? 0.34 : 0.12; this.refreshModeCards(); } }
@@ -5373,6 +5398,7 @@ class BulletPools {
     const frozen = this.frozen, glBlue = glitchIsBlue(), metro = Stats.metronome();
     // the BLOTCHED TAPE at -75: half the bullets at a time flicker into black shapes with a white outline (glow)
     const flick = this.outlineFlick, flickB = flick ? Math.floor(G.clock.beat * (flick > 1 ? 0.5 : 2)) : 0;
+    const invK = this.invK || 0;   // the secret's phase 3: the world inverts, and so do white bullets (black on white)
     this.quarantine = Math.max(0, this.quarantine - dt);
     this.shootables.length = 0;
     let total = 0;
@@ -5444,10 +5470,11 @@ class BulletPools {
         const ol = flick && !b.dying && ((b.i + flickB) & 1);
         if (ol) mesh.setColorAt(n, _c2.setRGB(0, 0, 0));
         else if (b.bugT > 0 && !b.dying && (Math.floor(b.age * (Flash.reduced ? 5 : 12)) & 1)) mesh.setColorAt(n, _c2.setHex(0xff3cc8));
+        else if (invK > 0 && b.rule === RULE.WHITE) { const c = b.color; mesh.setColorAt(n, _c2.setRGB(lerp(c.r, 1 - c.r, invK), lerp(c.g, 1 - c.g, invK), lerp(c.b, 1 - c.b, invK))); }
         else mesh.setColorAt(n, b.color);
         if (pool.glyphArr) pool.glyphArr[n] = b.glyph;
         if (ol) glow.add(b.pos.x, b.pos.y, b.pos.z, Math.max(b.glowSize, b.r * 2.6) * grow * shrink, 1, 1, 1, 0.7 * shrink, 0);
-        else if (b.glowSize > 0) glow.add(b.pos.x, b.pos.y, b.pos.z, b.glowSize * grow * shrink, b.glowCol.r, b.glowCol.g, b.glowCol.b, b.glowA * shrink, 0);
+        else if (b.glowSize > 0) glow.add(b.pos.x, b.pos.y, b.pos.z, b.glowSize * grow * shrink, b.glowCol.r, b.glowCol.g, b.glowCol.b, b.glowA * shrink * (1 - invK), 0);
         if (dbg) glow.add(b.pos.x, b.pos.y, b.pos.z, b.r * 2, 1, 0.2, 0.2, 0.9, 3);
         n++;
       }
@@ -9670,7 +9697,7 @@ class Battle {
   resetBattleState() {
     const def = this.def;
     this.phase = 0; this.bossHp = def.hp; this.spare = 0; this.tired = false;
-    this.turn = 0; this.rot = [0, 0, 0]; this.cycle = [0, 0, 0];
+    this.turn = 0; this.rot = def.phaseRules.map(() => 0); this.cycle = def.phaseRules.map(() => 0);
     this.pattern = null; this.attackName = null; this.pendingBar = -1;
     this.finalDone = false;
     this.taught = {}; this.volley = 0; this.snapshot = null;
@@ -9722,6 +9749,7 @@ class Battle {
     G.ui.refreshHUD();
   }
   get dmg() { return this.def.bulletDmg[this.phase]; }
+  bossFloor() { return this.def.hpFloor ? this.def.hpFloor(this) : 0; }
   phaseGlitch() { return this.def.phaseGlitch[this.phase] + (this.tired ? -0.1 : 0); }
   setState(s) { this.state = s; this.stateT = 0; }
   isFrozen() { return this.state === 'PAUSED' || this.state === 'COUNT_IN'; }
@@ -9741,7 +9769,7 @@ class Battle {
     if (this.def && this.def !== def) this.releaseBoss();   // straight from one boss to the next (campaign hijack)
     this.def = G.def = def;
     this.useTrack(MusicLibrary.live[def.id]);
-    MusicLibrary.retain([def.id, 'shop']);   // free every other decoded track
+    MusicLibrary.retain([def.id, 'shop'].concat(def.retain || []));   // free every other decoded track
     G.arena.setTheme(def.arenaTheme); G.bg.setTheme(def.bgTheme); G.bg.setRed(false, true);
     G.bg.disposeServer();   // free the boss looks this boss doesn't use
     G.bullets.setPalette(def.palette);
@@ -10016,6 +10044,10 @@ class Battle {
     G.loco.enabled = false; G.loco.stop();
     if (this.def.onNewTurn) this.def.onNewTurn(this);   // per-turn effects (heal over time, sulking, ...)
     if (this.corrupt && Corrupt.onTurn(this)) return;   // the tape keeps playing (at -100 it takes the turn)
+    if (this.def.turnHeld && this.def.turnHeld(this)) return;   // the secret: your menu was deleted (the turn waits for it)
+    this.turnMenus();
+  }
+  turnMenus() {
     this.lastFlavor = this.flavorText();
     G.ui.showFlavor(this.lastFlavor);
     this.refreshMenus();
@@ -10132,7 +10164,7 @@ class Battle {
     if (Party.on) dmg *= Party.fightMul();          // D3BUG: his seam doubles your next FIGHT
     if (this.def.fightMul) dmg *= this.def.fightMul(this);   // a boss's armour (phases)
     dmg = Stats.atk(Math.max(1, Math.round(dmg + rand(-3, 3))));
-    this.bossHp = Math.max(0, this.bossHp - dmg);
+    this.bossHp = Math.max(this.bossFloor(), this.bossHp - dmg);
     if (crit) { G.audio.sfx.crit(); this.critGold(); } else G.audio.sfx.slash();
     this.after(0.12, () => G.audio.sfx.impact());
     G.fx.slash(_v7, Head.pos); G.boss.hurt(); G.ui.bossShake = 0.6; G.ui.refreshHUD();
@@ -10189,9 +10221,9 @@ class Battle {
   // ------------------------------------------------------------------ boss turn
   targetPhase() {
     const P = this.def.phaseRules, hp = this.def.hp;
-    if (this.phase < 1 && (this.bossHp <= hp * P[1].hpFrac || this.spare >= P[1].spare)) return 1;
-    if (this.phase < 2 && (this.bossHp <= hp * P[2].hpFrac || this.spare >= P[2].spare)) return 2;
-    return this.phase;
+    let t = this.phase;
+    for (let i = this.phase + 1; i < P.length; i++) if (this.bossHp <= hp * P[i].hpFrac || this.spare >= P[i].spare) t = i;
+    return t;
   }
   afterAction(reaction) {
     if (Party.on && !Party.acted) { Party.takeTurn(this, reaction); return; }   // an ally: his move, after yours
@@ -10362,6 +10394,7 @@ class Battle {
     this.clearTimers();
     if (this.corrupt) { Corrupt.clear(); this.corrupt = null; }   // the fight ended first: the tape is simply used up
     G.ui.hideAllMenus(); G.ui.hideFlavor();
+    if (this.def.victory) { this.def.victory(this); return; }   // (the secret ends its own way)
     this.grantClear('fight');
     Save.setBeaten(this.def.id, 'fight');
     this.def.endings.fight(this);
@@ -10463,7 +10496,7 @@ class Battle {
   canPause() {
     const r = G.clock.seg.ramp;
     if (r && r.r1 < 0.5 && G.audio.now < r.t0 + r.dur + 0.15) return false; // mid tape-stop
-    return G.inWorld && !['BOOT', 'TITLE', 'MODE_SELECT', 'STORY', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT', 'LOADING', 'SHOP_ENTER', 'SECRET_EVENT', 'SECRET_RETURN'].includes(this.state) && !(this.state === 'SHOP' && Shop.exiting);
+    return G.inWorld && !['BOOT', 'TITLE', 'MODE_SELECT', 'STORY', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT', 'LOADING', 'SHOP_ENTER', 'SECRET_EVENT', 'SECRET_RETURN', 'SECRET_FINISH'].includes(this.state) && !(this.state === 'SHOP' && Shop.exiting);
   }
   pause() {
     if (!this.canPause()) return;
@@ -10536,7 +10569,7 @@ class Battle {
   debugNextPhase() {
     const ok = ['PLAYER_MENU', 'ACT_MENU', 'ITEM_MENU', 'MERCY', 'BOSS_ATTACK', 'ATTACK_WAIT', 'BOSS_DIALOGUE', 'NARRATE', 'ATTACK_END', 'FIGHT_MINIGAME', 'DANCE', 'TEACH'];
     if (!ok.includes(this.state)) return;
-    if (this.phase < 2) {
+    if (this.phase < this.def.phaseRules.length - 1) {
       this.bossHp = Math.min(this.bossHp, Math.floor(this.def.hp * this.def.phaseRules[this.phase + 1].hpFrac) - 1);
       if (this.pattern) { this.pattern.end(); this.pattern = null; G.bullets.clear(true); G.tele.clear(); }
       G.bullets.frozen = false; G.shooter.enabled = false;
@@ -28979,6 +29012,7 @@ function secretMap(off, bpm, end) {
       PEAK: { start: t(S.PEAK), end: t(S.WAVE), exact: true },            // phase 3
       WAVE: { start: t(S.WAVE), end: t(S.FINAL), exact: true },           // phase 4
       OUTRO: { start: t(S.FINAL), end: Math.min(end, t(S.END)), exact: true },
+      HOLD: { start: t(S.FINAL + 4), end: Math.min(end - 0.1, t(S.FINAL + 36)), exact: true },   // the last turn: the outro's rumble, held
     },
     marks: { IMPACT: t(S.IMPACT), GAP: t(S.BUILD_END), DROP: t(S.DROP), HIT: t(S.HIT), REBUILD: t(S.REBUILD), PEAK: t(S.PEAK), WAVE: t(S.WAVE), FINAL: t(S.FINAL) },
     labels: [[0, 'VOID'], [t(S.IMPACT), 'BUILD'], [t(S.BUILD_END), 'GAP'], [t(S.DROP), 'DROP'], [t(S.HIT), 'BREAKDOWN'], [t(S.REBUILD), 'REBUILD'], [t(S.PEAK), 'PEAK'], [t(S.WAVE), 'SECOND WAVE'], [t(S.FINAL), 'OUTRO']],
@@ -29827,7 +29861,7 @@ class NullStage {
     this.floor = new THREE.Mesh(new THREE.PlaneGeometry(240, 240, 120, 120), new THREE.ShaderMaterial({ uniforms: this.floorU, vertexShader: NULL_FLOOR_VS, fragmentShader: NULL_FLOOR_FS }));
     this.floor.rotation.x = -Math.PI / 2; this.floor.position.set(C.x, 0, C.z - 40); this.floor.frustumCulled = false;
     g.add(this.floor);
-    this.inv = 0; this.pulse = 0;
+    this.inv = 0; this.invTarget = 0; this.pulse = 0; this.lineArt = 0; this.la = 0;
     this.show(false);
   }
   show(on) {
@@ -29842,9 +29876,11 @@ class NullStage {
     if (!this.on) return;
     this.pulse = Math.max(0, this.pulse - rdt * 3);
     const bass = G.audio.bass || 0;
-    this.sky.U.uK.value = k; this.sky.U.uInv.value = this.inv;
+    this.la = damp(this.la, this.lineArt, 1.6, rdt);
+    const ks = k * (1 - this.la);   // THE BLANK: white line art on black (the sky and the hole go dark)
+    this.sky.U.uK.value = ks; this.sky.U.uInv.value = this.inv;
     this.sky.update(rdt, this.holePos, this.holeR);
-    this.hole.k = k;
+    this.hole.k = ks;
     this.hole.update(rdt, this.pulse, bass, this.inv, warm);
     this.hole.horizon.material.color.setScalar(this.inv);   // (inverted: a white hole in a white-on-black world)
     const F = this.floorU; F.uK.value = k; F.uInv.value = this.inv; F.uPulse.value = this.pulse;
@@ -30093,7 +30129,7 @@ const SecretEvent = {
       G.fx.fadeTo(0, 1.2, 0x000000);
     }
     if (this.fallFX) this.fallFX.update(rdt, clamp((G.audio.now - (F.impactT - 11)) / 2, 0, 1));
-    if (SecretFight.stage) SecretFight.stage.warmUp(rdt);
+    SecretFight.warmUp(rdt);
   },
   // IMPACT: THE NULL
   impact() {
@@ -30214,61 +30250,6 @@ class FallFX {
 }
 
 // ============================================================================
-//  SecretFight - THE NULL after the fall. (For now: you land, look, and the void spits you back out into
-//  boss 2's hall; the fight itself is built in the next step.)
-// ============================================================================
-const SecretFight = {
-  stage: null,
-  // in the dark, before the song starts: boss 2's hall goes, THE NULL is built (hidden)
-  prepare(B) {
-    B.releaseBoss();
-    MusicLibrary.retain(['kiddie', 'secret']);
-    G.bg.setTheme('null');
-    this.stage = new NullStage(G.arena.center);
-  },
-  // its shaders, compiled in the dark (not on the frame it appears)
-  prewarm() { const S = this.stage; if (S) { secretPrewarm([S.group, S.sky.mesh, S.hole.group, S.hole.ring, S.hole.ring2]); S.warm = 3; } },
-  // IMPACT (0:11.0): you land
-  reveal(B) {
-    const S = this.stage;
-    S.show(true); this.revealT = 0;
-    G.input.pulseAll(1, 180);
-    if (Flash.reduced) { G.fx.fadeT = 1; G.fx.fadeTo(0, 1.6, 0x000000); }
-    else { G.fx.vigU.uFadeCol.value.setHex(0xffffff); G.fx.fadeT = 0.85; G.fx.fadeTo(0, 5, 0xffffff); }   // one soft white beat (a single change)
-    B.setState('SECRET_NULL');
-    // he fell in too: beside you, on what's left of his CRT
-    Party.start(ALLY_KIDDIE);
-    B.after(1.6, () => Party.say('...where are we', 2.6));
-    G.clock.after(G.audio.now + 9, () => { if (B.state === 'SECRET_NULL') this.backToKiddie(B); });
-  },
-  update(B, dt, rdt) {
-    if (!this.stage) return;
-    this.revealT = (this.revealT || 0) + rdt;
-    this.stage.update(rdt, clamp(this.revealT / (Flash.reduced ? 1.2 : 0.35), 0, 1));
-  },
-  onBeat(b) { if (this.stage && b % 2 === 0) this.stage.onHalf(); },   // (the half-time pulse)
-  // out of THE NULL, back into the hall (him, the box, the fight as it was)
-  backToKiddie(B) {
-    G.fx.fadeTo(1, 4, 0x000000);
-    B.setState('SECRET_RETURN');
-    B.afterIn('SECRET_RETURN', 0.9, () => {
-      this.dispose(); Party.stop();
-      const D = BOSSES.kiddie;
-      B.loadBoss(D);
-      G.arena.visible = true; G.arena.opacity = 1; G.arena.resetBox(0.01);
-      if (D.applyPhaseLook) D.applyPhaseLook(B, B.phase, true);
-      if (G.boss) { G.boss.setPhase(B.phase); G.boss.tired = B.tired; }
-      G.soul.active = true; B.spare = 0;
-      G.ui.setBattleHUD(true); G.ui.refreshHUD();
-      G.clock.play(D.phaseRules[B.phase].section);
-      G.fx.fadeTo(0, 1.2, 0x000000);
-      B.talk([{ text: '...', mood: 'sad', speed: 6 }, { text: 'what was that.', mood: 'shock' }], () => B.newTurn());
-    });
-  },
-  dispose() { if (this.stage) { this.stage.dispose(); this.stage = null; } },
-};
-
-// ============================================================================
 //  Party - a fight with an ally beside you (a shared system; its first ally: SCR1PT_K1DD1E in THE NULL).
 //    - he floats about 1.5 m to your side inside the box, on a cracked, half-deleted mini CRT. He dodges
 //      (scripted, and not perfectly); a bullet that reaches him hurts him. At 0 HP he's DOWN (ghosted,
@@ -30361,7 +30342,7 @@ const Party = {
     if (this.typeUI) { this.typeUI.dispose(); this.typeUI = null; }
     if (this.xk) { this.xk.dispose(); this.xk = null; }
     if (this.missMat) { this.missMat.map.dispose(); this.missMat.dispose(); }
-    Object.assign(this, { on: false, ally: null, model: null, anchor: null, menu: null, label: null, bubble: null, wrist: null, hex: null, star: null, missMat: null });
+    Object.assign(this, { on: false, ally: null, model: null, anchor: null, menu: null, label: null, bubble: null, wrist: null, hex: null, star: null, missMat: null, held: null });
     G.ui.refreshHUD();
   },
   get down() { return !!(this.ally && this.ally.down); },
@@ -30467,8 +30448,8 @@ const Party = {
     if (f.sum <= 0) { G.fx.damageNumber(numPos, 'MISS', '#aaaaaa', 2.2); B.afterIn('PARTY_HACK', 1.0, () => this.done()); return; }
     // half your FIGHT, and it goes straight through its armour
     const hacked = f.perfect === f.keys.length;
-    const dmg = Stats.atk(Math.max(1, Math.round(CONFIG.FIGHT_BASE * 0.5 * (f.sum / f.keys.length) * (hacked ? 1.3 : 1) + rand(-2, 2))));
-    B.bossHp = Math.max(0, B.bossHp - dmg);
+    const dmg = Stats.atk(Math.max(1, Math.round(CONFIG.FIGHT_BASE * 0.5 * (B.def.hackMul || 1) * (f.sum / f.keys.length) * (hacked ? 1.3 : 1) + rand(-2, 2))));
+    B.bossHp = Math.max(B.bossFloor(), B.bossHp - dmg);
     if (hacked) { G.audio.sfx.crit(); G.ui.showPrompt('HACKED!  (IGNORES ARMOR)', 1.5, '#3cff6e'); } else G.audio.sfx.impact();
     if (G.boss) G.boss.hurt(); G.ui.bossShake = 0.6; G.ui.refreshHUD();
     G.fx.damageNumber(numPos, String(dmg), '#3cff6e', hacked ? 2.8 : 2.2);
@@ -30499,7 +30480,7 @@ const Party = {
       const n = X.hits, D = B.def, dmg = Math.round(D.hp * 0.04 * n * (Settings.data.difficulty === 'easy' ? 1.1 : 1));
       const numPos = G.boss ? G.boss.headWorldPos(new THREE.Vector3()) : Head.rel(new THREE.Vector3(), 0, 1, 5);
       if (n > 0) {
-        B.bossHp = Math.max(0, B.bossHp - dmg);
+        B.bossHp = Math.max(B.bossFloor(), B.bossHp - dmg);
         if (G.boss && G.boss.deleteChunks) G.boss.deleteChunks(n);
         G.audio.sfx.cut(); G.audio.sfx.deleteBuzz(); G.ui.bossShake = 1; G.ui.refreshHUD();
         G.fx.damageNumber(numPos, String(dmg), '#ff00ff', 3.2);
@@ -30559,8 +30540,8 @@ const Party = {
     const fighting = B.state === 'BOSS_ATTACK';
     // where he floats: beside you; during attacks he dodges (reacting a beat late, not always right)
     this.place(false);
-    _v1.copy(this.home);
-    if (fighting && !a.down) {
+    _v1.copy(this.held || this.home);
+    if (fighting && !a.down && !this.held) {
       this.dodgeT = (this.dodgeT || 0) - dt;
       if (this.dodgeT <= 0) {
         this.dodgeT = 0.14;
@@ -30575,11 +30556,11 @@ const Party = {
     }
     const A = G.arena;
     _v1.set(clamp(_v1.x, A.min.x + 0.15, A.max.x - 0.15), clamp(_v1.y, A.min.y + 0.2, A.max.y - 0.15), clamp(_v1.z, A.min.z + 0.15, A.max.z - 0.15));
-    _v2.subVectors(_v1, this.pos); const dl = _v2.length(), maxStep = 1.5 * dt;
+    _v2.subVectors(_v1, this.pos); const dl = _v2.length(), maxStep = (this.held ? 2.5 : 1.5) * dt;
     if (dl > maxStep) _v2.multiplyScalar(maxStep / dl);
     if (!a.down) this.pos.add(_v2);
     // bullets that reach him
-    if (fighting && !a.down && a.invuln <= 0) {
+    if (fighting && !a.down && a.invuln <= 0 && !this.held) {
       for (const p of G.bullets.list) for (const b of p.active) {
         if (!b.collide || b.dying || !ruleHarmful(b.rule)) continue;
         const r = 0.11 + b.r;
@@ -30607,7 +30588,7 @@ const Party = {
       a.lag = 0;
     }
     for (const mat of m.litMats) mat.uniforms.uGlow.value.setScalar(a.down ? 0.55 : mat.uniforms.uGlow.value.x);   // DOWN: washed out, a ghost
-    an.visible = !(a.invuln > 0 && !a.down && Math.floor(a.invuln * (Flash.reduced ? 3 : 10)) % 2);
+    an.visible = !(a.invuln > 0 && !a.down && Math.floor(a.invuln * (Flash.reduced ? 3 : 10)) % 2) && !(this.held && Math.floor(G.time * (Flash.reduced ? 3 : 7)) % 3 === 0);   // (caged: losing pixels)
     m.headWorldPos(_v3);
     this.label.mesh.visible = a.down; if (a.down) { this.label.mesh.position.copy(_v3).add(_v4.set(0, 0.16, 0)); this.label.mesh.lookAt(Head.pos); }
     this.bubbleT -= rdt;
@@ -30673,18 +30654,20 @@ const Party = {
     const soul = G.soul, a = this.ally, s = 3;
     g.clearRect(0, 0, W, H);
     const y = Math.round((H - 7 * s) / 2);
-    const panel = (x, w, name, col, hp, max, down) => {
+    const del = G.ui.hudDel;   // (DELETE UI: your HP and TP are gone)
+    const panel = (x, w, name, col, hp, max, down, gone) => {
       g.fillStyle = 'rgba(0,0,0,0.75)'; g.fillRect(x, 2, w, H - 4);
       g.fillStyle = col; g.fillRect(x, 2, w, 2); g.fillRect(x, H - 4, w, 2);
       PixelFont.draw(g, name, x + 6, y, s, col, { shadow: '#000' });
+      if (gone) { PixelFont.draw(g, '[DELETED]', x + 6 + PixelFont.width(name, s) + 12, y + 3, 2, '#555555'); return; }
       const bx = x + 6 + PixelFont.width(name, s) + 10, bw = w - (bx - x) - 80;
       g.fillStyle = '#c80024'; g.fillRect(bx, y, bw, 7 * s);
       if (!down) { g.fillStyle = '#ffe600'; g.fillRect(bx, y, Math.round(bw * hp / max), 7 * s); }
       PixelFont.draw(g, down ? 'DOWN' : `${Math.ceil(hp)}/${max}`, bx + bw + 6, y + 3, 2, down ? '#ff2a4a' : '#ffffff');
     };
-    panel(4, 250, 'SOUL', '#ff2244', soul.hp, soul.maxHp, false);
+    panel(4, 250, 'SOUL', '#ff2244', soul.hp, soul.maxHp, false, del && del.hp);
     panel(262, 240, 'K1DD1E', '#2affd5', a.hp, a.maxHp, a.down);
-    PixelFont.draw(g, `TP ${Math.floor(soul.tp)}%`, W - 92, y, s, '#ff9d1a', { shadow: '#000' });
+    if (!(del && del.tp)) PixelFont.draw(g, `TP ${Math.floor(soul.tp)}%`, W - 92, y, s, '#ff9d1a', { shadow: '#000' });
   },
   drawWrist() {
     const P = this.wrist; if (!P) return;
@@ -30763,6 +30746,2350 @@ class XKeys {
   hide() { this.group.visible = false; }
   dispose() { disposeObject(this.group); }
 }
+
+// ============================================================================
+//  _____ - what's left after things end. A hunched figure about 30 m tall, standing far behind the box:
+//    - absolute black with a crisp white outline (an inverted hull, a constant ~1.5 px wherever it is)
+//    - perforated: holes drift open and shut through it (cut along your line of sight, white-rimmed), and
+//      through them you see the lensed starfield behind it: it looks cut out of the sky, not stood in it
+//    - its edges crumble into square pixels that drift off and come back
+//    - its face: one enormous empty text field. The eye is a blinking text cursor (on the half-time pulse,
+//      never out of rhythm) that slides to follow your SOUL; the mouth is a long underscore that stretches
+//      when it speaks. Its words type into the field, letters missing; between attacks it types and deletes
+//    - its hands are selection tools: a rectangular marquee with marching ants, and a lasso cursor
+//    - pieces of the other bosses orbit it, inverted and half erased (a chandelier crystal, a strip of tent
+//      canvas, SUNDOWN's hat, one of SCR1PT_K1DD1E's keyboards)
+//    - when it moves it leaves datamosh smears (stretched quads holding its colours, gone in 0.5 s)
+//    - phases: 1 black; 2 cracks of white light; 3 inverted (white, black outline); 4 pure wireframe, the
+//      text field the only solid thing left
+// ============================================================================
+const NULL_ENT_POS = new THREE.Vector3(0, 0, -36);   // from the box's centre (its feet on THE NULL's floor)
+const NULL_NOISE_GLSL = `
+  float ehh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float evn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(ehh(i), ehh(i + vec2(1, 0)), f.x), mix(ehh(i + vec2(0, 1)), ehh(i + vec2(1, 1)), f.x), f.y); }
+  // the holes: noise in world x / y only, so each one goes straight through it along your line of sight
+  float holeN(vec3 w, float t) { return evn(w.xy * 0.17 + vec2(t * 0.045, -t * 0.03)) * 0.62 + evn(w.xy * 0.44 - vec2(t * 0.06, t * 0.02)) * 0.38; }
+  float holeT(vec3 w, float t, float amt) { return 0.8 - 0.13 * amt * (0.55 + 0.45 * sin(t * 0.37 + w.y * 0.08)); }
+`;
+const NULL_BODY_VS = `
+  varying vec3 vW; varying vec3 vN; varying vec3 vL;
+  void main() { vL = position; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * w; }`;
+const NULL_BODY_FS = `
+  varying vec3 vW; varying vec3 vN; varying vec3 vL;
+  uniform float uTime; uniform float uHole; uniform float uInv; uniform float uCrack; uniform float uFlash; uniform float uSeam;
+  ${NULL_NOISE_GLSL}
+  void main() {
+    float n = holeN(vW, uTime), thr = holeT(vW, uTime, uHole);
+    if (n > thr) discard;
+    float rim = smoothstep(thr - 0.03, thr - 0.004, n);                          // a white lip round each hole
+    float cr = 0.0;                                                               // phase 2: cracks of white light
+    if (uCrack > 0.001) { float c = abs(evn(vL.xy * 0.33 + vec2(vL.z * 0.21, 0.0)) - 0.5); cr = (1.0 - smoothstep(0.0, 0.03 * uCrack, c)) * uCrack; }
+    vec3 V = normalize(cameraPosition - vW);
+    float fres = pow(1.0 - abs(dot(normalize(vN), V)), 5.0) * 0.18;
+    vec3 col = vec3(max(rim, cr)) + vec3(0.55, 0.9, 1.0) * fres + uFlash;
+    col = mix(col, vec3(0.92) - col * 0.92, uInv);                              // phase 3: white, black cracks
+    gl_FragColor = vec4(col, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// the outline: the same shape, back faces, pushed out along its normals by a constant angle (~1.5 px)
+const NULL_HULL_VS = `
+  uniform float uPx;
+  varying vec3 vW;
+  void main() {
+    vW = (modelMatrix * vec4(position, 1.0)).xyz;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vec3 n = normalize(normalMatrix * normal);
+    mv.xyz += n * max(-mv.z, 0.1) * uPx;
+    gl_Position = projectionMatrix * mv;
+  }`;
+const NULL_HULL_FS = `
+  varying vec3 vW;
+  uniform float uTime; uniform float uHole; uniform float uInv; uniform float uFlash;
+  ${NULL_NOISE_GLSL}
+  void main() {
+    if (holeN(vW, uTime) > holeT(vW, uTime, uHole)) discard;
+    gl_FragColor = vec4(mix(vec3(1.0), vec3(0.0), uInv) + uFlash, 1.0);
+    #include <colorspace_fragment>
+  }`;
+// phase 4: edges only, their vertices drifting apart
+const NULL_WIRE_VS = `
+  uniform float uTime; uniform float uDrift;
+  float wh(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+  void main() {
+    vec3 p = position;
+    vec3 r = vec3(wh(p), wh(p + 3.1), wh(p + 7.7)) - 0.5;
+    p += r * uDrift * (0.6 + 0.4 * sin(uTime * 0.8 + wh(p) * 6.28));
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }`;
+const NULL_WIRE_FS = `uniform float uK; void main() { gl_FragColor = vec4(vec3(uK), 1.0); }`;
+// a tapered limb between two points (radii ra at a, rb at b), smooth normals for the hull
+function nullLimb(a, b, ra, rb, seg = 14) {
+  const d = new THREE.Vector3().subVectors(b, a), len = d.length();
+  const g = new THREE.CylinderGeometry(rb, ra, len, seg, 6, true);
+  g.translate(0, len / 2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+  g.translate(a.x, a.y, a.z);
+  return g;
+}
+function nullBlob(x, y, z, r, sx = 1, sy = 1, sz = 1) { const g = new THREE.SphereGeometry(r, 20, 14); g.scale(sx, sy, sz); g.translate(x, y, z); return g; }
+// marching ants: a dashed outline that crawls (one scrolling texture, shared by every selection)
+const NullAnts = {
+  tex: null,
+  get() {
+    if (!this.tex) {
+      this.tex = canvasTex(32, 4, (g) => { g.fillStyle = '#000000'; g.fillRect(0, 0, 32, 4); g.fillStyle = '#ffffff'; g.fillRect(0, 0, 16, 4); }, { repeat: true });
+      this.tex.magFilter = THREE.NearestFilter; this.tex.userData.shared = true;
+    }
+    return this.tex;
+  },
+  update(rdt) { if (this.tex) this.tex.offset.x = (this.tex.offset.x - rdt * (Flash.reduced ? 0.6 : 1.6)) % 1; },
+  dispose() { if (this.tex) { this.tex.dispose(); this.tex = null; } },
+};
+// a rectangle of marching ants (w x h), built from 4 thin strips
+function nullAntsRect(w, h, thick, color = 0xffffff) {
+  const g = new THREE.Group(), t = NullAnts.get();
+  const mat = new THREE.MeshBasicMaterial({ map: t, color, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  const side = (len, x, y, rz) => {
+    const geo = new THREE.PlaneGeometry(len, thick), uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * len / (thick * 6));
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y, 0); m.rotation.z = rz; g.add(m);
+  };
+  side(w, 0, h / 2, 0); side(w, 0, -h / 2, Math.PI); side(h, w / 2, 0, -Math.PI / 2); side(h, -w / 2, 0, Math.PI / 2);
+  g.userData.mat = mat;
+  return g;
+}
+class NullEntity {
+  constructor() {
+    const C = G.arena.center;
+    const root = this.root = new THREE.Group(); scene.add(root);
+    root.position.set(C.x + NULL_ENT_POS.x, 0, C.z + NULL_ENT_POS.z);
+    this.U = { uTime: { value: 0 }, uHole: { value: 1 }, uInv: { value: 0 }, uCrack: { value: 0 }, uFlash: { value: 0 }, uSeam: { value: 0 }, uPx: { value: G.xr ? 0.0016 : 0.0032 } };
+    this.bodyMat = new THREE.ShaderMaterial({ uniforms: this.U, vertexShader: NULL_BODY_VS, fragmentShader: NULL_BODY_FS });
+    this.hullMat = new THREE.ShaderMaterial({ uniforms: this.U, vertexShader: NULL_HULL_VS, fragmentShader: NULL_HULL_FS, side: THREE.BackSide });
+    this.wireU = { uTime: this.U.uTime, uDrift: { value: 0 }, uK: { value: 1 } };
+    this.wireMat = new THREE.ShaderMaterial({ uniforms: this.wireU, vertexShader: NULL_WIRE_VS, fragmentShader: NULL_WIRE_FS });
+    this.parts = [];
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    // ---- the core: legs, hips, a long torso leaning forward, the hunch, the neck
+    const core = [];
+    for (const s of [-1, 1]) { core.push(nullLimb(V(s * 1.7, -0.5, 0), V(s * 1.3, 10.5, -0.6), 1.1, 1.7)); core.push(nullBlob(s * 1.5, 0.2, 0.6, 1.25, 1, 0.5, 1.6)); }
+    core.push(nullBlob(0, 10.8, -0.6, 2.5, 1.15, 0.85, 1));
+    core.push(nullLimb(V(0, 10.8, -0.6), V(0, 20.2, 1.6), 2.3, 3.2, 18));
+    core.push(nullBlob(0, 20.4, 0.9, 3.4, 1.35, 0.85, 1.05));
+    core.push(nullLimb(V(0, 21.4, 2.4), V(0, 23.4, 5.0), 1.15, 0.8));
+    this.core = this.addPart(mergeGeos(core.map((geo) => ({ geo }))), root);
+    // ---- the head (tilts): a rounded slab; the face field on its front
+    this.head = new THREE.Group(); this.head.position.set(0, 23.8, 5.4); root.add(this.head);
+    this.addPart(roundedBoxGeo(8.2, 5.0, 2.6, 0.9, 3), this.head);
+    this.buildFace();
+    // ---- the arms (shoulder > elbow): long, hanging, ending in the selection tools
+    this.arms = [-1, 1].map((s) => {
+      const sh = new THREE.Group(); sh.position.set(s * 3.9, 20.4, 1.4); root.add(sh);
+      this.addPart(mergeGeos([{ geo: nullBlob(0, 0, 0, 1.25) }, { geo: nullLimb(V(0, 0, 0), V(s * 1.4, -7.2, 1.6), 0.95, 0.75) }]), sh);
+      const el = new THREE.Group(); el.position.set(s * 1.4, -7.2, 1.6); sh.add(el);
+      this.addPart(mergeGeos([{ geo: nullBlob(0, 0, 0, 0.8) }, { geo: nullLimb(V(0, 0, 0), V(-s * 0.3, -6.6, 2.4), 0.72, 0.5) }]), el);
+      const wr = new THREE.Group(); wr.position.set(-s * 0.3, -6.6, 2.4); el.add(wr);
+      return { s, sh, el, wr, prev: new THREE.Vector3() };
+    });
+    // left hand: the marquee (a dashed rectangle the size of a door); right hand: the lasso and its cursor
+    this.marquee = nullAntsRect(4.2, 3.0, 0.16); this.marquee.position.set(0, -1.6, 0.6); this.arms[0].wr.add(this.marquee);
+    const lasso = new THREE.Group(); this.arms[1].wr.add(lasso); this.lasso = lasso;
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.07, 6, 48), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    loop.scale.set(1, 0.7, 1); loop.position.set(0, -2.0, 0.4); lasso.add(loop);
+    const tail = new THREE.Mesh(nullLimb(V(0, 0, 0), V(0.3, -1.2, 0.4), 0.06, 0.06, 6), loop.material); lasso.add(tail);
+    const arrow = new THREE.Shape(); arrow.moveTo(0, 0); arrow.lineTo(0, -1.4); arrow.lineTo(0.38, -1.05); arrow.lineTo(0.62, -1.62); arrow.lineTo(0.82, -1.52); arrow.lineTo(0.56, -0.98); arrow.lineTo(1.02, -0.98); arrow.closePath();
+    const cur = new THREE.Mesh(new THREE.ShapeGeometry(arrow), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+    cur.position.set(0.9, -3.1, 0.5); lasso.add(cur); this.lassoMats = [loop.material];
+    // ---- the seam D3BUG shows (a glowing line down its chest)
+    this.seam = new THREE.Mesh(nullLimb(V(0, 13, 1.7), V(0.6, 19, 3.1), 0.16, 0.12, 8), new THREE.MeshBasicMaterial({ color: 0xc8ff00, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.seam.visible = false; root.add(this.seam);
+    // ---- the pixels its edges crumble into (sampled off its surface)
+    this.buildPixels();
+    // ---- the stolen fragments, inverted and half erased
+    this.buildFragments();
+    // ---- datamosh smears
+    this.buildTrails();
+    // ---- missing-texture holes the X-ACTION punches through it
+    this.chunks = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: Tex.missing(), side: THREE.DoubleSide }), 24);
+    this.chunks.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.chunks.count = 0; this.chunks.frustumCulled = false; root.add(this.chunks);
+    this.chunkList = [];
+    this.reset();
+  }
+  // a part: its black body and its white hull (and, built now for phase 4, its wireframe)
+  addPart(geo, parent) {
+    geo.computeVertexNormals();
+    const body = new THREE.Mesh(geo, this.bodyMat), hull = new THREE.Mesh(geo, this.hullMat);
+    const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 18), this.wireMat); wire.visible = false;
+    parent.add(body, hull, wire);
+    const P = { geo, body, hull, wire, parent };
+    this.parts.push(P);
+    return P;
+  }
+  buildFace() {
+    const F = new THREE.Group(); F.position.set(0, 0.2, 1.36); this.head.add(F); this.face = F;
+    const W = 6.4, H = 2.5, t = 0.11;
+    this.fieldW = W; this.fieldH = H;
+    this.frameMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const fr = [];
+    fr.push({ geo: new THREE.BoxGeometry(W + t, t, 0.08), matrix: M4(0, H / 2, 0) }, { geo: new THREE.BoxGeometry(W + t, t, 0.08), matrix: M4(0, -H / 2, 0) });
+    fr.push({ geo: new THREE.BoxGeometry(t, H + t, 0.08), matrix: M4(-W / 2, 0, 0) }, { geo: new THREE.BoxGeometry(t, H + t, 0.08), matrix: M4(W / 2, 0, 0) });
+    this.frame = new THREE.Mesh(mergeGeos(fr), this.frameMat); F.add(this.frame);
+    // the inside of the field: black, with its words (a canvas)
+    this.textTex = canvasTex(512, 200); this.tg = this.textTex.userData.ctx;
+    this.fieldMat = new THREE.MeshBasicMaterial({ map: this.textTex, color: 0xffffff });
+    this.field = new THREE.Mesh(new THREE.PlaneGeometry(W - t, H - t), this.fieldMat); this.field.position.z = 0.02; F.add(this.field);
+    // the eye: a text cursor; the mouth: an underscore
+    this.cursorMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    this.cursor = new THREE.Mesh(new THREE.PlaneGeometry(0.16, H * 0.62), this.cursorMat); this.cursor.position.z = 0.05; F.add(this.cursor);
+    this.mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.14), this.cursorMat); this.mouth.position.set(0, -H / 2 - 0.55, 0.05); F.add(this.mouth);
+    this.text = ''; this.drawText('');
+  }
+  // the words in its face (centred lines; the field shows at most ~3 lines)
+  drawText(s, caret) {
+    const g = this.tg, W = 512, H = 200, inv = this.U.uInv.value > 0.5;
+    g.fillStyle = inv ? '#ebebeb' : '#000000'; g.fillRect(0, 0, W, H);
+    if (s) {
+      const lines = PixelFont.wrap(s, 18).slice(-3), sc = lines.length > 2 ? 3 : 4, lh = 10 * sc;
+      let y = Math.round((H - lines.length * lh + 3 * sc) / 2);
+      for (const l of lines) { PixelFont.draw(g, l, Math.round((W - PixelFont.width(l, sc)) / 2), y, sc, inv ? '#000000' : '#ffffff'); y += lh; }
+    }
+    this.textTex.needsUpdate = true; this.text = s;
+  }
+  buildPixels() {
+    // surface samples (local to their part's parent) to crumble from
+    this.samples = [];
+    for (const P of this.parts) {
+      const pos = P.geo.attributes.position, nrm = P.geo.attributes.normal, n = pos.count;
+      for (let i = 0; i < 40; i++) { const k = randi(0, n - 1); this.samples.push({ P, p: new THREE.Vector3().fromBufferAttribute(pos, k), n: new THREE.Vector3().fromBufferAttribute(nrm, k) }); }
+    }
+    const N = 180;
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uInv: this.U.uInv },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec2 vUv; uniform float uInv; void main(){ vec2 e = abs(vUv - 0.5); float edge = step(0.36, max(e.x, e.y)); vec3 c = vec3(edge); c = mix(c, vec3(0.92) - c * 0.92, uInv); gl_FragColor = vec4(c, 1.0);
+        #include <colorspace_fragment>
+      }`,
+    });
+    this.pix = new THREE.InstancedMesh(geo, mat, N); this.pix.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.pix.frustumCulled = false;
+    scene.add(this.pix);
+    this.pixL = [];
+    for (let i = 0; i < N; i++) this.pixL.push({ s: null, t: rand(0, 6), life: rand(3, 6), size: rand(0.18, 0.42), out: rand(1.5, 4), w: new THREE.Vector3(), spin: rand(-2, 2) });
+  }
+  buildFragments() {
+    const inv = (hex) => 0xffffff - hex;
+    const missing = (geo, col) => { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: inv(col) })); return m; };
+    const F = this.frags = [];
+    const mk = (obj, r, y, sp, ph, tilt) => { this.root.add(obj); F.push({ obj, r, y, sp, a: ph, tilt }); return obj; };
+    // a chandelier crystal (THE PROPRIETOR's)
+    const cr = new THREE.Group(); cr.add(missing(new THREE.OctahedronGeometry(0.9, 0).scale(0.5, 1.4, 0.5), 0xbff4ff)); cr.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0).scale(0.5, 1.4, 0.5), new THREE.MeshBasicMaterial({ map: Tex.missing() })));
+    cr.children[1].position.set(0.3, 0.4, 0.1);
+    mk(cr, 11, 18, 0.12, 0, 0.4);
+    // a strip of GRANDIOSO's tent canvas (red / cream stripes, inverted: cyan / navy)
+    const stripeTex = canvasTex(64, 16, (g) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#ffffff' : '#ff2a3c'; g.fillRect(i * 8, 0, 8, 16); } g.clearRect(40, 0, 10, 16); });
+    this.ownTex = [stripeTex];
+    const cvMat = new THREE.MeshBasicMaterial({ map: stripeTex, side: THREE.DoubleSide, transparent: true, alphaTest: 0.5 });
+    cvMat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb = vec3(1.0) - diffuseColor.rgb;'); };
+    const cg = new THREE.PlaneGeometry(6, 1.6, 12, 1), cp = cg.attributes.position; for (let i = 0; i < cp.count; i++) cp.setZ(i, Math.sin(cp.getX(i) * 0.8) * 0.5);
+    mk(new THREE.Mesh(cg, cvMat), 13, 12, -0.09, 2.1, 0.2);
+    // SUNDOWN's hat (a pale-blue ghost of his brown one)
+    const hat = new THREE.Group();
+    hat.add(missing(new THREE.CylinderGeometry(1.55, 1.6, 0.12, 28), 0x5a3a22));
+    hat.add(missing(new THREE.CylinderGeometry(0.85, 1.0, 1.0, 20).translate(0, 0.55, 0), 0x6a4428));
+    hat.add(new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.3, 16).translate(0.6, 0.06, 0.6), new THREE.MeshBasicMaterial({ map: Tex.missing() })));
+    mk(hat, 10, 24, 0.07, 4.0, 0.3);
+    // one of SCR1PT_K1DD1E's keyboards (he notices)
+    const kb = new THREE.Group();
+    kb.add(missing(new THREE.BoxGeometry(3.2, 0.25, 1.1), 0x24242c));
+    const keys = []; for (let i = 0; i < 11; i++) for (let j = 0; j < 3; j++) if ((i * 7 + j * 3) % 5) keys.push({ geo: new THREE.BoxGeometry(0.22, 0.12, 0.22), matrix: M4(-1.4 + i * 0.28, 0.18, -0.32 + j * 0.32) });
+    kb.add(new THREE.Mesh(mergeGeos(keys), new THREE.MeshBasicMaterial({ color: inv(0x2affd5) })));
+    this.keyboard = mk(kb, 9, 15, -0.15, 5.5, 0.6);
+  }
+  buildTrails() {
+    const N = 96;
+    this.trailMat = new THREE.ShaderMaterial({
+      uniforms: { uInv: this.U.uInv }, transparent: true, depthWrite: false,
+      vertexShader: `attribute float aA; attribute float aC; varying float vA; varying float vC; varying vec2 vUv; void main(){ vUv = uv; vA = aA; vC = aC; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying float vA; varying float vC; varying vec2 vUv; uniform float uInv;
+        void main(){ float band = step(0.5, fract(vUv.y * 6.0 + vC * 3.0)); vec3 c = vC < 0.33 ? vec3(0.0) : vC < 0.66 ? vec3(0.0, 1.0, 0.94) : vec3(1.0, 0.0, 0.78); c = mix(c, vec3(1.0), band * 0.15); c = mix(c, vec3(0.92) - c * 0.92, uInv); gl_FragColor = vec4(c, vA * (0.4 + 0.6 * smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.75, vUv.x)));
+          #include <colorspace_fragment>
+        }`,
+    });
+    const geo = new THREE.PlaneGeometry(1, 1);
+    this.trailA = new THREE.InstancedBufferAttribute(new Float32Array(N), 1); this.trailC = new THREE.InstancedBufferAttribute(new Float32Array(N), 1);
+    this.trailA.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('aA', this.trailA); geo.setAttribute('aC', this.trailC);
+    this.trails = new THREE.InstancedMesh(geo, this.trailMat, N); this.trails.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.trails.frustumCulled = false; this.trails.count = 0;
+    scene.add(this.trails);
+    this.trailL = []; this.trailI = 0;
+  }
+  reset() {
+    this.phase = 0; this.tired = false; this.attack = false; this.talking = 0; this.blinkOn = true; this.flashT = 0; this.tilt = 0; this.tiltT = 3;
+    this.lookX = 0; this.mouthK = 0; this.typeT = 1.5; this.idleBuf = ''; this.idleWord = ''; this.idleI = 0; this.idleDel = false;
+    this.wire = 0; this.wireTarget = 0; this.inv = 0; this.invTarget = 0; this.crack = 0; this.reachK = 0; this.reachTo = null;
+    this.shrink = null; this.named = ''; this.root.scale.setScalar(1); this.eyeT = 1; this.eraseT = -1; this.face.scale.set(1, 1, 1);
+    const C = G.arena.center; this.root.position.set(C.x + NULL_ENT_POS.x, 0, C.z + NULL_ENT_POS.z);
+    this.root.visible = true; this.seam.visible = false; this.U.uFlash.value = 0;
+    for (const P of this.parts) { P.body.visible = P.hull.visible = true; P.wire.visible = false; }
+  }
+  // ---------------------------------------------------------------- the generic boss interface
+  setPhase(p) {
+    this.phase = p;
+    this.wireTarget = p >= 3 ? 1 : 0;
+    this.invTarget = p === 2 ? 1 : 0;
+  }
+  attackPose(on) { this.attack = on; }
+  doorsPulse() { this.flashT = Math.max(this.flashT, 0.15); }
+  glitchBurst() { this.flashT = 0.4; this.burst(14); }
+  hurt() { this.flashT = Flash.reduced ? 0.35 : 0.6; this.burst(10); G.audio.sfx.cut(); }
+  onBeat(b) {
+    // the eye blinks on the half-time pulse (two beats on, two off; it never blinks out of rhythm)
+    this.blinkOn = Math.floor(b / 2) % 2 === 0;
+    if (b % 4 === 0) G.audio.sfx.cursorTick(G.audio.now);
+  }
+  // it's 30 m away: damage numbers, slashes and the dialogue box use a point on the line from your head to its
+  // face (or chest) at most 9 m out, so they read at a normal size and still sit right over it
+  near(out, d) { Head.update(); _v1.subVectors(out, Head.pos); const L = _v1.length(); if (L > d) out.copy(Head.pos).addScaledVector(_v1, d / L); return out; }
+  faceWorld(out) { this.root.updateMatrixWorld(true); return this.face.getWorldPosition(out); }
+  headWorldPos(out) { return this.near(this.faceWorld(out), 9); }
+  chestPos(out) { this.root.updateMatrixWorld(true); return this.near(out.set(0, 17, 2.6).applyMatrix4(this.root.matrixWorld), 7.5); }
+  talkBlip() { if (!(G.ui.faceBox && G.ui.faceBox.kid)) this.talking = 0.6; }
+  // the echoes (other bosses' attacks it copies) call their owners' poses: it has none, and fires from its hands
+  setPose() {}
+  drawGun() {}
+  gunPos(i, out) { this.root.updateMatrixWorld(true); return (i ? this.lasso : this.marquee).getWorldPosition(out); }
+  handPos(i, out) { return this.gunPos(i, out); }
+  // a hand reaches toward a point in the box (the marquee drags its selections; null: back to rest)
+  reach(p) { if (p) { this.reachTo = this.reachTo || new THREE.Vector3(); this.reachTo.copy(p); } else this.reachTo = null; }
+  // the X-ACTION punched these out of it (missing texture, for a while)
+  deleteChunks(n) {
+    this.root.updateMatrixWorld(true);
+    for (let i = 0; i < n * 3; i++) this.chunkList.push({ p: new THREE.Vector3(rand(-2.4, 2.4), rand(12, 21), rand(2.2, 3.6)), s: rand(1.2, 2.6), t: 0, r: rand(0, TAU) });
+    while (this.chunkList.length > 24) this.chunkList.shift();
+    this.burst(30);
+  }
+  showSeam(on) { this.seam.visible = on; }
+  shrinkTo(k, z, dur) { this.shrink = { k, z, dur, t: 0 }; }
+  // DELETE: erased by its own marquee, from the feet up, in pixels; the empty text field is the last thing left,
+  // and it closes
+  erase() { this.eraseT = 0; this.burst(60); }
+  // a puff of pixels off its surface
+  burst(n) { let k = 0; for (const p of this.pixL) { if (k >= n) break; if (p.t > 0.4) { p.t = 0; p.s = null; k++; } } }
+  // its face types: a line of its voice (the FaceBox calls this as the letters come)
+  setTalk(s) { if (s !== this.text) { this.drawText(s); this.talking = 0.6; } }
+  // ---------------------------------------------------------------- per frame
+  update(dt) {
+    const t = G.time, rdt = G.rdt, U = this.U, red = Flash.reduced;
+    U.uTime.value = t;
+    this.flashT = Math.max(0, this.flashT - rdt * 2.2); U.uFlash.value = this.flashT * 0.35;
+    // phase looks: cracks (2), the inversion (3: 0.3 s, Reduced 1 s), the wireframe (4)
+    this.crack = damp(this.crack, this.phase === 1 ? 1 : this.phase === 2 ? 0.6 : 0, 1.5, rdt); U.uCrack.value = this.crack;
+    this.inv = this.invTarget > this.inv ? Math.min(this.invTarget, this.inv + rdt / (red ? 1 : 0.3)) : Math.max(this.invTarget, this.inv - rdt / (red ? 1 : 0.3));
+    U.uInv.value = this.inv;
+    this.wire = damp(this.wire, this.wireTarget, 1.2, rdt);
+    const wire = this.wire > 0.5;
+    if (this.eraseT < 0) for (const P of this.parts) { P.body.visible = P.hull.visible = !wire; P.wire.visible = this.wire > 0.02; }
+    this.wireU.uDrift.value = this.wire * 1.2; this.wireU.uK.value = this.inv > 0.5 ? 0.08 : 1;
+    U.uHole.value = this.phase >= 1 ? 1.3 : 1;
+    const ic = this.inv > 0.5 ? 0x000000 : 0xffffff;
+    this.frameMat.color.setHex(ic); this.cursorMat.color.setHex(ic);
+    for (const m of this.lassoMats) m.color.setHex(ic);
+    if (this.marquee.userData.mat) this.marquee.userData.mat.color.setHex(ic);
+    if (this.invDrawn !== this.inv > 0.5) { this.invDrawn = this.inv > 0.5; this.drawText(this.text); }
+    // breathing sway; slow, curious head tilts; the head turned a little to your SOUL
+    const sw = Math.sin(t * 0.31) * 0.02;
+    this.root.rotation.set(0, Math.sin(t * 0.17) * 0.03, sw);
+    this.tiltT -= rdt; if (this.tiltT <= 0) { this.tiltT = rand(3, 7); this.tilt = rand(-0.28, 0.28); }
+    Head.update();
+    const s = G.soul.pos, fw = this.face.getWorldPosition(_v1);
+    const yaw = clamp(Math.atan2(s.x - fw.x, s.z - fw.z) * 0.5, -0.25, 0.25);
+    this.head.rotation.z = damp(this.head.rotation.z, this.tilt, 0.6, rdt);
+    this.head.rotation.y = damp(this.head.rotation.y, yaw, 1.2, rdt);
+    this.head.rotation.x = damp(this.head.rotation.x, 0.32 + (this.attack ? -0.08 : 0), 1, rdt);
+    // IMPACT: the eye opens (the cursor grows into the field)
+    if (this.eyeT < 1) this.eyeT = Math.min(1, this.eyeT + rdt / 0.6);
+    this.cursor.scale.y = smooth01(this.eyeT);
+    // erased: parts go, bottom first; the field closes last
+    if (this.eraseT >= 0) {
+      this.eraseT += rdt;
+      const e = this.eraseT;
+      this.parts.forEach((P, i) => { const gone = e > 0.15 + i * 0.12; if (gone && P.body.visible) { P.parent.getWorldPosition(_v2); for (let k = 0; k < 6; k++) G.fx.glyphs.emit(_v2.x + rand(-2, 2), _v2.y + rand(-2, 2), _v2.z + rand(-1, 1), rand(-1, 1), rand(0, 2), rand(-1, 1), 1.4, 0.4, 1, 1, 1, GlyphAtlas.of('block'), 0.5, 0.4); } P.body.visible = P.hull.visible = P.wire.visible = !gone && P.body.visible; });
+      for (const f of this.frags) f.obj.visible = e < 0.6;
+      this.marquee.visible = this.lasso.visible = e < 0.9;
+      this.pix.visible = false;
+      this.face.scale.y = e < 1.6 ? 1 : Math.max(0.001, 1 - (e - 1.6) / 0.5);
+      if (e > 2.2) this.root.visible = false;
+    }
+    // the cursor eye: slides along the field toward where your SOUL is
+    this.lookX = damp(this.lookX, clamp((s.x - fw.x) * 0.25, -this.fieldW / 2 + 0.4, this.fieldW / 2 - 0.4), 2, rdt);
+    this.cursor.position.x = this.lookX; this.cursor.visible = this.blinkOn || this.talking > 0;
+    // the mouth stretches while it speaks
+    this.talking = Math.max(0, this.talking - rdt);
+    this.mouthK = damp(this.mouthK, this.talking > 0 ? 1 : 0, 6, rdt);
+    this.mouth.scale.x = 2.2 + 3.2 * this.mouthK + 0.4 * Math.sin(t * 9) * this.mouthK;
+    // between attacks it types in its face, and deletes it
+    if (!this.attack && this.talking <= 0 && !(G.ui.faceBox && G.ui.faceBox.visible) && !this.named) this.idleType(rdt);
+    // the arms: hanging, swaying; reaching in during attacks
+    this.reachK = damp(this.reachK, this.reachTo ? 1 : 0, 2.5, rdt);
+    for (const A of this.arms) {
+      const reach = this.attack ? 1 : 0, s2 = A.s;
+      A.sh.rotation.x = damp(A.sh.rotation.x, 0.12 + reach * (s2 < 0 ? 0.9 : 0.6) + Math.sin(t * 0.5 + s2) * 0.05, 1.4, rdt);
+      A.sh.rotation.z = damp(A.sh.rotation.z, s2 * (0.08 + reach * 0.22), 1.4, rdt);
+      A.el.rotation.x = damp(A.el.rotation.x, -0.35 - reach * 0.55 + Math.sin(t * 0.7 + s2 * 2) * 0.06, 1.4, rdt);
+    }
+    if (this.reachK > 0.01 && this.reachTo) {   // the marquee arm swings toward what it is selecting
+      const A = this.arms[0]; A.sh.getWorldPosition(_v2); _v3.subVectors(this.reachTo, _v2).normalize();
+      A.sh.rotation.x = lerp(A.sh.rotation.x, 0.12 + Math.asin(clamp(-_v3.y, -1, 1)) * 0.6 + 1.0, this.reachK * 0.5);
+      A.sh.rotation.z = lerp(A.sh.rotation.z, -0.08 + Math.atan2(_v3.x, -_v3.z) * 0.5, this.reachK * 0.5);
+    }
+    this.marquee.lookAt(Head.pos); this.lasso.lookAt(Head.pos);
+    // NAME IT: it shrinks to a small, curious thing about 1 m tall, coming up to the box
+    if (this.shrink) {
+      const S = this.shrink, C = G.arena.center; S.t = Math.min(1, S.t + rdt / S.dur); const e = smooth01(S.t);
+      this.root.scale.setScalar(lerp(1, S.k, e));
+      this.root.position.set(C.x + NULL_ENT_POS.x, 0, lerp(C.z + NULL_ENT_POS.z, C.z + S.z, e));
+    }
+    // the pieces it stole, orbiting
+    const blank = SecretFight.stage && SecretFight.stage.la > 0.5;   // (THE BLANK: line art only)
+    for (const f of this.frags) { f.obj.visible = !blank && this.eraseT < 0.6; f.a += f.sp * rdt; f.obj.position.set(Math.cos(f.a) * f.r, f.y + Math.sin(t * 0.4 + f.a) * 1.2, Math.sin(f.a) * f.r * 0.6 + 2); f.obj.rotation.set(f.tilt, t * 0.2 + f.a, f.tilt * 0.5); }
+    this.root.updateMatrixWorld(true);
+    this.updatePixels(rdt);
+    this.updateTrails(rdt);
+    // chunks
+    let n = 0;
+    for (const c of this.chunkList) { c.t += rdt; if (c.t > 6) continue; _q1.setFromEuler(_e1.set(0, 0, c.r)); _s1.setScalar(c.s * (c.t > 5 ? 6 - c.t : 1)); _m1.compose(c.p, _q1, _s1); this.chunks.setMatrixAt(n++, _m1); }
+    this.chunks.count = n; this.chunks.instanceMatrix.needsUpdate = true;
+    if (this.seam.visible) this.seam.material.opacity = 0.6 + 0.4 * Math.sin(t * (red ? 2 : 6));
+  }
+  idleType(rdt) {
+    this.typeT -= rdt; if (this.typeT > 0) return;
+    const W = NULL_IDLE_WORDS;
+    if (!this.idleWord) { this.idleWord = pick(W); this.idleI = 0; this.idleDel = false; }
+    if (!this.idleDel) {
+      this.idleI++; this.typeT = 0.14;
+      if (this.idleI >= this.idleWord.length) { this.idleDel = true; this.typeT = 1.1; }
+    } else {
+      this.idleI--; this.typeT = 0.06; G.audio.sfx.tk();
+      if (this.idleI <= 0) { this.idleWord = ''; this.typeT = rand(1.5, 3); }
+    }
+    this.drawText(this.idleWord.slice(0, Math.max(0, this.idleI)));
+  }
+  updatePixels(rdt) {
+    let n = 0; const M = this.pix;
+    for (const p of this.pixL) {
+      p.t += rdt;
+      if (!p.s || p.t > p.life) { p.s = pick(this.samples); p.t = 0; p.life = rand(3, 6); }
+      const k = p.t / p.life, out = Math.sin(k * Math.PI) * p.out;   // drift off, come back
+      _v2.copy(p.s.p).addScaledVector(p.s.n, out); p.s.P.parent.localToWorld(_v2);
+      _q1.setFromEuler(_e1.set(p.t * p.spin, p.t * p.spin * 0.7, 0)); _s1.setScalar(p.size * (k < 0.1 ? k * 10 : k > 0.9 ? (1 - k) * 10 : 1));
+      _m1.compose(_v2, _q1, _s1); M.setMatrixAt(n++, _m1);
+    }
+    M.count = n; M.instanceMatrix.needsUpdate = true;
+    M.visible = this.wire < 0.5 && this.eraseT < 0 && this.root.visible;
+  }
+  // smears where it moves fast (the hands, the head)
+  updateTrails(rdt) {
+    const L = this.trailL;
+    for (const A of this.arms) {
+      A.wr.getWorldPosition(_v3);
+      const v = _v4.subVectors(_v3, A.prev), sp = v.length() / Math.max(rdt, 1e-3);
+      if (sp > 2.2 && A.prev.lengthSq() > 0) {
+        for (let i = 0; i < 2; i++) {
+          const T = L.length < 96 ? (L.push({ p: new THREE.Vector3(), d: new THREE.Vector3(), t: 0, c: 0, w: 1 }), L[L.length - 1]) : L[this.trailI++ % 96];
+          T.p.copy(_v3).lerp(A.prev, i * 0.5); T.d.copy(v).normalize(); T.t = 0; T.c = Math.random(); T.w = rand(1.5, 3.5) * Math.min(3, sp / 4);
+        }
+      }
+      A.prev.copy(_v3);
+    }
+    let n = 0;
+    for (const T of L) {
+      T.t += rdt; if (T.t > 0.5) continue;
+      _m1.lookAt(Head.pos, T.p, UP); _q1.setFromRotationMatrix(_m1);
+      _s1.set(T.w, 0.5 + T.c, 1); _m1.compose(T.p, _q1, _s1); this.trails.setMatrixAt(n, _m1);
+      this.trailA.array[n] = 1 - T.t / 0.5; this.trailC.array[n] = T.c; n++;
+    }
+    this.trails.count = n;
+    if (n) { this.trails.instanceMatrix.needsUpdate = true; this.trailA.needsUpdate = true; this.trailC.needsUpdate = true; }
+  }
+  dispose() {
+    disposeObject(this.root); disposeObject(this.pix); disposeObject(this.trails);
+    for (const t of this.ownTex || []) t.dispose();
+    this.textTex.dispose();
+  }
+}
+const NULL_IDLE_WORDS = ['untitled', 'delete', 'are you sure', 'empty', 'null', 'undo', 'recycle', 'cancel', 'goodbye', 'save as', '?', 'file', 'last', 'after'];
+
+// ============================================================================
+//  NullKit - THE NULL's props, and the shared visuals the secret's attacks draw with (built with the fight,
+//  freed after it, like every other kit):
+//    - the battle box, broken: its edges in floating fragments that realign into a full box on every bar
+//      line and drift a little apart between bars
+//    - debris: what's left of every arena (manor wallpaper strips, hex characters, circus bunting, desert
+//      rocks), low-poly and inverted, drifting round the box; some orbit the black hole and spaghettify
+//    - immediate-mode pools the patterns draw into each frame (one draw call each): marching-ants edges
+//      (selections, the cage), missing-texture blocks, ghost SOULs, error-text curtains, the mirror sheet,
+//      the projected mini black hole
+//    - the path recorder (UNDO HISTORY replays where your SOUL was)
+// ============================================================================
+const NULL_TELE = 0xc8ff00;   // the sickly highlight every telegraph in this fight uses
+const NULL_ANTS_VS = `
+  varying float vAlong; varying vec3 vCol;
+  void main() {
+    float len = length(instanceMatrix[2].xyz);   // each edge runs along its local z, scaled to its length
+    vAlong = (position.z + 0.5) * len; vCol = instanceColor;
+    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+  }`;
+const NULL_ANTS_FS = `
+  uniform float uTime; varying float vAlong; varying vec3 vCol;
+  void main() { float d = step(0.5, fract(vAlong * 6.5 - uTime)); gl_FragColor = vec4(mix(vCol * 0.12, vCol, d), 1.0);
+    #include <colorspace_fragment>
+  }`;
+// missing texture: a pink / black checker in world space; r = opacity, g = an outline in the telegraph colour
+const NULL_CHECK_VS = `
+  varying vec3 vW; varying vec3 vL; varying vec2 vC;
+  void main() { vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vW = w.xyz; vL = position; vC = instanceColor.rg;
+    gl_Position = projectionMatrix * viewMatrix * w; }`;
+const NULL_CHECK_FS = `
+  varying vec3 vW; varying vec3 vL; varying vec2 vC;
+  void main() {
+    vec3 q = floor(vW / 0.16); float c = mod(q.x + q.y + q.z, 2.0);
+    vec3 col = c > 0.5 ? vec3(1.0, 0.0, 1.0) : vec3(0.0);
+    vec3 a = step(vec3(0.46), abs(vL)); float e = step(1.5, a.x + a.y + a.z);
+    col = mix(col, mix(vec3(1.0), vec3(0.784, 1.0, 0.0), vC.y), e);
+    gl_FragColor = vec4(col, vC.x * (0.75 + 0.25 * e));
+    #include <colorspace_fragment>
+  }`;
+// the mirror sheet: a faint shimmer you can see through
+const NULL_MIRROR_FS = `
+  uniform float uTime; uniform float uA; varying vec3 vW; varying vec2 vUv;
+  void main() {
+    float s = 0.5 + 0.5 * sin(vW.x * 7.0 + vW.y * 5.0 + uTime * 2.6) * sin(vW.z * 6.0 - vW.y * 3.0 - uTime * 1.9);
+    vec2 e = min(vUv, 1.0 - vUv); float edge = 1.0 - smoothstep(0.0, 0.025, min(e.x, e.y));
+    gl_FragColor = vec4(mix(vec3(0.55, 1.0, 1.0), vec3(1.0), s), uA * (0.05 + 0.1 * s + 0.5 * edge));
+    #include <colorspace_fragment>
+  }`;
+const NULL_MIRROR_VS = `varying vec3 vW; varying vec2 vUv; void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+// STACK TRACE: a sheet of falling error text (the atlas' letters and digits, scrolling down per column);
+// one wide column reads OK, OK, OK in the telegraph colour and is the gap. uPour: how far it has poured in
+const NULL_CURTAIN_FS = `
+  uniform sampler2D uMap; uniform float uTime; uniform float uOk; uniform float uPour; uniform float uA; uniform float uSeed;
+  varying vec2 vUv;
+  ${GlyphAtlas.GLSL}
+  float hh(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main() {
+    if (vUv.y < 1.0 - uPour) discard;
+    float W = 6.0, sub = 3.0, R = 16.0;
+    float wc = floor(vUv.x * W), gc = floor(vUv.x * W * sub);
+    vec2 cell; float g;
+    if (abs(wc - uOk) < 0.5) {
+      float row = floor(vUv.y * R * 0.5); vec2 f = fract(vec2(vUv.x * W, vUv.y * R * 0.5));
+      float glyph = mod(row, 2.0) < 0.5 ? 47.0 : 43.0;   // 'O' / 'K'
+      vec2 uv = vec2((f.x - 0.2) / 0.6, f.y);
+      float on = uv.x > 0.0 && uv.x < 1.0 ? texture2D(uMap, glyphUV(glyph, uv)).a : 0.0;
+      if (on < 0.5) discard;
+      gl_FragColor = vec4(vec3(0.784, 1.0, 0.0), uA);
+      #include <colorspace_fragment>
+      return;
+    }
+    float sp = 2.0 + 3.0 * hh(vec2(gc, uSeed));
+    float rf = vUv.y * R + uTime * sp, row = floor(rf);
+    float hc = hh(vec2(gc * 1.7 + uSeed, row));
+    g = hc < 0.3 ? 16.0 + floor(hh(vec2(row, gc)) * 10.0) : 33.0 + floor(hh(vec2(gc, row + 3.1)) * 26.0);
+    vec2 f = fract(vec2(vUv.x * W * sub, rf));
+    float a = texture2D(uMap, glyphUV(g, f)).a;
+    float lead = fract(hh(vec2(gc, 9.0)) - uTime * sp / R * 0.6 + vUv.y * 0.9);
+    vec3 col = mix(vec3(0.5, 0.95, 1.0), vec3(1.0), lead) * (0.35 + 0.65 * lead);
+    if (hh(vec2(row, gc + uSeed)) > 0.93) col = vec3(1.0, 0.16, 0.7);
+    gl_FragColor = vec4(mix(vec3(0.03, 0.03, 0.05), col, a), uA * 0.94);
+    #include <colorspace_fragment>
+  }`;
+const NULL_CURTAIN_VS = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+// inverted debris / the box: a shared uniform flips their colours with the phase 3 inversion
+function nullInvertable(mat, U) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uInv = U;
+    sh.fragmentShader = 'uniform float uInv;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0) - diffuseColor.rgb, uInv);');
+  };
+  return mat;
+}
+// flat shading baked into vertex colours (THE NULL has no lights for these: they are lit by nothing)
+function nullBake(geo, col, k0 = 0.45) {
+  const g = geo.index ? geo.toNonIndexed() : geo; g.computeVertexNormals();
+  const n = g.attributes.normal, c = new Float32Array(n.count * 3), L = new THREE.Vector3(0.3, 0.8, 0.5).normalize(), C = new THREE.Color(col);
+  for (let i = 0; i < n.count; i++) { const d = Math.max(0, n.getX(i) * L.x + n.getY(i) * L.y + n.getZ(i) * L.z), k = k0 + (1 - k0) * d; c[i * 3] = C.r * k; c[i * 3 + 1] = C.g * k; c[i * 3 + 2] = C.b * k; }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  return g;
+}
+const NullKit = {
+  ready: false,
+  init() {
+    if (this.ready) return; this.ready = true;
+    const inst = (geo, mat, cap) => {
+      const m = new THREE.InstancedMesh(geo, mat, cap);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.setColorAt(0, _c1.setRGB(1, 1, 1)); m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0; m.frustumCulled = false; m.visible = false; scene.add(m); return m;
+    };
+    this.invU = { value: 0 };
+    // ---- the box, broken: 12 edges x 3 fragments
+    this.frags = inst(new THREE.BoxGeometry(1, 1, 1), nullInvertable(new THREE.MeshBasicMaterial({ color: 0xffffff }), this.invU), 36);
+    this.fragL = [];
+    for (let e = 0; e < 12; e++) for (let k = 0; k < 3; k++) this.fragL.push({ e, u0: k / 3 + 0.012, u1: (k + 1) / 3 - 0.012, d: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize().multiplyScalar(rand(0.04, 0.11)), r: new THREE.Vector3(rand(-0.25, 0.25), rand(-0.25, 0.25), rand(-0.25, 0.25)) });
+    for (let i = 0; i < 36; i++) this.frags.setColorAt(i, _c1.setRGB(1, 1, 1));
+    this.frags.count = 36; this.frags.visible = true;
+    // ---- debris (inverted, low-poly): wallpaper strips, hex characters, bunting, rocks
+    const wall = canvasTex(32, 128, (g) => { g.fillStyle = '#c8f0aa'; g.fillRect(0, 0, 32, 128); g.fillStyle = '#5a8a6a'; for (let y = 6; y < 128; y += 22) { g.fillRect(14, y, 4, 12); g.fillRect(9, y + 4, 14, 4); } g.fillStyle = '#ffffff'; g.fillRect(0, 0, 2, 128); g.fillRect(30, 0, 2, 128); });
+    const hex = canvasTex(64, 32, (g) => { g.clearRect(0, 0, 64, 32); PixelFont.draw(g, '0x', 4, 2, 2, '#ff00c8'); PixelFont.draw(g, 'FF', 30, 2, 2, '#ff00c8'); PixelFont.draw(g, '3A', 4, 18, 2, '#00fff0'); PixelFont.draw(g, '00', 30, 18, 2, '#ffffff'); });
+    this.ownTex = [wall, hex];
+    const bmat = () => nullInvertable(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }), this.invU);
+    const strip = new THREE.PlaneGeometry(1.4, 5.5, 1, 6); { const p = strip.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(p.getY(i) * 0.9) * 0.35); }
+    this.deb = [
+      inst(strip, nullInvertable(new THREE.MeshBasicMaterial({ map: wall, side: THREE.DoubleSide }), this.invU), NULL_DEB_N[0]),
+      inst(new THREE.PlaneGeometry(2.4, 1.2), nullInvertable(new THREE.MeshBasicMaterial({ map: hex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }), this.invU), NULL_DEB_N[1]),
+      inst(nullBake(new THREE.ConeGeometry(0.7, 1.6, 3, 1).rotateX(Math.PI).scale(1, 1, 0.1), 0xffffff, 0.7), bmat(), NULL_DEB_N[2]),
+      inst(nullBake(new THREE.DodecahedronGeometry(1, 0), 0xffffff, 0.35), bmat(), NULL_DEB_N[3]),
+    ];
+    // instance colours: the palette inverted, never the rule blue / orange
+    const tint = [[0xffffff], [0xffffff], [0x17d7c3, 0xff00c8, 0xffffff, 0x00fff0], [0x7a6a8a, 0x9a8aa8, 0x5a5a6a]];
+    this.debL = [];
+    this.deb.forEach((m, kind) => {
+      for (let i = 0; i < NULL_DEB_N[kind]; i++) {
+        const hole = i % 3 === 0 && kind !== 1;
+        // (near the box: a sector to the sides or behind; the forward cone, toward the boss, stays clear)
+        const a0 = hole ? rand(0, TAU) : rand(-Math.PI / 2 + 1.25, Math.PI * 1.5 - 1.25);
+        const D = { kind, hole, a0, a: a0, r: hole ? rand(18, 46) : rand(11, 30), ph: rand(0, TAU), y: rand(-2, 16), sp: rand(0.012, 0.035) * (chance(0.5) ? 1 : -1),
+          tilt: rand(-0.4, 0.4), s: kind === 3 ? rand(0.6, 2.4) : rand(0.7, 1.6), spin: new THREE.Vector3(rand(-0.3, 0.3), rand(-0.3, 0.3), rand(-0.3, 0.3)), rot: new THREE.Euler(rand(0, 6), rand(0, 6), rand(0, 6)), fall: rand(0, 1) };
+        this.debL.push(D);
+        m.setColorAt(i, _c1.setHex(pick(tint[kind])));
+      }
+      m.count = NULL_DEB_N[kind]; m.visible = true; m.instanceColor.needsUpdate = true;
+    });
+    // ---- the immediate-mode pools
+    this.antsU = { uTime: { value: 0 } };
+    this.ants = inst(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({ uniforms: this.antsU, vertexShader: NULL_ANTS_VS, fragmentShader: NULL_ANTS_FS }), 160);
+    this.checks = inst(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({ vertexShader: NULL_CHECK_VS, fragmentShader: NULL_CHECK_FS, transparent: true, depthWrite: false }), 96);
+    // ghost SOULs: hollow hearts in the SOUL's inverted colour, and their "-2 BARS" tags
+    const solid = (r, c) => r >= 0 && r < HEART_BITS.length && c >= 0 && c < 7 && HEART_BITS[r][c] === '#';
+    const rim = (r, c) => !(solid(r - 1, c) && solid(r + 1, c) && solid(r, c - 1) && solid(r, c + 1));
+    this.ghosts = inst(buildVoxelHeart(0.022, 0.03, rim), new THREE.MeshBasicMaterial({ color: 0xffffff }), 8);
+    this.tags = [];
+    for (const label of ['-2 BARS', '-1 BAR']) {
+      const t = canvasTex(64, 16, (g) => { g.clearRect(0, 0, 64, 16); PixelFont.draw(g, label, Math.round((64 - PixelFont.width(label, 1)) / 2), 4, 1, '#00ffcc'); });
+      this.ownTex.push(t);
+      this.tags.push(inst(new THREE.PlaneGeometry(0.16, 0.04), new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.4, depthWrite: false }), 8));
+    }
+    // the mirror sheet
+    this.mirrorU = { uTime: { value: 0 }, uA: { value: 1 } };
+    this.mirror = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({ uniforms: this.mirrorU, vertexShader: NULL_MIRROR_VS, fragmentShader: NULL_MIRROR_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    this.mirror.visible = false; this.mirror.frustumCulled = false; scene.add(this.mirror);
+    // the projected mini black hole (EVENT HORIZON)
+    this.mini = new THREE.Group();
+    this.mini.add(new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 14), new THREE.MeshBasicMaterial({ color: 0x000000 })));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.008, 6, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.mini.add(ring); this.miniRing = ring;
+    this.mini.visible = false; scene.add(this.mini);
+    // STACK TRACE's curtains
+    this.curtains = [];
+    for (let i = 0; i < 3; i++) {
+      const U = { uMap: { value: GlyphAtlas.build() }, uTime: { value: 0 }, uOk: { value: 0 }, uPour: { value: 0 }, uA: { value: 1 }, uSeed: { value: i * 7.3 } };
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({ uniforms: U, vertexShader: NULL_CURTAIN_VS, fragmentShader: NULL_CURTAIN_FS, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+      m.visible = false; m.frustumCulled = false; scene.add(m);
+      this.curtains.push({ m, U, active: false });
+    }
+    // the path recorder
+    this.rec = { b: new Float32Array(512), p: new Float32Array(512 * 3), i: 0, n: 0 };
+    this.nA = 0; this.nC = 0; this.nG = 0; this.nT = [0, 0];
+  },
+  // ---------------------------------------------------------------- immediate mode (patterns call these in update)
+  // one marching-ants edge from a to b (colour hex, brightness k)
+  antsEdge(a, b, color, k = 1, w = 0.014) {
+    if (this.nA >= 160) return;
+    _v8.subVectors(b, a); const len = _v8.length(); if (len < 1e-4) return;
+    _nkq.setFromUnitVectors(_nkZ.set(0, 0, 1), _v8.divideScalar(len));
+    _nkM.addVectors(a, b).multiplyScalar(0.5); _nks.set(w, w, len);
+    _nkm.compose(_nkM, _nkq, _nks); this.ants.setMatrixAt(this.nA, _nkm); this.ants.setColorAt(this.nA, _c1.setHex(color).multiplyScalar(k)); this.nA++;
+  },
+  // a selection box (its 12 edges) from min to max
+  antsBox(mn, mx, color, k = 1, w = 0.014) {
+    const c = (i, o) => o.set(i & 1 ? mx.x : mn.x, i & 2 ? mx.y : mn.y, i & 4 ? mx.z : mn.z);
+    for (const [i, j] of NULL_BOX_EDGES) this.antsEdge(c(i, _nkA), c(j, _nkB), color, k, w);
+  },
+  // a missing-texture block (centre, size), opacity a, outline g (0 white, 1 the telegraph colour)
+  check(c, size, a, g = 0) {
+    if (this.nC >= 96) return;
+    _nkm.compose(c, _nkq.identity(), size); this.checks.setMatrixAt(this.nC, _nkm); this.checks.setColorAt(this.nC, _c1.setRGB(a, g, 0)); this.nC++;
+  },
+  // a ghost SOUL at p (tag 0: -2 BARS, 1: -1 BAR)
+  ghost(p, tag = 0, k = 1) {
+    if (this.nG >= 8) return;
+    Head.update();
+    _nkm.lookAt(Head.pos, p, UP); _nkq.setFromRotationMatrix(_nkm);
+    _nks.setScalar((G.xr ? 1 : 0.7) * 1.15); _nkm.compose(p, _nkq, _nks); this.ghosts.setMatrixAt(this.nG, _nkm); this.ghosts.setColorAt(this.nG, _c1.setRGB(0, k, 0.8 * k)); this.nG++;
+    const T = this.tags[tag], n = this.nT[tag]; if (n >= 8) return;
+    _nkA.copy(p); _nkA.y += 0.12; _nkm.lookAt(Head.pos, _nkA, UP); _nkq.setFromRotationMatrix(_nkm);
+    _nkm.compose(_nkA, _nkq, _nks.setScalar(1)); T.setMatrixAt(n, _nkm); this.nT[tag]++;
+  },
+  // flush what the patterns drew this frame, and start the next
+  flush() {
+    const set = (m, n) => { m.count = n; m.visible = n > 0; if (n) { m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; } };
+    set(this.ants, this.nA); set(this.checks, this.nC); set(this.ghosts, this.nG); set(this.tags[0], this.nT[0]); set(this.tags[1], this.nT[1]);
+    this.nA = this.nC = this.nG = 0; this.nT[0] = this.nT[1] = 0;
+  },
+  // ---------------------------------------------------------------- the recorder
+  record() {
+    const R = this.rec, s = G.soul.pos, i = R.i;
+    R.b[i] = G.clock.beat; R.p[i * 3] = s.x; R.p[i * 3 + 1] = s.y; R.p[i * 3 + 2] = s.z;
+    R.i = (i + 1) % 512; R.n = Math.min(512, R.n + 1);
+  },
+  // where the SOUL was at beat b (false if that's older than the buffer holds)
+  posAt(b, out) {
+    const R = this.rec; if (!R.n) return false;
+    let j = (R.i - 1 + 512) % 512;
+    for (let k = 0; k < R.n - 1; k++) {
+      const p = (j - 1 + 512) % 512;
+      if (R.b[p] <= b && R.b[j] >= b) {
+        const t = R.b[j] > R.b[p] ? (b - R.b[p]) / (R.b[j] - R.b[p]) : 0;
+        out.set(lerp(R.p[p * 3], R.p[j * 3], t), lerp(R.p[p * 3 + 1], R.p[j * 3 + 1], t), lerp(R.p[p * 3 + 2], R.p[j * 3 + 2], t));
+        return true;
+      }
+      if (R.b[p] > R.b[j]) return false;   // (a seek: the beat count jumped back)
+      j = p;
+    }
+    return false;
+  },
+  clearRec() { this.rec.n = 0; this.rec.i = 0; },
+  // ---------------------------------------------------------------- per frame
+  update(rdt, inv) {
+    if (!this.ready) return;
+    const A = G.arena, t = G.time, c = G.clock;
+    this.invU.value = inv;
+    this.antsU.uTime.value = t * (Flash.reduced ? 1.2 : 2.6);
+    this.mirrorU.uTime.value = t;
+    // the box: aligned on every bar line, drifting apart (a few cm) in between
+    const bp = c.running ? c.barPhase : 0, k = Math.pow(Math.sin(Math.PI * bp), 2) * (A.opacity > 0.5 ? 1 : 0.3);
+    const show = A.visible && A.opacity > 0.02;
+    this.frags.visible = show;
+    if (show) {
+      const th = 0.022 * (1 + 0.3 * G.fx.beatPulse);
+      let i = 0;
+      for (const F of this.fragL) {
+        const [a, b] = NULL_BOX_EDGES[F.e];
+        A.corner(a, _nkA); A.corner(b, _nkB);
+        _v8.subVectors(_nkB, _nkA);
+        _nkM.copy(_nkA).addScaledVector(_v8, (F.u0 + F.u1) / 2).addScaledVector(F.d, k);
+        const len = _v8.length() * (F.u1 - F.u0);
+        _nkq.setFromUnitVectors(_nkZ.set(0, 0, 1), _v8.normalize());
+        _nkq2.setFromEuler(_nke.set(F.r.x * k, F.r.y * k, F.r.z * k)); _nkq.premultiply(_nkq2);
+        _nkm.compose(_nkM, _nkq, _nks.set(th, th, len)); this.frags.setMatrixAt(i++, _nkm);
+      }
+      this.frags.instanceMatrix.needsUpdate = true;
+      this.frags.material.color.setScalar(A.opacity);
+    }
+    // debris
+    const H = SecretFight.stage ? SecretFight.stage.holePos : _nkA.set(A.center.x, 34, A.center.z - 95);
+    const la = SecretFight.stage ? SecretFight.stage.la : 0, dk = 1 - smooth01(la * 1.4);   // THE BLANK: only line art is left
+    const n = [0, 0, 0, 0];
+    for (const D of this.debL) {
+      if (D.hole) D.a += D.sp * rdt; else D.a = D.a0 + 0.45 * Math.sin(t * Math.abs(D.sp) * 2 + D.ph);
+      D.rot.x += D.spin.x * rdt; D.rot.y += D.spin.y * rdt; D.rot.z += D.spin.z * rdt;
+      let sx = D.s, sy = D.s, sz = D.s;
+      if (D.hole) {
+        // spaghettifying: it falls in along its orbit, stretched along the line to the hole and thinned across it
+        D.fall += rdt * 0.018; if (D.fall > 1) { D.fall = 0; D.r = rand(30, 46); }
+        const r = D.r * (1 - 0.88 * D.fall * D.fall);
+        _nkM.set(H.x + Math.cos(D.a) * r, H.y + Math.sin(D.a) * r * 0.35 + D.y * 0.3, H.z + Math.sin(D.a) * r * 0.5);
+        _v8.subVectors(H, _nkM).normalize();
+        const st = 1 + 7 * D.fall * D.fall, th = 1 / Math.sqrt(st);
+        _nkq.setFromUnitVectors(UP, _v8); _nkq2.setFromEuler(D.rot); _nkq.multiply(_nkq2);
+        sx = D.s * th; sy = D.s * st; sz = D.s * th;
+        if (r < 7.5) { sx = sy = sz = 0.001; }
+      } else {
+        _nkM.set(A.center.x + Math.cos(D.a) * D.r, D.y + Math.sin(t * 0.2 + D.a * 3) * 0.6, A.center.z - 6 + Math.sin(D.a) * D.r);
+        _nkq.setFromEuler(D.rot);
+      }
+      _nkm.compose(_nkM, _nkq, _nks.set(sx * dk + 1e-4, sy * dk + 1e-4, sz * dk + 1e-4));
+      this.deb[D.kind].setMatrixAt(n[D.kind]++, _nkm);
+    }
+    for (const m of this.deb) m.instanceMatrix.needsUpdate = true;
+    // the curtains' clocks
+    for (const C of this.curtains) if (C.active) C.U.uTime.value = t;
+    this.miniRing.rotation.z += rdt * 2;
+  },
+  // every attack visual off (an attack ended early, a retry, the end)
+  hideAll() {
+    if (!this.ready) return;
+    this.mirror.visible = false; this.mini.visible = false;
+    for (const C of this.curtains) { C.active = false; C.m.visible = false; }
+    this.nA = this.nC = this.nG = 0; this.nT[0] = this.nT[1] = 0; this.flush();
+  },
+  // compile its shaders in the dark
+  prewarm() {
+    if (!this.ready) return;
+    const was = [];
+    for (const o of this.roots) { was.push(o.visible); o.visible = true; }
+    secretPrewarm(this.roots);
+    this.roots.forEach((o, i) => { o.visible = was[i]; });
+  },
+};
+const NULL_DEB_N = [14, 16, 24, 14];   // the debris pools' sizes, by kind
+const NULL_BOX_EDGES = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+const _nkA = new THREE.Vector3(), _nkB = new THREE.Vector3(), _nkM = new THREE.Vector3(), _nkZ = new THREE.Vector3(), _nkm = new THREE.Matrix4(), _nkq = new THREE.Quaternion(), _nkq2 = new THREE.Quaternion(), _nks = new THREE.Vector3(), _nke = new THREE.Euler();
+registerKit(NullKit, function () { this.fragL = []; this.debL = []; this.deb = null; this.curtains = []; this.tags = []; for (const t of this.ownTex || []) t.dispose(); this.ownTex = null; });
+
+// ============================================================================
+//  _____'s attacks: the hardest in the game, and fair. Every telegraph is at least 2 beats (0.68 s at 176
+//  BPM) in the sickly #c8ff00; heavy hits land on the half-time pulse (even beats), streams run on the
+//  beat; there is always a way out (debugAssert checks the escape is reachable at a comfortable speed).
+//  Hits deal 7-9 (9-11 in phase 4).
+//    phase 1 NULL POINTER: MARCHING ANTS, MISSING TEXTURE, UNDO HISTORY
+//    phase 2 ERASURE:      DELETED_K1DD1E, ECHOES, STACK TRACE (REBUILD only)
+//    phase 3 SEGFAULT:     EVENT HORIZON, MIRROR BUFFER, FRAME SKIP
+//    phase 4 _____:        DELETE UI (with every earlier attack in 2-bar fragments), THE BLANK
+// ============================================================================
+class NullPattern extends Pattern {
+  hit() { return randi(this.dmg - 1, this.dmg + 1); }
+  // the ctx time of pattern beat n
+  tOf(n) { return G.clock.timeOfBeat(this.startBeat + n); }
+  pellet(x, y, z, look) {
+    const b = G.bullets.spawn(look || 'pellet', x, y, z); if (!b) return null;
+    b.dmg = this.hit(); b.owner = this; b.life = 8;
+    return b;
+  }
+  // can the SOUL get from a to b in `beats` at a comfortable speed? (the reachability rule)
+  reach(a, b, beats, slack = 0) { return a.distanceTo(b) - slack <= CONFIG.COMFORT_SPEED * beats * this.bd + 1e-3; }
+  killOwn() { G.bullets.forEachFrom(this, (b) => { b.die(); b.collide = false; }); }
+  onEnd() { this.killOwn(); }
+}
+// an axis-aligned region of the box
+function nullRegion(cx, cy, cz, sx, sy, sz) {
+  const A = G.arena, mn = new THREE.Vector3(cx - sx / 2, cy - sy / 2, cz - sz / 2), mx = new THREE.Vector3(cx + sx / 2, cy + sy / 2, cz + sz / 2);
+  mn.max(A.min); mx.min(A.max);
+  return { mn, mx };
+}
+const nullIn = (p, R, m = 0) => p.x > R.mn.x + m && p.x < R.mx.x - m && p.y > R.mn.y + m && p.y < R.mx.y - m && p.z > R.mn.z + m && p.z < R.mx.z - m;
+function nullBoxDist(p, R) {
+  const dx = Math.max(R.mn.x - p.x, 0, p.x - R.mx.x), dy = Math.max(R.mn.y - p.y, 0, p.y - R.mx.y), dz = Math.max(R.mn.z - p.z, 0, p.z - R.mx.z);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+// how deep inside a box p is (0 at a wall, negative outside)
+function nullDepth(p, R) { return Math.min(p.x - R.mn.x, R.mx.x - p.x, p.y - R.mn.y, R.mx.y - p.y, p.z - R.mn.z, R.mx.z - p.z); }
+
+// ---------------------------------------------------------------------------
+//  1. MARCHING ANTS - its marquee hand drags 3D selection boxes round the box. Their dashed outlines march
+//     for 2 beats, then everything inside is DELETED (a cut, and the space goes missing texture for a beat).
+//     Later waves add INVERSE SELECTIONS (outlined in the telegraph colour) where only inside is safe.
+// ---------------------------------------------------------------------------
+class MarchingAnts extends NullPattern {
+  onStart() { NullKit.init(); this.sels = []; this.wave = 0; this.first = this.fragment ? 0 : 2; }
+  onBeat(n, when) {
+    if (this.spawning && n >= this.first && (n - this.first) % 6 === 0 && n + 3 <= this.beats) this.spawnWave(n);
+    for (const S of this.sels) if (!S.cut && n >= S.del) this.cut(S, when);
+  }
+  onHalf(h, when) { if (this.sels.some((S) => !S.cut)) { G.audio.sfx.ants(when); G.audio.sfx.ants(when + this.bd / 4); } }
+  spawnWave(n) {
+    const A = G.arena, s = G.soul.pos, w = this.wave++, k = this.intensity;
+    const inverse = w >= 2 && (w % 2 === 0 || k >= 2.2);
+    const del = n + 2 + (n % 2);   // on the half-time pulse, at least 2 beats out
+    const tries = 10;
+    for (let t = 0; t < tries; t++) {
+      const list = [];
+      let inv = null;
+      if (inverse) {
+        // a safe box near you (you can reach its middle well in time), then normal selections that cut into it
+        const c = _v1.set(s.x + rand(-0.55, 0.55), s.y + rand(-0.3, 0.3), s.z + rand(-0.5, 0.5));
+        A.clampPoint(c, 0.5);
+        inv = nullRegion(c.x, c.y, c.z, rand(0.75, 1.0), rand(0.7, 0.9), rand(0.75, 1.0));
+        list.push(Object.assign(inv, { inverse: true }));
+      }
+      const nN = inverse ? (k >= 2.2 ? 2 : 1) : Math.min(4, 2 + Math.floor(w / 2) + (k >= 2.2 ? 1 : 0));
+      for (let i = 0; i < nN; i++) {
+        let c;
+        if (i === 0) c = _v2.copy(s).add(_v3.set(rand(-0.3, 0.3), rand(-0.2, 0.2), rand(-0.3, 0.3)));   // the first one always takes your spot
+        else if (inv) c = _v2.set(rand(inv.mn.x, inv.mx.x), rand(inv.mn.y, inv.mx.y), rand(inv.mn.z, inv.mx.z));
+        else c = A.randomPoint(_v2, 0.4);
+        const big = inv ? 0 : i === 0 ? 0.5 : 1;
+        const R = nullRegion(c.x, c.y, c.z, inv ? rand(0.35, 0.55) : rand(0.7, 0.9 + 0.8 * big), inv ? rand(0.35, 0.6) : rand(0.6, 0.8 + 0.7 * big), inv ? rand(0.35, 0.55) : rand(0.7, 0.9 + 0.8 * big));
+        list.push(Object.assign(R, { inverse: false }));
+      }
+      // an escape: somewhere you can reach in the 2 beats that is outside every selection (and inside the inverse one)
+      const safe = this.findSafe(list, s, del - n);
+      if (safe || t === tries - 1) {
+        debugAssert(!!safe, 'marching ants: no reachable safe spot');
+        for (const R of list) this.sels.push(Object.assign(R, { t0: n, del, cut: false, cutT: -1, key: { grazed: false } }));
+        if (G.boss && G.boss.reach) G.boss.reach(_v4.addVectors(list[0].mn, list[0].mx).multiplyScalar(0.5));
+        G.audio.sfx.tone({ type: 'square', f: 1800, f2: 2400, dur: 0.04, vol: 0.03 });
+        return;
+      }
+    }
+  }
+  // a reachable point clear of every normal selection (and inside the inverse one, if there is one)
+  findSafe(list, s, beats) {
+    const A = G.arena, r = G.soul.hitR + 0.05, inv = list.find((R) => R.inverse), maxD = CONFIG.COMFORT_SPEED * beats * this.bd;
+    for (let i = 0; i < 160; i++) {
+      const p = i === 0 ? _v5.copy(s) : _v5.set(s.x + rand(-maxD, maxD), s.y + rand(-maxD, maxD) * 0.7, s.z + rand(-maxD, maxD));
+      if (p.distanceTo(s) > maxD || !A.contains(p, -r)) continue;
+      if (inv && !nullIn(p, inv, r)) continue;
+      if (list.some((R) => !R.inverse && nullBoxDist(p, R) < r)) continue;
+      return p.clone();
+    }
+    return null;
+  }
+  cut(S, when) {
+    S.cut = true; S.cutT = 0;
+    G.audio.sfx.cut(when); G.audio.sfx.deleteBuzz();
+    if (G.boss && G.boss.reach) G.boss.reach(null);
+  }
+  update(dt) {
+    super.update(dt);
+    const pb = this.pb, A = G.arena, red = Flash.reduced;
+    for (const S of this.sels) {
+      if (S.cut) S.cutT += dt / this.bd;
+      if (S.cut && S.cutT > 1.2) continue;
+      const col = S.inverse ? NULL_TELE : 0xffffff;
+      if (!S.cut) {
+        // dragged open from a corner over the first beat, then the ants march
+        const g = clamp((pb - S.t0) / 1, 0.05, 1);
+        _v1.copy(S.mn); _v2.lerpVectors(S.mn, S.mx, easeOut(g));
+        const warn = clamp(pb - S.del + 1, 0, 1);
+        NullKit.antsBox(_v1, _v2, col, 0.75 + 0.25 * Math.cos(pb * TAU) + 0.4 * warn, S.inverse ? 0.02 : 0.016);
+        if (warn > 0 && !S.inverse) { _v3.addVectors(S.mn, S.mx).multiplyScalar(0.5); _v4.subVectors(S.mx, S.mn); NullKit.check(_v3, _v4, 0.08 * warn, 1); }
+      } else {
+        // DELETED: missing texture for a beat (a cut flash first; Reduced: it fades in)
+        const f = red ? clamp(S.cutT / 0.35, 0, 1) : 1, a = (S.cutT < 0.12 && !red ? 1 : 0.85) * f * clamp((1.2 - S.cutT) / 0.2, 0, 1);
+        if (!S.inverse) { _v3.addVectors(S.mn, S.mx).multiplyScalar(0.5); _v4.subVectors(S.mx, S.mn); NullKit.check(_v3, _v4, a, 0); }
+        else this.fillOutside(S, a * 0.55);
+        NullKit.antsBox(S.mn, S.mx, col, 1, 0.02);
+        if (S.cutT < 1) {
+          if (!S.inverse) Haz.aabb(S.mn, S.mx, RULE.WHITE, this.dmg, S.key);
+          else { const d = nullDepth(G.soul.pos, S); if (d < G.soul.hitR * 0.5) Haz.resolve(0, RULE.WHITE, this.dmg, S.key, null); else if (d < G.soul.grazeR * 0.6) Haz.resolve(G.soul.hitR + 0.01, RULE.WHITE, this.dmg, S.key, null); }
+        }
+      }
+    }
+    if (this.sels.length > 24) this.sels = this.sels.filter((S) => !S.cut || S.cutT < 1.2);
+    void A;
+  }
+  // an inverse selection's outside: the box minus it, as six slabs
+  fillOutside(S, a) {
+    const A = G.arena, m = A.min, M = A.max, b0 = S.mn, b1 = S.mx;
+    const slab = (x0, y0, z0, x1, y1, z1) => { if (x1 - x0 < 0.01 || y1 - y0 < 0.01 || z1 - z0 < 0.01) return; NullKit.check(_v6.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), _v7.set(x1 - x0, y1 - y0, z1 - z0), a, 0); };
+    slab(m.x, m.y, m.z, b0.x, M.y, M.z); slab(b1.x, m.y, m.z, M.x, M.y, M.z);
+    slab(b0.x, m.y, m.z, b1.x, b0.y, M.z); slab(b0.x, b1.y, m.z, b1.x, M.y, M.z);
+    slab(b0.x, b0.y, m.z, b1.x, b1.y, b0.z); slab(b0.x, b0.y, b1.z, b1.x, b1.y, M.z);
+  }
+  isIdle() { return this.sels.every((S) => S.cut && S.cutT > 1.2); }
+  onEnd() { super.onEnd(); if (G.boss && G.boss.reach) G.boss.reach(null); }
+}
+MarchingAnts.prototype.callouts = ['dont touch the outlines!!', 'GET OUT OF THE BOX', 'green box = stay IN it', 'its selecting us'];
+
+// ---------------------------------------------------------------------------
+//  2. MISSING TEXTURE - the floor grid flips into pink / black checker columns that shoot up in rippling
+//     rows on the beat. Where the ripple starts and which way it runs shows 2 beats ahead; each row's cells
+//     light 2 beats before they erupt, and the cells that stay dark are the gaps (a winding path you follow).
+// ---------------------------------------------------------------------------
+class MissingTexture extends NullPattern {
+  onStart() { NullKit.init(); this.rips = []; this.N = 8; this.cell = G.arena.size.x / this.N; this.next = this.fragment ? 0 : 1; }
+  onBeat(n, when) {
+    if (this.spawning && n >= this.next && n + 4 <= this.beats) { this.spawn(n); this.next = n + (this.intensity >= 2.2 ? 6 : 8); }
+    for (const R of this.rips) {
+      const row = n - R.b0;
+      if (row >= 0 && row < this.N) { R.rows[row].up = n; if (row % 2 === 0) G.audio.sfx.tick(when); }
+    }
+  }
+  spawn(n) {
+    const A = G.arena, N = this.N, c = this.cell, s = G.soul.pos;
+    const dir = randi(0, 3);   // 0: +x, 1: -x, 2: +z, 3: -z (rows run across it)
+    const along = (p) => (dir < 2 ? (p.x - A.min.x) / c : (p.z - A.min.z) / c);
+    const across = (p) => (dir < 2 ? (p.z - A.min.z) / c : (p.x - A.min.x) / c);
+    const low = this.intensity < 2.2 && chance(0.25);   // a low ripple: you can go over it
+    const rows = [];
+    // the gap walks one cell at most per row; it starts where your row will be, near you
+    const myRow = clamp(Math.floor(dir % 2 === 0 ? along(s) : N - along(s)), 0, N - 1);
+    const myCol = clamp(Math.floor(across(s)), 0, N - 1);
+    const gw = this.intensity >= 2.2 ? 1 : 2;
+    const gap = new Array(N);
+    gap[myRow] = clamp(myCol + randi(-1, 1), 0, N - gw);
+    for (let r = myRow + 1; r < N; r++) gap[r] = clamp(gap[r - 1] + randi(-1, 1), 0, N - gw);
+    for (let r = myRow - 1; r >= 0; r--) gap[r] = clamp(gap[r + 1] + randi(-1, 1), 0, N - gw);
+    for (let r = 0; r < N; r++) rows.push({ gap: gap[r], gw, up: -1 });
+    const R = { b0: n + 2, dir, rows, low, h: low ? 1.0 : A.size.y, key: { grazed: false } };
+    this.rips.push(R);
+    // the escape: your row's gap, reached by the time it erupts
+    const tRow = 2 + myRow;
+    const gx = (gap[myRow] + gw / 2) * c;
+    const gp = dir < 2 ? _v1.set(s.x, s.y, A.min.z + gx) : _v1.set(A.min.x + gx, s.y, s.z);
+    debugAssert(low || this.reach(s, gp, tRow, gw * c / 2), `missing texture: gap unreachable (${s.distanceTo(gp).toFixed(2)} m in ${tRow} beats)`);
+    // the origin and direction, 2 beats ahead
+    const o = this.cellPos(R, 0, N / 2, _v2), d = _v3.set(dir === 0 ? 1 : dir === 1 ? -1 : 0, 0, dir === 2 ? 1 : dir === 3 ? -1 : 0);
+    o.y = A.min.y + 0.02;
+    G.tele.line(o, _v4.copy(o).addScaledVector(d, A.size.x * 0.9), 0.04, NULL_TELE, 2 * this.bd, { pulse: 1 });
+    G.tele.ring(o, UP, 0.3, NULL_TELE, 2 * this.bd, { pulse: 1, grow: 0.3 });
+    G.audio.sfx.glitch();
+  }
+  // world centre of cell (row, col) of a ripple (on the floor)
+  cellPos(R, row, col, out) {
+    const A = G.arena, c = this.cell, r = R.dir === 0 || R.dir === 2 ? row : this.N - 1 - row;
+    const a = (r + 0.5) * c, b = (col + 0.5) * c;
+    return R.dir < 2 ? out.set(A.min.x + a, A.min.y, A.min.z + b) : out.set(A.min.x + b, A.min.y, A.min.z + a);
+  }
+  update(dt) {
+    super.update(dt);
+    const pb = this.pb, A = G.arena, c = this.cell, s = G.soul.pos;
+    for (const R of this.rips) {
+      for (let r = 0; r < this.N; r++) {
+        const row = R.rows[r], tUp = R.b0 + r, e = pb - tUp;   // e < 0: waiting; 0..1 up; 1..2 sinking
+        if (e < -2 || e > 2) continue;
+        for (let col = 0; col < this.N; col++) {
+          const isGap = col >= row.gap && col < row.gap + row.gw;
+          const p = this.cellPos(R, r, col, _v5);
+          if (e < 0) {
+            // the floor flips 2 beats ahead (gaps stay dark)
+            if (isGap) continue;
+            const k = (e + 2) / 2;
+            NullKit.check(_v6.set(p.x, A.min.y + 0.01, p.z), _v7.set(c * 0.96, 0.02, c * 0.96), 0.25 + 0.5 * k, 1);
+          } else {
+            if (isGap) continue;
+            const hgt = (e < 1 ? easeOut(Math.min(1, e / 0.3)) : 1 - (e - 1)) * R.h;
+            if (hgt < 0.02) continue;
+            NullKit.check(_v6.set(p.x, A.min.y + hgt / 2, p.z), _v7.set(c * 0.94, hgt, c * 0.94), 0.92, 0);
+            if (hgt > 0.15) {
+              _v6.set(p.x - c * 0.47, A.min.y, p.z - c * 0.47); _v7.set(p.x + c * 0.47, A.min.y + hgt, p.z + c * 0.47);
+              if (Math.abs(s.x - p.x) < c && Math.abs(s.z - p.z) < c) Haz.aabb(_v6, _v7, RULE.WHITE, this.dmg, R.key);
+            }
+          }
+        }
+      }
+      if (pb - R.b0 > this.N + 2) R.done = true;
+    }
+    if (this.rips.length > 6) this.rips = this.rips.filter((R) => !R.done);
+  }
+  isIdle() { return this.rips.every((R) => R.done); }
+}
+MissingTexture.prototype.callouts = ['the DARK squares. stand on the dark ones', 'FLOOR', 'its coming from behind!!', 'follow the gap'];
+
+// ---------------------------------------------------------------------------
+//  3. UNDO HISTORY - it records your SOUL's path. Ghost copies of your own SOUL (hollow, inverted hearts,
+//     tagged "-2 BARS") retrace exactly where you were 2 bars ago, leaving dotted trails; later a second ghost
+//     at -1 bar. Stay still, or move in loops, and your past catches you. Aimed shots on the beat keep you
+//     honest (each shows its line 2 beats ahead).
+// ---------------------------------------------------------------------------
+class UndoHistory extends NullPattern {
+  onStart() {
+    NullKit.init();
+    this.ghosts = [{ lag: 8, tag: 0, key: { grazed: false }, on: false, dots: [], fade: 0 }];
+    if (this.intensity >= 2.0 || this.fragment) this.ghosts.push({ lag: 4, tag: 1, key: { grazed: false }, on: false, dots: [], fade: 0, from: this.fragment ? 0 : 16 });
+    this.shots = [];
+  }
+  onBeat(n, when) {
+    for (const g of this.ghosts) g.key = { grazed: false };
+    if (!this.spawning || n > this.beats - 3) return;
+    // aimed shots: one a beat (two on the half-time pulse in phase 4), each with its line 2 beats ahead
+    const k = n % 2 === 0 && this.intensity >= 2.4 ? 2 : 1;
+    for (let i = 0; i < k; i++) {
+      const A = G.arena, s = G.soul.pos;
+      const src = new THREE.Vector3(rand(A.min.x + 0.2, A.max.x - 0.2), rand(A.min.y + 0.2, A.max.y - 0.2), A.min.z + 0.05);
+      const tgt = new THREE.Vector3(s.x + rand(-0.25, 0.25), s.y + rand(-0.15, 0.15), s.z);
+      const dir = tgt.sub(src).normalize();
+      G.tele.line(src, _v1.copy(src).addScaledVector(dir, 3.6), 0.01, NULL_TELE, 2 * this.bd, { pulse: 1, alpha: 0.6 });
+      this.shots.push({ at: n + 2, src, dir });
+    }
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const S = this.shots[i]; if (S.at > n) continue;
+      this.shots.splice(i, 1);
+      const b = this.pellet(S.src.x, S.src.y, S.src.z); if (b) { b.vel.copy(S.dir).multiplyScalar(2.6); b.life = 4; }
+    }
+  }
+  update(dt) {
+    super.update(dt);
+    const beat = G.clock.beat, pb = this.pb;
+    for (const g of this.ghosts) {
+      const live = pb >= (g.from || 0) && pb < this.beats - 0.5 && NullKit.posAt(beat - g.lag, _v1);
+      if (live && !g.on) { g.on = true; G.audio.sfx.whisper(); }
+      g.fade = clamp(g.fade + (live ? dt : -dt) * 2.5, 0, 1);
+      if (!live) { if (g.fade <= 0) continue; } else (g.pos || (g.pos = new THREE.Vector3())).copy(_v1);
+      if (!g.pos) continue;
+      NullKit.ghost(g.pos, g.tag, g.fade);
+      if (live && g.fade > 0.6) Haz.sphere(g.pos, 0.075, RULE.WHITE, this.dmg, g.key);
+      // its dotted trail (a dot every half beat, a bar long)
+      if (live && (!g.lastDot || beat - g.lastDot >= 0.5)) { g.lastDot = beat; g.dots.push({ p: g.pos.clone(), b: beat }); if (g.dots.length > 10) g.dots.shift(); }
+      for (const d of g.dots) { const a = clamp(1 - (beat - d.b) / 4, 0, 1) * g.fade; if (a > 0) G.fx.glow.add(d.p.x, d.p.y, d.p.z, 0.05, 0, 1, 0.8, 0.8 * a, 0); }
+      if (live && Math.floor(beat / 8) !== g.wb) { g.wb = Math.floor(beat / 8); G.audio.sfx.whisper(); }
+    }
+  }
+  isIdle() { return !this.shots.length; }
+}
+UndoHistory.prototype.callouts = ['its copying you', 'thats YOU. from before', 'dont go back where you were', 'keep moving. dont circle'];
+
+// ---------------------------------------------------------------------------
+//  4. DELETED_K1DD1E - the lasso grabs SCR1PT_K1DD1E into a marching-ants cage that starts deleting him
+//     (he loses pixels, his HP drains). Pull yourself over and punch the cage on the half-time beat 4 times
+//     to break him out while erasers sweep the box. Saved: +10% TP and a fist bump. Too slow: he's DOWN.
+// ---------------------------------------------------------------------------
+class DeletedKiddie extends NullPattern {
+  onStart() {
+    NullKit.init();
+    const A = G.arena, s = G.soul.pos;
+    // the cage: across the box from you (at least 1.5 m), a bit above the floor
+    const c = new THREE.Vector3(2 * A.center.x - s.x, clamp(s.y + rand(-0.2, 0.3), A.min.y + 0.55, A.max.y - 0.5), 2 * A.center.z - s.z);
+    A.clampPoint(c, 0.5);
+    if (c.distanceTo(s) < 1.5) c.x = s.x < A.center.x ? A.max.x - 0.5 : A.min.x + 0.5;
+    this.cage = c; this.half = 0.32; this.hits = 0; this.grabbed = false; this.freed = false; this.failed = false;
+    this.lastHitBeat = -9; this.erasers = []; this.bump = null; this.edges = [true, true, true, true, true, true, true, true, true, true, true, true];
+    G.tele.ring(Party.pos, _v1.subVectors(Head.pos, Party.pos).normalize(), 0.24, NULL_TELE, 2 * this.bd, { pulse: 1, grow: 1.6 });
+    if (G.boss && G.boss.reach) G.boss.reach(Party.pos);
+    Party.say('wait. WAIT. why is it looking at me', 2);
+    debugAssert(this.reach(s, c, 10, this.half + 0.3), 'deleted kiddie: the cage is out of reach');
+  }
+  onBeat(n, when) {
+    if (n === 2 && !this.grabbed) this.grab(when);
+    if (this.grabbed && !this.freed && !this.failed) {
+      // his HP drains, a beat at a time; at 0 he's DOWN
+      const a = Party.ally;
+      if (a && n > 3) { a.hp = Math.max(0, a.hp - this.drain); Party.drawWrist(); G.ui.refreshHUD(); if (a.hp <= 0) this.fail(); }
+      if (n % 2 === 0) G.audio.sfx.cut(when);
+    }
+    // erasers: a bar sweeps the box every 4 beats (its line shows 2 beats ahead)
+    if (this.spawning && n >= 4 && n % 4 === 0 && n + 4 <= this.beats) this.eraser(n);
+  }
+  grab(when) {
+    this.grabbed = true;
+    Party.held = this.cage;
+    this.drain = Math.max(1, Math.ceil((Party.ally ? Party.ally.hp : 60) / 20));   // about 20 beats to get him out
+    G.audio.sfx.cut(when); G.audio.sfx.deleteBuzz();
+    Party.say('HEY. HEY LET GO. its DELETING me', 2.4);
+    G.ui.showPrompt(G.xr ? 'GET TO THE CAGE!  PUNCH IT ON THE BIG BEATS (x4)' : 'GET TO THE CAGE!  CLICK ON THE BIG BEATS (x4)', 2.8, '#c8ff00');
+    if (G.boss && G.boss.reach) G.boss.reach(null);
+  }
+  eraser(n) {
+    const A = G.arena, s = G.soul.pos, alongX = chance(0.5);
+    const y = clamp(s.y + rand(-0.15, 0.15), A.min.y + 0.25, A.max.y - 0.25);
+    const from = chance(0.5) ? -1 : 1;
+    const E = { b0: n + 2, dur: 2, y, alongX, from, key: { grazed: false } };
+    this.erasers.push(E);
+    // its line, 2 beats ahead (at the height it will cross)
+    if (alongX) G.tele.line(_v1.set(A.center.x, y, A.min.z), _v2.set(A.center.x, y, A.max.z), 0.05, NULL_TELE, 2 * this.bd, { pulse: 1 });
+    else G.tele.line(_v1.set(A.min.x, y, A.center.z), _v2.set(A.max.x, y, A.center.z), 0.05, NULL_TELE, 2 * this.bd, { pulse: 1 });
+    debugAssert(Math.abs(y - s.y) < 0.35, 'eraser: dodge out of reach');
+  }
+  fail() {
+    this.failed = true; Party.held = null;
+    const a = Party.ally; if (a) { a.invuln = 0; a.hp = 1; Party.hurtAlly(99); }
+    G.audio.sfx.errorBuzz(G.audio.now, 0.5);
+    G.ui.showPrompt('K1DD1E WAS DELETED.  (P4TCH CAN RESTORE HIM)', 2.6, '#ff2a4a');
+  }
+  free() {
+    this.freed = true; Party.held = null;
+    G.soul.addTP(10); G.audio.sfx.shatter(); G.input.pulseAll(0.6, 60);
+    G.fx.sparkle(this.cage, 30);
+    Party.say('...ok. ok. thanks. dont tell anyone i screamed', 3.6);
+    G.ui.showPrompt('SAVED!  +10% TP', 1.6, '#c8ff00');
+    // the fist bump: his tiny glove, held out for a few beats
+    this.bump = { t: 0, done: false };
+  }
+  // a punch on the cage (VR: a fast hand inside it; desktop: a click when you're close)
+  punched() {
+    const c = this.cage, h = this.half + 0.12;
+    if (G.xr) {
+      for (const H of G.input.hands) if (H.connected && H.swingSpeed > 0.45 && Math.abs(H.tip.x - c.x) < h && Math.abs(H.tip.y - c.y) < h && Math.abs(H.tip.z - c.z) < h) { H.pulse(0.9, 60); return true; }
+      return false;
+    }
+    return (G.input.desk.click || G.input.keyDown('Space')) && G.soul.pos.distanceTo(c) < this.half + 0.55;
+  }
+  update(dt) {
+    super.update(dt);
+    const pb = this.pb, A = G.arena, c = this.cage, hf = this.half, beat = G.clock.beat;
+    if (this.grabbed && !this.freed && !this.failed) {
+      // the cage: an ants box round him; its edges flash on the half-time pulse (when to punch)
+      const ph = beat - Math.round(beat / 2) * 2, near = Math.abs(ph) < 0.3;
+      _v1.set(c.x - hf, c.y - hf, c.z - hf); _v2.set(c.x + hf, c.y + hf, c.z + hf);
+      const k = near ? 1.6 : 0.8, cc = (i, o) => o.set(i & 1 ? _v2.x : _v1.x, i & 2 ? _v2.y : _v1.y, i & 4 ? _v2.z : _v1.z);
+      NULL_BOX_EDGES.forEach(([i, j], e) => { if (this.edges[e]) NullKit.antsEdge(cc(i, _v3), cc(j, _v4), near ? NULL_TELE : 0xffffff, k, 0.018); });
+      if (chance(dt * 14)) G.fx.glyphs.emit(c.x + rand(-0.12, 0.12), c.y + rand(-0.1, 0.2), c.z + rand(-0.12, 0.12), rand(-0.4, 0.4), rand(0.2, 0.6), rand(-0.4, 0.4), 0.9, 0.05, 0.16, 1, 0.84, GlyphAtlas.of('block'), 0.5, 0.6);
+      // a punch on the beat (+-0.2 s of a half-time beat; one per beat)
+      if (pb > 3.5 && this.punched()) {
+        const nb = Math.round(beat / 2) * 2, err = Math.abs(G.audio.now - G.audio.latency - G.clock.timeOfBeat(nb));
+        if (err < 0.2 && nb !== this.lastHitBeat) {
+          this.lastHitBeat = nb; this.hits++;
+          let off = 0; for (let e = 0; e < 12 && off < 3; e++) if (this.edges[(e * 5 + this.hits) % 12]) { this.edges[(e * 5 + this.hits) % 12] = false; off++; }
+          G.audio.sfx.punch(true); G.fx.sparkle(c, 12); G.fx.damageNumber(_v5.copy(c).setY(c.y + 0.4), `${this.hits}/4`, '#c8ff00', 0.7);
+          if (this.hits >= 4) this.free();
+        } else if (nb !== this.lastHitBeat) { G.audio.sfx.punch(false); G.fx.damageNumber(_v5.copy(c).setY(c.y + 0.4), 'ON THE BEAT!', '#888888', 0.5); this.lastHitBeat = nb - 0.5; }
+      }
+    }
+    // the fist bump: touch his glove (VR) - a soft single pulse
+    if (this.bump && !this.bump.done) {
+      const B = this.bump; B.t += dt;
+      _v6.copy(Party.pos).add(_v7.subVectors(G.soul.pos, Party.pos).normalize().multiplyScalar(0.12)); _v6.y += 0.05;
+      G.fx.glow.add(_v6.x, _v6.y, _v6.z, 0.06, 0.16, 1, 0.84, 0.6 + 0.3 * Math.sin(G.time * 8), 0);
+      let touched = !G.xr && B.t > 0.8;
+      if (G.xr) for (const H of G.input.hands) if (H.connected && H.tip.distanceTo(_v6) < 0.08) { touched = true; H.pulse(0.3, 60); }
+      if (touched) { B.done = true; G.audio.sfx.thock(true); G.fx.sparkle(_v6, 8); }
+      if (B.t > 4) B.done = true;
+    }
+    // erasers
+    for (const E of this.erasers) {
+      const e = (pb - E.b0) / E.dur; if (e < 0 || e > 1) continue;
+      const x = E.from > 0 ? lerp(A.min.x - 0.2, A.max.x + 0.2, e) : lerp(A.max.x + 0.2, A.min.x - 0.2, e);
+      const z = E.from > 0 ? lerp(A.min.z - 0.2, A.max.z + 0.2, e) : lerp(A.max.z + 0.2, A.min.z - 0.2, e);
+      if (E.alongX) { _v1.set(x, E.y, A.center.z); _v2.set(0.32, 0.28, A.size.z); }
+      else { _v1.set(A.center.x, E.y, z); _v2.set(A.size.x, 0.28, 0.32); }
+      NullKit.check(_v1, _v2, 0.9, 0);
+      _v3.copy(_v1).addScaledVector(_v2, -0.5); _v4.copy(_v1).addScaledVector(_v2, 0.5);
+      Haz.aabb(_v3, _v4, RULE.WHITE, this.dmg, E.key);
+    }
+    if (pb >= this.beats - 1 && this.grabbed && !this.freed && !this.failed) this.fail();
+  }
+  isIdle() { return true; }
+  onEnd() {
+    super.onEnd();
+    if (this.grabbed && !this.freed && !this.failed) this.fail();
+    Party.held = null;
+    if (G.boss && G.boss.reach) G.boss.reach(null);
+  }
+}
+DeletedKiddie.prototype.callouts = ['HELP', 'GET ME OUT GET ME OUT', 'punch it!! on the BIG beat'];
+
+// ---------------------------------------------------------------------------
+//  5. ECHOES - it summons corrupted re-runs of the other bosses' attacks: their real pattern classes with the
+//     corrupt flag, inverted and half erased, at this song's tempo. THE PROPRIETOR's chandeliers fall as black
+//     crystals, GRANDIOSO's fire hoops come as hollow black rings, SUNDOWN's revolver stars smear pixels. It
+//     copies them perfectly but doesn't understand them: each one deletes itself mid-attack.
+// ---------------------------------------------------------------------------
+// GRANDIOSO's hoops, copied without his big top: RING OF FIRE's own beat plan and hole picking (each a
+// reachable spot near you), but the burning wall is gone; only the rings come, hollow and black, and their
+// rims hurt. Through the middle is safe.
+class EchoHoops extends RingOfFire {
+  onStart() { this.hard = true; this.every = 2 * this.bpb; this.travel = this.stretch(2 * this.bpb); this.rings = []; NullKit.init(); }
+  onBeat(n, when) {
+    if (!this.spawning) return;
+    if (n % this.every !== this.bpb - 1 || n + 1 + this.travel > this.beats + 8) return;
+    const s = G.soul.pos, R = 0.42, maxMove = Math.min(1.0, CONFIG.COMFORT_SPEED * this.travel * this.bd * 0.35);
+    const holes = [reachableHole(R, s, maxMove, false)];
+    const A = G.arena;
+    for (const h of holes) {
+      G.tele.ring(_v1.set(h.x, h.y, A.min.z + 0.02), _v2.set(0, 0, 1), h.r, NULL_TELE, 2 * this.bd, { pulse: 1 });
+      this.rings.push({ h, enter: n + 1, exit: n + 1 + this.travel, key: { grazed: false } });
+    }
+    G.audio.sfx.whoosh();
+  }
+  update(dt) {
+    Pattern.prototype.update.call(this, dt);
+    const A = G.arena, sp = G.soul.pos, pb = this.pb;
+    for (const C of this.rings) {
+      const p = (pb - C.enter) / (C.exit - C.enter); if (p < -0.2 || p > 1.05) continue;
+      const z = lerp(A.min.z - 0.05, A.max.z + 0.05, Math.max(0, p)), h = C.h;
+      // the rim: a black hoop with a white halo (it's black in a black void), 24 dots of light round it
+      for (let k = 0; k < 24; k++) { const a = k / 24 * TAU + pb; G.fx.glow.add(h.x + Math.cos(a) * h.r, h.y + Math.sin(a) * h.r, z, 0.07, 1, 1, 1, 0.55 * clamp(p * 5 + 1, 0, 1), 0); }
+      for (let k = 0; k < 12; k++) { const a0 = k / 12 * TAU, a1 = (k + 0.85) / 12 * TAU; NullKit.antsEdge(_v1.set(h.x + Math.cos(a0) * h.r, h.y + Math.sin(a0) * h.r, z), _v2.set(h.x + Math.cos(a1) * h.r, h.y + Math.sin(a1) * h.r, z), 0x101010, 1, 0.05); }
+      if (p >= 0 && p <= 1 && Math.abs(sp.z - z) < G.soul.hitR + 0.05) {
+        const d = Math.abs(Math.hypot(sp.x - h.x, sp.y - h.y) - h.r);
+        Haz.resolve(d - 0.05, RULE.WHITE, this.dmg, C.key, null);
+      }
+    }
+  }
+  isIdle() { return true; }
+  onEnd() { this.rings.length = 0; }
+}
+// THE PROPRIETOR's chandeliers, black (its crystals inverted)
+class EchoChandelier extends ChandelierRain {
+  spawnChandelier(n) { super.spawnChandelier(n); for (const c of ChandKit.items) if (c.owner === this) c.group.children[0].material.uniforms.uColor.value.setHex(0x141414); }
+}
+// SUNDOWN's fan of revolver stars, fired from its hands
+class EchoFan extends FanTheHammer {}
+class Echoes extends NullPattern {
+  onStart() {
+    NullKit.init(); OFX.init(); ChandKit.init();
+    this.subs = []; this.plan = [];
+    const o = { intensity: 1.5, speedMul: this.speedMul, dmg: this.dmg, corrupt: true };
+    // each echo runs about two and a half bars, then deletes itself; they overlap a little
+    const L = this.fragment ? [[pick([EchoChandelier, EchoHoops, EchoFan]), 0, this.beats]] : [[EchoChandelier, 0, 10], [EchoHoops, 8, 20], [EchoFan, 18, 30]];
+    for (const [Cls, at, del] of L) this.plan.push({ Cls, at, del, sub: null, gone: false, o });
+  }
+  route(fn) { for (const P of this.plan) { const f = P.sub; if (!f || f.ended) continue; G.bullets.srcTag = f; try { fn(f); } finally { G.bullets.srcTag = null; } } }
+  onBeat(n, when) {
+    for (const P of this.plan) {
+      if (!P.sub && n >= P.at && n < P.del) {
+        P.sub = new P.Cls(Object.assign({ bars: Math.ceil((P.del - P.at) / 4) + 1 }, P.o));
+        G.bullets.srcTag = P.sub; P.sub.start((this.startBeat + n) / this.bpb); G.bullets.srcTag = null;
+        G.audio.sfx.datamosh(when, G.audio.track);
+        G.ui.showPrompt(P.Cls === EchoChandelier ? 'ECHO: CHANDELIER_RAIN' : P.Cls === EchoHoops ? 'ECHO: RING_OF_FIRE' : 'ECHO: FAN_THE_HAMMER', 1.4, '#c8ff00');
+      }
+      if (P.sub && !P.gone && n >= P.del) this.delete(P, when);
+    }
+    const g = n + this.startBeat;
+    this.route((f) => { if (g >= f.startBeat) f.onBeat(g - f.startBeat, when); });
+  }
+  onHalf(h, when) { const gh = h + this.startBeat * 2; this.route((f) => { if (gh >= f.startBeat * 2) f.onHalf(gh - f.startBeat * 2, when); }); }
+  // it doesn't understand what it copied: a marquee snaps round it, and the copy is gone
+  delete(P, when) {
+    P.gone = true;
+    const f = P.sub; f.stopSpawning();
+    G.bullets.forEachFrom(f, (b) => { b.die(); b.collide = false; G.fx.glyphs.emit(b.pos.x, b.pos.y, b.pos.z, rand(-0.3, 0.3), rand(0, 0.5), rand(-0.3, 0.3), 0.7, 0.06, 1, 1, 1, GlyphAtlas.of('block'), 1, 0.6); });
+    f.end();
+    G.audio.sfx.cut(when); G.audio.sfx.deleteBuzz();
+    this.flashT = 0.6;
+  }
+  update(dt) {
+    super.update(dt);
+    this.route((f) => f.update(dt));
+    // its copies, inverted: black bodies in white halos; the stars drag pixel smears
+    for (const P of this.plan) {
+      if (!P.sub || P.gone) continue;
+      G.bullets.forEachFrom(P.sub, (b) => {
+        if (b.echo !== P.sub) { b.echo = P.sub; if (b.rule === RULE.WHITE) { b.color.setHex(0x121212); b.glowCol.setHex(0xffffff); b.glowA = 0.75; b.glowSize = Math.max(b.glowSize, 0.2); } }
+        if (P.Cls === EchoFan && !b.dying && chance(dt * 30)) G.fx.glyphs.emit(b.pos.x, b.pos.y, b.pos.z, -b.vel.x * 0.15, -b.vel.y * 0.15, -b.vel.z * 0.15, 0.45, 0.045, chance(0.5) ? 0 : 1, 1, chance(0.5) ? 0.94 : 1, GlyphAtlas.of('block'), 0, 2);
+      });
+    }
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      const A = G.arena, k = clamp(this.flashT / 0.6, 0, 1);
+      NullKit.antsBox(A.min, A.max, 0xffffff, 1.5 * k, 0.03);
+    }
+  }
+  isIdle() { return this.plan.every((P) => !P.sub || P.gone); }
+  onEnd() { for (const P of this.plan) if (P.sub && !P.sub.ended) { G.bullets.forEachFrom(P.sub, (b) => { b.die(); b.collide = false; }); P.sub.end(); } super.onEnd(); }
+}
+Echoes.prototype.callouts = ['thats THE PROPRIETORS thing', 'its copying everyone', 'it doesnt even know what those do', 'ok THAT one is bad'];
+
+// ---------------------------------------------------------------------------
+//  6. STACK TRACE (REBUILD only) - curtains of falling error text pour in from the sky in time with the build
+//     and sweep the box. The one column in each curtain that reads OK is the gap. They come every 4 beats,
+//     then every 2, and in the last bar of REBUILD every beat, into the phase 3 drop.
+// ---------------------------------------------------------------------------
+class StackTrace extends NullPattern {
+  onStart() { NullKit.init(); this.live = []; }
+  onBeat(n, when) {
+    if (!this.spawning) return;
+    const B = this.beats, every = n >= B - 4 ? 1 : n >= B - 12 ? 2 : 4;
+    if (n % every === 0 && n + 4 <= B + 2) this.spawn(n, every === 1);
+  }
+  spawn(n, fast) {
+    const C = NullKit.curtains.find((c) => !c.active); if (!C) return;
+    const A = G.arena, s = G.soul.pos, alongZ = this.live.length % 2 === 0 || fast;
+    // the OK column: one of 6, near where you are across the sweep (you can reach it before it gets to you)
+    const W = 6, span = alongZ ? A.size.x : A.size.z, col = (alongZ ? s.x - A.min.x : s.z - A.min.z) / span * W;
+    const ok = clamp(Math.floor(col) + (fast ? 0 : randi(-1, 1)), 0, W - 1);
+    const travel = fast ? 2 : 3, pour = 2;
+    const L = { C, b0: n, arrive: n + pour, exit: n + pour + travel, alongZ, ok, key: { grazed: false }, from: chance(0.5) ? -1 : 1 };
+    C.active = true; C.U.uOk.value = ok; C.U.uPour.value = 0; C.U.uSeed.value = rand(0, 50); C.m.visible = true;
+    this.live.push(L);
+    // the escape: the middle of the OK column, by the time the sheet reaches you
+    const gc = (ok + 0.5) / W * span;
+    const gp = alongZ ? _v1.set(A.min.x + gc, s.y, s.z) : _v1.set(s.x, s.y, A.min.z + gc);
+    debugAssert(this.reach(s, gp, pour, span / W / 2 - G.soul.hitR), `stack trace: OK column unreachable (${s.distanceTo(gp).toFixed(2)} m)`);
+    G.audio.sfx.errorBuzz(G.audio.now, 0.12);
+  }
+  update(dt) {
+    super.update(dt);
+    const pb = this.pb, A = G.arena, sp = G.soul.pos, W = 6;
+    for (const L of this.live) {
+      const C = L.C; if (!C.active) continue;
+      const pour = clamp((pb - L.b0) / (L.arrive - L.b0), 0, 1), p = (pb - L.arrive) / (L.exit - L.arrive);
+      if (p > 1.05) { C.active = false; C.m.visible = false; L.done = true; continue; }
+      C.U.uPour.value = pour; C.U.uA.value = 0.55 + 0.45 * pour;
+      const u = clamp(p, 0, 1), span = L.alongZ ? A.size.x : A.size.z;
+      if (L.alongZ) {
+        const z = L.from > 0 ? lerp(A.min.z + 0.05, A.max.z - 0.02, u) : lerp(A.max.z - 0.05, A.min.z + 0.02, u);
+        C.m.position.set(A.center.x, A.center.y, p < 0 ? (L.from > 0 ? A.min.z + 0.05 : A.max.z - 0.05) : z); C.m.rotation.set(0, 0, 0); C.m.scale.set(A.size.x, A.size.y, 1);
+        L.pos = C.m.position.z;
+      } else {
+        const x = L.from > 0 ? lerp(A.min.x + 0.05, A.max.x - 0.02, u) : lerp(A.max.x - 0.05, A.min.x + 0.02, u);
+        C.m.position.set(p < 0 ? (L.from > 0 ? A.min.x + 0.05 : A.max.x - 0.05) : x, A.center.y, A.center.z); C.m.rotation.set(0, -Math.PI / 2, 0); C.m.scale.set(A.size.z, A.size.y, 1);
+        L.pos = C.m.position.x;
+      }
+      // the OK column's outline, while it pours in (the telegraph)
+      if (pour < 1 || p < 0.1) {
+        const c0 = L.ok / W * span, c1 = (L.ok + 1) / W * span;
+        if (L.alongZ) { const z = C.m.position.z; for (const x of [A.min.x + c0, A.min.x + c1]) NullKit.antsEdge(_v1.set(x, A.min.y, z), _v2.set(x, A.max.y, z), NULL_TELE, 1.2, 0.02); }
+        else { const x = C.m.position.x; for (const z of [A.min.z + c0, A.min.z + c1]) NullKit.antsEdge(_v1.set(x, A.min.y, z), _v2.set(x, A.max.y, z), NULL_TELE, 1.2, 0.02); }
+      }
+      if (p < 0 || p > 1) continue;
+      const cross = L.alongZ ? sp.z : sp.x;
+      if (Math.abs(cross - L.pos) < G.soul.hitR + 0.04) {
+        const along = (L.alongZ ? sp.x - A.min.x : sp.z - A.min.z) / span * W;
+        const inGap = along > L.ok + G.soul.hitR * 0.6 / (span / W) && along < L.ok + 1 - G.soul.hitR * 0.6 / (span / W);
+        if (!inGap) Haz.resolve(0, RULE.WHITE, this.dmg, L.key, null);
+      }
+    }
+    if (this.live.length > 12) this.live = this.live.filter((L) => !L.done);
+  }
+  isIdle() { return this.live.every((L) => L.done); }
+  onEnd() { super.onEnd(); for (const L of this.live) { L.C.active = false; L.C.m.visible = false; } }
+}
+StackTrace.prototype.callouts = ['find the OK', 'the green column!!', 'OK OK OK where is the OK', 'faster faster'];
+
+// ---------------------------------------------------------------------------
+//  7. EVENT HORIZON - the black hole's gravity reaches the box: a projected mini hole in the middle pulls on
+//     your SOUL (2 m/s^2 at most, streaming specks and a rising tone show it; it only ever moves you, never
+//     turns you). Bullets fall into real orbits round it and spiral in on the half-time pulse. Keep pulling
+//     outward and slip through the gaps in the orbits (each orbit shows its ring 2 beats ahead).
+// ---------------------------------------------------------------------------
+class EventHorizon extends NullPattern {
+  onStart() {
+    NullKit.init();
+    this.c = G.arena.center.clone(); this.GM = 5.2; this.pv = new THREE.Vector3(); this.k = 0; this.queue = []; this.key = { grazed: false };
+    NullKit.mini.visible = true; NullKit.mini.position.copy(this.c); NullKit.mini.scale.setScalar(0.01);
+    this.hum = G.audio.sfx.holeHum(); this.hum.set(0.05, 0);
+  }
+  onHalf(h, when) {
+    // the half-time pulse: everything in orbit loses a little speed and falls inward
+    if (h % 4 === 0) G.bullets.forEachFrom(this, (b) => { if (b.tag === 7) b.vel.multiplyScalar(0.93); });
+  }
+  onBeat(n, when) {
+    for (let i = this.queue.length - 1; i >= 0; i--) { const q = this.queue[i]; if (q.at <= n) { this.queue.splice(i, 1); this.launch(q, when); } }
+    if (!this.spawning || n % 2 !== 0 || n + 4 > this.beats) return;
+    if (n === 0 && !this.fragment) return;
+    // a new orbit: a ring 2 beats ahead (radius, tilt), its bullets spaced round it with a gap you can use
+    const s = G.soul.pos, c = this.c;
+    let R = 0, N = null;
+    for (let t = 0; t < 12; t++) {
+      R = rand(0.5, 1.1); N = new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize();
+      // keep it off you at the moment it arrives (you are not on the ring)
+      _v1.subVectors(s, c); const h = _v1.dot(N); _v2.copy(_v1).addScaledVector(N, -h);
+      const dRing = Math.hypot(Math.abs(_v2.length() - R), h);
+      if (dRing > 0.4) break;
+    }
+    this.queue.push({ at: n + 2, from: n, R, N, count: this.intensity >= 2.4 ? 10 : 9 });
+  }
+  launch(q, when) {
+    const c = this.c, N = q.N, R = q.R, v = Math.sqrt(this.GM / R);
+    const U = _v3.set(1, 0, 0); if (Math.abs(N.x) > 0.8) U.set(0, 1, 0);
+    const e1 = new THREE.Vector3().crossVectors(N, U).normalize(), e2 = new THREE.Vector3().crossVectors(N, e1);
+    const gap = randi(0, q.count - 1), a0 = rand(0, TAU);
+    for (let i = 0; i < q.count + 2; i++) {
+      if (i === gap || i === gap + 1) continue;   // the gap in the orbit
+      const a = a0 + i / (q.count + 2) * TAU;
+      _v4.copy(e1).multiplyScalar(Math.cos(a) * R).addScaledVector(e2, Math.sin(a) * R).add(c);
+      const b = this.pellet(_v4.x, _v4.y, _v4.z); if (!b) break;
+      b.beh = BEH.OWNER; b.tag = 7; b.life = 14; b.bounds = false;
+      b.vel.copy(e1).multiplyScalar(-Math.sin(a) * v).addScaledVector(e2, Math.cos(a) * v);
+    }
+    G.audio.sfx.orbitWhir(when);
+  }
+  // real orbits: a = GM / r^2 toward the mini hole (two half-steps a frame)
+  bulletUpdate(b, dt) {
+    if (b.tag !== 7) { b.pos.addScaledVector(b.vel, dt); return; }
+    const h = dt / 2;
+    for (let k = 0; k < 2; k++) {
+      _v1.subVectors(this.c, b.pos); const r = Math.max(0.12, _v1.length());
+      b.vel.addScaledVector(_v1, this.GM / (r * r * r) * h); b.pos.addScaledVector(b.vel, h);
+      if (r < 0.17) { b.age = b.life + 1; return; }
+    }
+  }
+  update(dt) {
+    super.update(dt);
+    const pb = this.pb, c = this.c, s = G.soul.pos;
+    this.k = clamp(pb / 4, 0, 1) * clamp((this.beats - pb) / 1.5, 0, 1);
+    NullKit.mini.scale.setScalar(0.01 + 0.99 * smooth01(this.k));
+    NullKit.miniRing.material.color.setScalar(0.6 + 0.4 * (G.audio.bass || 0));
+    if (this.hum) this.hum.set(0.08 + 0.35 * this.k, clamp(pb / this.beats, 0, 1));
+    // the pull: toward the mini hole, up to 2 m/s^2, a gentle drift you pull against (never a turn)
+    _v1.subVectors(c, s); const d = _v1.length();
+    const a = 2.0 * this.k * clamp((d - 0.25) / 0.4, 0, 1);
+    if (d > 1e-3) this.pv.addScaledVector(_v1.divideScalar(d), a * dt);
+    this.pv.multiplyScalar(Math.exp(-3.2 * dt));
+    G.loco.push.copy(this.pv);
+    // streaming specks into it
+    if (this.k > 0.05) for (let i = 0; i < 3; i++) {
+      const A = G.arena; _v2.set(rand(A.min.x, A.max.x), rand(A.min.y, A.max.y), rand(A.min.z, A.max.z));
+      _v3.subVectors(c, _v2).normalize().multiplyScalar(rand(0.8, 1.6));
+      const inv = NullKit.invU.value > 0.5 ? 0.05 : 1;
+      G.fx.parts.emit(_v2.x, _v2.y, _v2.z, _v3.x, _v3.y, _v3.z, rand(0.6, 1.0), 0.012, inv, inv, inv, 0.5, 0, 1);
+    }
+    // each coming orbit: a thin dashed ring where it will be, for 2 beats
+    for (const q of this.queue) {
+      const U = _v4.set(1, 0, 0); if (Math.abs(q.N.x) > 0.8) U.set(0, 1, 0);
+      const e1 = _v5.crossVectors(q.N, U).normalize(), e2 = _v6.crossVectors(q.N, e1), k = 0.7 + 0.5 * clamp(pb - q.from, 0, 2) / 2;
+      for (let i = 0; i < 28; i++) {
+        const a0 = i / 28 * TAU, a1 = (i + 0.7) / 28 * TAU;
+        _v7.copy(c).addScaledVector(e1, Math.cos(a0) * q.R).addScaledVector(e2, Math.sin(a0) * q.R);
+        _v8.copy(c).addScaledVector(e1, Math.cos(a1) * q.R).addScaledVector(e2, Math.sin(a1) * q.R);
+        NullKit.antsEdge(_v7, _v8, NULL_TELE, k, 0.012);
+      }
+    }
+    Haz.sphere(c, 0.13 * smooth01(this.k), RULE.WHITE, this.dmg, this.key);
+    if (Math.floor(pb) !== this.kb) { this.kb = Math.floor(pb); this.key = { grazed: false }; }
+  }
+  isIdle() { return !this.queue.length; }
+  onEnd() {
+    super.onEnd();
+    G.loco.push.set(0, 0, 0); NullKit.mini.visible = false;
+    if (this.hum) { this.hum.stop(0.6); this.hum = null; }
+  }
+}
+EventHorizon.prototype.callouts = ['PULL AWAY FROM IT', 'its pulling us in', 'go through the gap', 'dont let it suck you in'];
+
+// ---------------------------------------------------------------------------
+//  8. MIRROR BUFFER - a reflective sheet sweeps through the box each bar; every bullet gets a mirrored copy
+//     across it, so as the sheet moves the safe space keeps changing shape. The sheet is harmless.
+// ---------------------------------------------------------------------------
+class MirrorBuffer extends NullPattern {
+  onStart() { NullKit.init(); this.n = new THREE.Vector3(1, 0, 0); this.d = 0; this.mode = 0; this.pairs = []; this.shots = []; this.grace = 0; this.m0 = randi(0, 3); this.setBar(0); }
+  setBar(bar) {
+    const modes = [[1, 0, 0], [0, 0, 1], [0.7071, 0, 0.7071], [0.7071, 0, -0.7071]];
+    const m = (Math.floor(bar / 2) + this.m0) % modes.length;
+    if (m !== this.mode || bar === 0) { this.mode = m; this.n.set(...modes[m]).normalize(); if (bar > 0) this.grace = 0.35; }
+    this.dir = bar % 2 ? -1 : 1;
+  }
+  // the plane this frame: n . p = d
+  plane() {
+    const A = G.arena, c = A.center, bp = this.pb / this.bpb, u = easeInOut(bp - Math.floor(bp));
+    const half = Math.abs(this.n.x) * A.size.x / 2 + Math.abs(this.n.z) * A.size.z / 2;
+    this.d = this.n.dot(c) + this.dir * lerp(-0.4, 0.4, u) * half;
+  }
+  mirror(p, out) { const k = this.n.dot(p) - this.d; return out.copy(p).addScaledVector(this.n, -2 * k); }
+  onBeat(n, when) {
+    if (n % this.bpb === 0) this.setBar(n / this.bpb);
+    for (let i = this.shots.length - 1; i >= 0; i--) { const S = this.shots[i]; if (S.at <= n) { this.shots.splice(i, 1); this.fire(S); } }
+    if (!this.spawning || n > this.beats - 3) return;
+    const A = G.arena, s = G.soul.pos, k = this.intensity >= 2.4 ? 2 : 1;
+    for (let i = 0; i < k; i++) {
+      const src = new THREE.Vector3(rand(A.min.x + 0.2, A.max.x - 0.2), rand(A.min.y + 0.2, A.max.y - 0.2), A.min.z + 0.05);
+      const dir = new THREE.Vector3(s.x + rand(-0.3, 0.3), s.y + rand(-0.2, 0.2), s.z).sub(src).normalize();
+      G.tele.line(src, _v1.copy(src).addScaledVector(dir, 3.6), 0.01, NULL_TELE, 2 * this.bd, { pulse: 1, alpha: 0.6 });
+      this.plane(); this.mirror(src, _v2); _v3.copy(dir).addScaledVector(this.n, -2 * this.n.dot(dir));
+      G.tele.line(_v2, _v4.copy(_v2).addScaledVector(_v3, 3.6), 0.008, NULL_TELE, 2 * this.bd, { pulse: 1, alpha: 0.3 });
+      this.shots.push({ at: n + 2, src, dir });
+    }
+  }
+  fire(S) {
+    const a = this.pellet(S.src.x, S.src.y, S.src.z); if (!a) return;
+    a.vel.copy(S.dir).multiplyScalar(1.7); a.life = 5; a.beh = BEH.OWNER; a.tag = 0;
+    const b = this.pellet(S.src.x, S.src.y, S.src.z); if (!b) return;
+    b.beh = BEH.OWNER; b.tag = 1; b.ring = a; b.life = 5; b.bounds = false;
+    this.pairs.push(b);
+  }
+  bulletUpdate(b, dt) {
+    if (b.tag === 0) { b.pos.addScaledVector(b.vel, dt); return; }
+    const a = b.ring;
+    if (!a || !a.active || a.dying) { b.die(); b.collide = false; return; }
+    this.mirror(a.pos, b.pos);
+    const inside = G.arena.contains(b.pos, -0.02);
+    b.collide = inside && this.grace <= 0; b.scale = inside ? b.pool.def.scale * (this.grace > 0 ? 0.5 : 1) : 0.0001;
+  }
+  update(dt) {
+    super.update(dt);
+    this.grace = Math.max(0, this.grace - dt);
+    this.plane();
+    const A = G.arena, M = NullKit.mirror, n = this.n, inv = NullKit.invU.value > 0.5;
+    // the sheet: where n . p = d, across the box
+    const c = A.center, off = this.d - n.dot(c);
+    M.visible = this.pb < this.beats - 0.3;
+    M.position.copy(c).addScaledVector(n, off);
+    M.quaternion.setFromUnitVectors(_v1.set(0, 0, 1), n);
+    const w = Math.abs(n.z) * A.size.x + Math.abs(n.x) * A.size.z;
+    M.scale.set(w * (Math.abs(n.x) > 0.1 && Math.abs(n.z) > 0.1 ? 1.4 : 1), A.size.y, 1);
+    M.material.blending = inv ? THREE.NormalBlending : THREE.AdditiveBlending;
+    NullKit.mirrorU.uA.value = inv ? 0.6 : 1;
+    if (this.pairs.length > 60) this.pairs = this.pairs.filter((b) => b.active);
+  }
+  isIdle() { return !this.shots.length; }
+  onEnd() { super.onEnd(); NullKit.mirror.visible = false; }
+}
+MirrorBuffer.prototype.callouts = ['theres TWO of every bullet', 'watch the mirror', 'the copy is the problem', 'ugh its moving'];
+
+// ---------------------------------------------------------------------------
+//  9. FRAME SKIP - the bullets don't fly, they skip: one jump a beat. Between jumps they're dim outlines,
+//     and a ghost shows where each will be next, a beat ahead. (Only the bullets skip: your view, the camera
+//     and the frame rate never do.)
+// ---------------------------------------------------------------------------
+class FrameSkip extends NullPattern {
+  onStart() { NullKit.init(); this.list = []; }
+  onBeat(n, when) {
+    // every live bullet jumps on the beat; its next spot shows now
+    for (const b of this.list) {
+      if (!b.active || b.dying) continue;
+      b.step++; this.place(b, b.step, b.pos);
+      b.flashT = 0.12; b.collide = true;
+      this.place(b, b.step + 1, _v1);
+      if (G.arena.contains(_v1, 0.3)) G.tele.ring(_v1, _v2.subVectors(Head.pos, _v1).normalize(), 0.07, NULL_TELE, this.bd * 0.98, { pulse: 0, alpha: 0.85 });
+    }
+    if (n % 4 === 0) G.audio.sfx.datamosh(when, G.audio.track);
+    else G.audio.sfx.tick(when);
+    if (!this.spawning || n > this.beats - 3) return;
+    const A = G.arena, s = G.soul.pos;
+    // a sheet every 2 bars: a grid from the far wall with holes; aimed skippers in between
+    if (n % 8 === 0) {
+      const holes = new Set([randi(0, 11)]); holes.add((Array.from(holes)[0] + randi(1, 2)) % 12);
+      for (let i = 0; i < 12; i++) {
+        if (holes.has(i)) continue;
+        const x = lerp(A.min.x + 0.3, A.max.x - 0.3, (i % 4) / 3), y = lerp(A.min.y + 0.3, A.max.y - 0.3, Math.floor(i / 4) / 2);
+        this.skipper(_v3.set(x, y, A.min.z + 0.05), _v4.set(0, 0, 1), 0.42);
+      }
+    } else {
+      const k = this.intensity >= 2.4 ? 3 : 2;
+      for (let i = 0; i < k; i++) {
+        const src = _v3.set(rand(A.min.x + 0.2, A.max.x - 0.2), rand(A.min.y + 0.2, A.max.y - 0.2), A.min.z + 0.05);
+        this.skipper(src, _v4.set(s.x + rand(-0.35, 0.35), s.y + rand(-0.25, 0.25), s.z).sub(src).normalize(), 0.5);
+      }
+    }
+  }
+  skipper(src, dir, step) {
+    const b = this.pellet(src.x, src.y, src.z); if (!b) return;
+    b.beh = BEH.OWNER; b.life = 9;
+    b.p0 = 0; b.step = 0; b.flashT = 0; b.collide = true;
+    b.base.copy(src); b.dir.copy(dir).multiplyScalar(step * this.speedMul);
+    this.list.push(b);
+    this.place(b, 1, _v1);
+    G.tele.ring(_v1, _v2.subVectors(Head.pos, _v1).normalize(), 0.07, NULL_TELE, this.bd * 0.98, { pulse: 0, alpha: 0.85 });
+  }
+  place(b, step, out) { return out.copy(b.base).addScaledVector(b.dir, step); }
+  bulletUpdate(b, dt) {
+    // (it stays where it jumped; dim between jumps, a flash as it lands)
+    b.flashT = Math.max(0, (b.flashT || 0) - dt);
+    const k = b.flashT > 0 ? 1 : 0.38;
+    b.color.setScalar(k);
+    b.glowA = 0.25 + 0.5 * k;
+  }
+  update(dt) { super.update(dt); if (this.list.length > 90) this.list = this.list.filter((b) => b.active); }
+  isIdle() { return true; }
+}
+FrameSkip.prototype.callouts = ['watch the ghosts. thats where they GO', 'they jump on the beat', 'its lagging. on purpose??', 'move on the beat'];
+
+// ---------------------------------------------------------------------------
+//  10. DELETE UI - its marquee selects your HUD and deletes it: the HP bar, the TP bar and the menu vanish.
+//      SCR1PT_K1DD1E restores each one while you hold its panel on your wrist for 2 beats (SecretUI). While
+//      it's gone you take 20% less damage and your SOUL's glow shows your HP. Meanwhile every earlier attack
+//      cycles in 2-bar fragments. ('remix': the fragments alone.)
+// ---------------------------------------------------------------------------
+const NULL_FRAGMENTS = [MarchingAnts, MissingTexture, UndoHistory, EventHorizon, MirrorBuffer, FrameSkip];
+class DeleteUI extends NullPattern {
+  onStart() {
+    NullKit.init();
+    this.del = !this.o.remix; this.cutDone = false;
+    this.order = shuffle(NULL_FRAGMENTS.slice()); this.oi = 0; this.sub = null; this.subEnd = 0;
+    this.firstFrag = this.del ? 4 : 0;
+  }
+  route(fn) { const f = this.sub; if (!f || f.ended) return; G.bullets.srcTag = f; try { fn(f); } finally { G.bullets.srcTag = null; } }
+  onBeat(n, when) {
+    if (this.del && n === 2 && !this.cutDone) { this.cutDone = true; SecretUI.deleteAll(when); }
+    if (this.sub && n >= this.subEnd) { this.sub.end(); this.sub = null; }
+    if (this.spawning && !this.sub && n >= this.firstFrag && n + 8 <= this.beats) {
+      const Cls = this.order[this.oi++ % this.order.length];
+      this.sub = new Cls({ intensity: this.intensity, speedMul: this.speedMul, dmg: this.dmg, bars: 2, fragment: true });
+      G.bullets.srcTag = this.sub; this.sub.start((this.startBeat + n) / this.bpb); G.bullets.srcTag = null;
+      this.subEnd = n + 8;
+      G.audio.sfx.datamosh(when, G.audio.track);
+      if (Party.on && !Party.down && chance(0.6) && this.sub.callouts) Party.say(pick(this.sub.callouts), 1.6);
+    }
+    const g = n + this.startBeat;
+    this.route((f) => { if (g >= f.startBeat) f.onBeat(g - f.startBeat, when); });
+  }
+  onHalf(h, when) { const gh = h + this.startBeat * 2; this.route((f) => { if (gh >= f.startBeat * 2) f.onHalf(gh - f.startBeat * 2, when); }); }
+  update(dt) {
+    super.update(dt);
+    this.route((f) => f.update(dt));
+    // the selection, closing on your HUD for 2 beats before the cut
+    if (this.del && !this.cutDone) SecretUI.drawSelection(clamp(this.pb / 2, 0, 1));
+  }
+  isIdle() { return !this.sub; }
+  onEnd() { if (this.sub) { this.sub.end(); this.sub = null; } super.onEnd(); }
+}
+DeleteUI.prototype.callouts = ['it deleted your HUD. HOLD YOUR WRIST', 'im restoring it im restoring it', 'your heart is your health now. watch the glow'];
+
+// ---------------------------------------------------------------------------
+//  11. THE BLANK - the last 8 bars before the FINAL HIT. The arena turns into white line art on black and
+//      everything slows. It types a question into its face: WH_T _S _ N_M_? Its bullets are its unfinished
+//      letters, drifting toward you, gentle, almost sad. You can't fall here (HP stops at 1).
+// ---------------------------------------------------------------------------
+class TheBlank extends NullPattern {
+  onStart() {
+    NullKit.init();
+    this.q = 'WH_T _S _ N_M_?'; this.typed = 0;
+    if (G.battle) G.battle.minHp = 1;
+    G.clock.setRate(0.9, G.clock.barDur);
+    if (SecretFight.stage) SecretFight.stage.lineArt = 1;
+    if (Party.on && !Party.down) Party.say('...its asking you something', 2.6);
+  }
+  onBeat(n, when) {
+    // it types its question over the first 2 bars (and holds it)
+    if (n < 8 && G.boss && G.boss.setTalk) { this.typed = Math.min(this.q.length, Math.round((n + 1) / 8 * this.q.length)); G.boss.setTalk(this.q.slice(0, this.typed)); G.audio.sfx.tk(when); }
+    else if (G.boss && G.boss.setTalk) G.boss.setTalk(this.q);
+    if (!this.spawning || n > this.beats - 3 || n % 2) return;
+    // its unfinished letters, from its face, drifting at you
+    const A = G.arena, s = G.soul.pos, letters = 'WHTSNM?_';
+    for (let i = 0; i < 3; i++) {
+      const src = _v1.set(rand(A.min.x + 0.2, A.max.x - 0.2), rand(A.min.y + 0.3, A.max.y - 0.2), A.min.z + 0.05);
+      const b = glyphBullet(GlyphAtlas.of(pick(letters.split(''))), src.x, src.y, src.z, 0xffffff, 0.15); if (!b) break;
+      b.owner = this; b.dmg = this.hit(); b.beh = BEH.OWNER; b.life = 7; b.p0 = rand(0, TAU);
+      b.vel.set(s.x - src.x + rand(-0.6, 0.6), s.y - src.y + rand(-0.4, 0.4), s.z - src.z).normalize().multiplyScalar(0.75);
+    }
+  }
+  bulletUpdate(b, dt) { b.pos.addScaledVector(b.vel, dt); b.pos.x += Math.sin(G.time * 1.3 + b.p0) * 0.12 * dt; b.pos.y += Math.cos(G.time * 1.1 + b.p0) * 0.08 * dt; }
+  isIdle() { return true; }
+  onEnd() {
+    super.onEnd();
+    if (G.battle) G.battle.minHp = 0;
+    G.clock.setRate(1, 0.4);
+  }
+}
+TheBlank.prototype.callouts = ['...', 'its just letters', 'it doesnt know what a name is'];
+
+// ---------------------------------------------------------------------------
+//  the phase changes: the song carries them (the 0:45 hit, the 1:06.6 drop, the crossfade into the second
+//  wave) and the look changes right on that hit
+// ---------------------------------------------------------------------------
+class NullShift extends NullPattern {
+  onStart() { this.hitBeat = this.o.hitBeat || 0; this.np = this.o.np; this.done = false; if (this.hitBeat === 0) this.land(G.audio.now); else if (G.boss) G.boss.glitchBurst(); }
+  onBeat(n, when) {
+    if (!this.done && n >= this.hitBeat) this.land(when);
+    else if (!this.done) { G.fx.glitchSpike = Math.max(G.fx.glitchSpike, 0.25 * Flash.glitchMul); if (G.boss) G.boss.doorsPulse(); }
+  }
+  land(when) {
+    this.done = true;
+    const B = G.battle;
+    if (B && B.phase < this.np) B.applyPhase(this.np);
+    G.input.pulseAll(0.9, 160);
+    G.audio.sfx.cut(when);
+    if (G.boss) G.boss.glitchBurst();
+    if (Flash.reduced) { G.fx.vigU.uFadeCol.value.setHex(0x000000); G.fx.fadeT = 0.6; G.fx.fadeTo(0, 1.5, 0x000000); }
+    else { G.fx.vigU.uFadeCol.value.setHex(0xffffff); G.fx.fadeT = 0.45; G.fx.fadeTo(0, 3.5, 0xffffff); }   // one soft beat of light (a single change)
+  }
+  isIdle() { return true; }
+}
+
+const SECRET_PATTERNS = {
+  ants: { cls: MarchingAnts, bars: 8, name: 'MARCHING ANTS' },
+  missing: { cls: MissingTexture, bars: 8, name: 'MISSING TEXTURE' },
+  undo: { cls: UndoHistory, bars: 8, name: 'UNDO HISTORY' },
+  cage: { cls: DeletedKiddie, bars: 8, name: 'DELETED_K1DD1E' },
+  echoes: { cls: Echoes, bars: 8, name: 'ECHOES' },
+  stack: { cls: StackTrace, bars: 8, name: 'STACK TRACE' },
+  horizon: { cls: EventHorizon, bars: 8, name: 'EVENT HORIZON' },
+  mirror: { cls: MirrorBuffer, bars: 8, name: 'MIRROR BUFFER' },
+  skip: { cls: FrameSkip, bars: 8, name: 'FRAME SKIP' },
+  deleteui: { cls: DeleteUI, bars: 12, name: 'DELETE UI' },
+  remix: { cls: DeleteUI, bars: 10, name: '_____', opts: { remix: true } },
+  blank: { cls: TheBlank, bars: 8, name: 'THE BLANK' },
+  shift1: { cls: NullShift, bars: 2, name: 'ERASURE', dmg: 0, opts: { np: 1, hitBeat: 4 } },
+  shift2: { cls: NullShift, bars: 2, name: 'SEGFAULT', dmg: 0, opts: { np: 2, hitBeat: 4 } },
+  shift3: { cls: NullShift, bars: 1, name: '_____', dmg: 0, opts: { np: 3, hitBeat: 0 } },
+};
+
+// ============================================================================
+//  _____ - the boss (SECRET_DEF, the bundle every other boss has; kept out of BOSSES so the save files,
+//  the boss count and the title never list it)
+// ============================================================================
+// its voice: letters missing (written as underscores). Each LISTEN fills one more letter back into every line.
+const NullVoice = {
+  // a line: { f: what it means, g: what it says } (or just the full text: its vowels go missing)
+  garble(f) { return f.replace(/[AEIOU]/g, (m, i) => (m === 'I' && (i === 0 || f[i - 1] === ' ') && (i === f.length - 1 || /[ .,!?]/.test(f[i + 1])) ? m : '_')); },
+  render(line, listens) {
+    const f = typeof line === 'string' ? line : line.f, g = typeof line === 'string' ? this.garble(line) : line.g;
+    const pos = []; for (let i = 0; i < g.length; i++) if (g[i] === '_' && f[i] !== '_') pos.push(i);
+    let h = 7; for (const c of f) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    for (let i = pos.length - 1; i > 0; i--) { h = (h * 1103515245 + 12345) >>> 0; const j = h % (i + 1); const t = pos[i]; pos[i] = pos[j]; pos[j] = t; }
+    const a = g.split(''); for (let i = 0; i < Math.min(listens, pos.length); i++) a[pos[i]] = f[pos[i]];
+    return a.join('');
+  },
+  // a dialogue line for Battle.talk
+  line(l, B, o = {}) { return Object.assign({ text: this.render(l, B ? B.listens || 0 : 0), speed: 13 }, o); },
+};
+const NV = (f, g) => (g ? { f, g } : f);
+const NLINES = {
+  supposed: NV('YOU WERE NOT SUPPOSED TO BE HERE.', 'Y_U _ER_ N_T S_PP_S_D T_ B_ H_R_.'),
+  ends: NV('EVERYTHING ENDS.', '_V_RYTH_NG _NDS.'),
+  after: NV('I AM WHAT COMES AFTER.', 'I _M WH_T C_M_S _FT_R.'),
+  name: NV('WHAT IS A NAME?', 'WH_T _S _ N_M_?'),
+  atk: {
+    ants: ['SELECT ALL.', 'DELETE.'], missing: ['FILE NOT FOUND.'], undo: ['UNDO.', 'YOU WERE HERE.'],
+    cage: ['THAT ONE IS A COPY.'], echoes: ['THEY ALL COME HERE.', 'I KEEP WHAT ENDS.'], stack: ['ERROR. ERROR. ERROR.'],
+    horizon: ['COME IN.'], mirror: ['TWO OF YOU.'], skip: ['NOT RESPONDING.'],
+    deleteui: ['YOU DO NOT NEED THIS.'], remix: ['I REMEMBER THEM ALL.'], wait: ['...?'],
+  },
+  kidAtk: {
+    cage: 'wait. why is it looking at me', echoes: 'thats. thats the mansion guys thing', stack: 'my compiler does that. its fine. its FINE',
+    horizon: 'it got bigger??', deleteui: 'NO. not the HUD', skip: 'ok its lagging on purpose now',
+  },
+  phase: [
+    null,
+    [NV('ERASE.'), { text: 'its cracking. its CRACKING. thats good right', mood: 'kid' }],
+    [NV('SEGFAULT.'), { text: 'why is everything WHITE', mood: 'kid' }],
+    [NV('WHAT IS A NAME?', 'WH_T _S _ N_M_?'), { text: 'its just. lines now. its asking you something', mood: 'kid' }],
+  ],
+  check: '* _____ - ATK 22 DEF 10.\n* It\'s what\'s left when something is deleted.\n* It doesn\'t have a name.\n* Nobody ever gave it one.',
+  talk: [NV('HELLO?'), NV('NO ONE TALKS HERE.'), NV('WHY DO YOU TALK TO THE END?')],
+  listenFlavor: ['* You listen. Under the static, it is trying to say something.', '* You listen closer. The words are almost whole.', '* You listen. It keeps asking you something.'],
+  spare: '* You tried to spare _____.\n* It doesn\'t know the word. It deletes it.',
+  flee: '* There is nowhere to run.\n* Every exit you know of ends here.',
+  item: [NV('...'), NV('KEEP IT.')],
+  retry: [{ text: 'ok. again. i got you this time', mood: 'kid' }, NV('AGAIN.')],
+  hit: [NV('...'), NV('IT DOES NOT HURT. NOTHING HURTS HERE.')], miss: [NV('...')],
+};
+const NFLAVOR = {
+  first: '* _____ blocks the way.\n* There is no way. There is no way back.',
+  0: ['* The cursor blinks. It is waiting for input.', '* Something unsaved drifts past.', '* K1DD1E is pretending he isn\'t scared.'],
+  1: ['* White light leaks through its cracks.', '* It types a word. It deletes it.', '* The black hole hums a little louder.'],
+  2: ['* Everything is the wrong way round.', '* The light is black. The dark is white.', '* K1DD1E keeps rubbing his eyes.'],
+  3: ['* It is only lines now.', '* It keeps asking the same question.', '* Its text field is the only solid thing left.'],
+  final: '* It is waiting for an answer.',
+};
+const SECRET_BAL = { fightMul: 1.5, armor: 0.75, blankAt: 0.06, blankAfter: 3 };   // its FIGHT scale (it's enormous), its armour (phases 3-4), when THE BLANK comes
+
+// ---------------------------------------------------------------------------
+//  FaceBox - its dialogue: an empty text field (white frame, black inside, a caret blinking on the half-time
+//  pulse) that its words type into, letters missing. The same words type into the field on its face. No blip,
+//  just silence and a faint keyboard-delete "tk" a moment behind each letter. SCR1PT_K1DD1E's lines (mood
+//  'kid') go to his own bubble.
+// ---------------------------------------------------------------------------
+class FaceBox {
+  constructor() {
+    this.W = 768; this.H = 192; this.w = 1.3; this.h = this.w * this.H / this.W;
+    this.tex = canvasTex(this.W, this.H); this.g = this.tex.userData.ctx;
+    this.mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, alphaTest: 0.5 });
+    this.mat.depthWrite = true;
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(this.w, this.h), this.mat);
+    this.mesh.renderOrder = 2; this.mesh.visible = false; scene.add(this.mesh);
+    this.tw = new ChatTypewriter(this);
+    this.anchor = new THREE.Vector3(); this.k = 1; this.fresh = true; this.glide = false; this.pinned = false;
+    this.kid = false; this.lines = []; this.scale = 4; this.blink = true;
+  }
+  get visible() { return this.mesh.visible; }
+  setAnchor(pos, face, k) { this.mesh.position.copy(pos); this.mesh.lookAt(face); this.mesh.scale.setScalar(k); }
+  say(text, o = {}) {
+    this.kid = o.mood === 'kid';
+    this.tw.start(text, { speed: o.speed || (this.kid ? 26 : 13) });
+    if (this.kid) { this.mesh.visible = false; Party.say(this.tw.final, Math.max(2.2, this.tw.final.length / 14 + 1.6)); return; }
+    this.layout(this.tw.final);
+    if (!this.mesh.visible) { this.mesh.visible = true; this.fresh = true; }
+    this.redraw();
+  }
+  layout(text) {
+    for (let s = 5; s >= 3; s--) {
+      const per = Math.floor((this.W - 70) / (6 * s)), lines = PixelFont.wrap(PixelFont.norm(text), per);
+      if (lines.length * 10 * s <= this.H - 50 || s === 3) { this.scale = s; this.lines = lines; return; }
+    }
+  }
+  hide() { this.mesh.visible = false; this.tw.done = true; this.tw.final = ''; this.pinned = false; this.kid = false; }
+  // its voice: a delete key, a moment behind the letter
+  voice(c, i) { if (this.kid) { if (i & 1) G.audio.sfx.clack(); return; } G.audio.sfx.tk(G.audio.now + 0.05); }
+  redraw() {
+    if (this.kid) return;
+    const g = this.g, W = this.W, H = this.H, s = this.scale, inv = G.boss && G.boss.inv > 0.5;
+    const bg = inv ? '#ececec' : '#000000', fg = inv ? '#000000' : '#ffffff';
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = fg; g.fillRect(4, 4, W - 8, H - 8); g.fillStyle = bg; g.fillRect(10, 10, W - 20, H - 20);
+    const lh = 10 * s, blockH = this.lines.length * lh - 3 * s;
+    let y = Math.round((H - blockH) / 2), left = this.tw.buf.length, cx = 0, cy = y;
+    for (const line of this.lines) {
+      const x = Math.round((W - PixelFont.width(line, s)) / 2);
+      if (left > 0) {
+        const vis = left >= line.length ? line : line.slice(0, left);
+        PixelFont.draw(g, vis, x, y, s, fg);
+        cx = x + PixelFont.width(vis, s) + s; cy = y;
+      } else if (left === 0 && !cx) { cx = x; cy = y; }
+      left -= line.length + 1; y += lh;
+    }
+    if (this.blink) { g.fillStyle = fg; g.fillRect(cx + s, cy - s, Math.max(2, s), 9 * s); }
+    this.tex.needsUpdate = true;
+    if (G.boss && G.boss.setTalk) G.boss.setTalk(this.tw.buf);
+  }
+  update(dt) {
+    if (!this.mesh.visible && !(this.kid && !this.tw.done)) return;
+    this.tw.update(dt);
+    const b = Math.floor(G.clock.beat / 2) % 2 === 0;
+    if (b !== this.blink) { this.blink = b; this.redraw(); }
+  }
+  dispose() { disposeObject(this.mesh); }
+}
+
+// ---------------------------------------------------------------------------
+//  SecretUI - DELETE UI: your HP bar, your TP bar and your menu, deleted. Each comes back when you hold its
+//  panel on your wrist for 2 beats while SCR1PT_K1DD1E types (desktop: hold Z / X / C). Until then you take
+//  20% less damage, your SOUL's own glow shows your HP (bright = healthy, dim and flickering = low), and a
+//  heartbeat you feel keeps time with it (faster when you're low).
+// ---------------------------------------------------------------------------
+const SecretUI = {
+  del: null, chips: [], heartT: 0, deskEl: null,
+  any() { const d = this.del; return !!d && (d.hp || d.tp || d.menu); },
+  deleteAll(when) {
+    this.del = { hp: true, tp: true, menu: true };
+    G.ui.hudDel = this.del; G.ui.refreshHUD();
+    if (G.battle) G.battle.takenMul = 0.8;
+    G.audio.sfx.cut(when); G.audio.sfx.deleteBuzz();
+    G.ui.showPrompt(G.xr ? 'YOUR HUD WAS DELETED.  HOLD EACH WRIST PANEL FOR 2 BEATS TO RESTORE IT' : 'YOUR HUD WAS DELETED.  HOLD Z (HP), X (TP) OR C (MENU) FOR 2 BEATS TO RESTORE IT', 3.4, '#c8ff00');
+    if (Party.on && !Party.down) Party.say('it deleted your HUD. hold your wrist. im restoring it', 2.8);
+    this.build();
+  },
+  // the restore panels: HP and MENU on the left wrist (above your HP), TP on the right (above it)
+  build() {
+    this.clearChips();
+    const U = G.ui;
+    const mk = (key, label, parent, y) => {
+      const P = new TextPanel({ w: 0.085, h: 0.024, cw: 128, ch: 36, bg: 'rgba(0,0,0,0.92)', border: '#c8ff00', borderPx: 3, renderOrder: 31 });
+      P.mesh.position.set(0, y, 0.004);
+      if (parent) parent.add(P.mesh);
+      const C = { key, label, P, hold: 0, drawn: -1, desk: key === 'hp' ? 'KeyZ' : key === 'tp' ? 'KeyX' : 'KeyC', side: parent === U.wristTP.mesh ? 'right' : 'left' };
+      this.chips.push(C); this.drawChip(C);
+    };
+    mk('hp', 'HP', U.wristHP.mesh, 0.047); mk('menu', 'MENU', U.wristHP.mesh, 0.074); mk('tp', 'TP', U.wristTP.mesh, 0.07);
+    if (!G.xr) {
+      if (!this.deskEl) { this.deskEl = document.createElement('div'); this.deskEl.style.cssText = 'position:absolute;left:12px;bottom:56px;font:bold 15px "Courier New",monospace;color:#c8ff00;text-shadow:0 0 4px #000;letter-spacing:1px;'; document.getElementById('hud').appendChild(this.deskEl); }
+      this.deskEl.style.display = 'block';
+    }
+  },
+  drawChip(C) {
+    const g = C.P.ctx, W = 128, H = 36, k = clamp(C.hold / 2, 0, 1);
+    g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#c8ff00'; g.fillRect(0, 0, W, 3); g.fillRect(0, H - 3, W, 3); g.fillRect(0, 0, 3, H); g.fillRect(W - 3, 0, 3, H);
+    g.fillStyle = '#3a4a00'; g.fillRect(6, 6, W - 12, H - 12); g.fillStyle = '#c8ff00'; g.fillRect(6, 6, Math.round((W - 12) * k), H - 12);
+    const t = k > 0 ? `${C.label} ${Math.round(k * 100)}%` : `HOLD: ${C.label}`;
+    PixelFont.draw(g, t, Math.round((W - PixelFont.width(t, 2)) / 2), 11, 2, k > 0.5 ? '#000000' : '#ffffff');
+    C.P.tex.needsUpdate = true; C.drawn = Math.round(k * 20);
+  },
+  restore(C) {
+    this.del[C.key] = false;
+    G.audio.sfx.compileDing(); G.input.pulseAll(0.3, 40);
+    if (Party.on && !Party.down) Party.say(`restored ${C.label.toLowerCase()}.dll`, 1.4);
+    if (C.P.mesh.parent) C.P.mesh.parent.remove(C.P.mesh);
+    disposeObject(C.P.mesh);
+    this.chips.splice(this.chips.indexOf(C), 1);
+    G.ui.refreshHUD();
+    if (!this.any()) { if (G.battle) G.battle.takenMul = 1; this.del = null; G.ui.hudDel = null; if (this.deskEl) this.deskEl.style.display = 'none'; }
+    const B = G.battle;
+    if (C.key === 'menu' && B && B.heldTurn) { B.heldTurn = false; G.ui.hideFlavor(); B.turnMenus(); }
+  },
+  update(dt, rdt) {
+    if (!this.del) return;
+    const bd = G.clock.beatDur, B = G.battle;
+    for (const C of this.chips.slice()) {
+      let on = false;
+      if (G.xr) {
+        const h = G.input.hands.find((x) => x.side !== C.side);
+        if (h && h.connected && C.P.mesh.parent) { C.P.mesh.getWorldPosition(_v1); on = h.tip.distanceTo(_v1) < 0.05; }
+      } else on = G.input.key(C.desk) && B && B.state !== 'PARTY_HACK';   // (Z X C type in his H4CK)
+      // (held in beats, on the music's clock: 2 beats restores it)
+      const beat = G.clock.beat;
+      if (on) { if (C.since === undefined || C.since === null) C.since = beat - C.hold; C.hold = Math.max(0, beat - C.since); } else { C.since = null; C.hold = Math.max(0, C.hold - rdt / bd * 2); }
+      if (on && Party.on && Party.model) Party.model.talkT = Math.max(Party.model.talkT, 0.3);
+      if (on && Math.floor(C.hold * 2) !== C.tick) { C.tick = Math.floor(C.hold * 2); G.audio.sfx.clack(); }
+      if (Math.round(clamp(C.hold / 2, 0, 1) * 20) !== C.drawn) this.drawChip(C);
+      if (C.hold >= 2) this.restore(C);
+      if (!this.del) return;
+    }
+    if (this.deskEl && !G.xr) this.deskEl.textContent = this.chips.map((C) => `[${C.desk.slice(-1)}] ${C.label} ${'#'.repeat(Math.round(clamp(C.hold / 2, 0, 1) * 6)).padEnd(6, '.')}`).join('   ');
+    // your HP on your SOUL's glow, and a heartbeat that keeps time with it
+    if (this.del.hp && G.soul.active && G.soul.alive) {
+      const s = G.soul, f = clamp(s.hp / s.maxHp, 0, 1), fl = f < 0.35 ? 0.55 + 0.45 * Math.sin(G.time * (Flash.reduced ? 3 : 9)) : 1;
+      G.fx.glow.add(s.pos.x, s.pos.y, s.pos.z, 0.08 + 0.2 * f, 1, 0.1 + 0.2 * f, 0.2, (0.2 + 0.6 * f) * fl, 0);
+      s.aura.material.opacity = (0.05 + 0.3 * f) * fl;
+      this.heartT -= rdt;
+      if (this.heartT <= 0 && B && B.inFight()) { this.heartT = lerp(0.42, 1.1, f); G.input.pulseAll(0.32, 28); setTimeout(() => G.input.pulseAll(0.22, 22), 150); }
+    }
+  },
+  clearChips() { for (const C of this.chips) { if (C.P.mesh.parent) C.P.mesh.parent.remove(C.P.mesh); disposeObject(C.P.mesh); } this.chips.length = 0; },
+  reset() {
+    this.clearChips(); this.del = null; G.ui.hudDel = null; G.ui.refreshHUD();
+    if (G.battle) { G.battle.takenMul = 1; G.battle.heldTurn = false; }
+    if (this.deskEl) this.deskEl.style.display = 'none';
+  },
+  // DELETE UI's 2-beat selection, closing round your HUD
+  drawSelection(k) {
+    const U = G.ui, P = U.status.mesh;
+    P.updateMatrixWorld(true);
+    const hw = 0.78 * (1.25 - 0.25 * k), hh = 0.08 * (1.6 - 0.6 * k);
+    const c = (x, y, o) => o.set(x, y, 0).applyMatrix4(P.matrixWorld);
+    NullKit.antsEdge(c(-hw, -hh, _v1), c(hw, -hh, _v2), NULL_TELE, 1.2); NullKit.antsEdge(c(hw, -hh, _v1), c(hw, hh, _v2), NULL_TELE, 1.2);
+    NullKit.antsEdge(c(hw, hh, _v1), c(-hw, hh, _v2), NULL_TELE, 1.2); NullKit.antsEdge(c(-hw, hh, _v1), c(-hw, -hh, _v2), NULL_TELE, 1.2);
+    for (const W of [U.wristHP.mesh, U.wristTP.mesh]) {
+      if (!W.parent) continue;
+      W.updateMatrixWorld(true); const s = 0.05 * (1.3 - 0.3 * k);
+      const d = (x, y, o) => o.set(x, y, 0.004).applyMatrix4(W.matrixWorld);
+      NullKit.antsEdge(d(-s, -s, _v1), d(s, -s, _v2), NULL_TELE, 1.2, 0.003); NullKit.antsEdge(d(s, -s, _v1), d(s, s, _v2), NULL_TELE, 1.2, 0.003);
+      NullKit.antsEdge(d(s, s, _v1), d(-s, s, _v2), NULL_TELE, 1.2, 0.003); NullKit.antsEdge(d(-s, s, _v1), d(-s, -s, _v2), NULL_TELE, 1.2, 0.003);
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
+//  the boss bundle
+// ---------------------------------------------------------------------------
+Object.assign(SECRET_DEF, {
+  displayName: '_____', fileName: 'THE NULL',
+  phaseRules: [
+    { name: 'NULL POINTER', hpFrac: 1.00, spare: 1e9, intensity: 1.9, section: 'DROP' },
+    { name: 'ERASURE',      hpFrac: 0.70, spare: 1e9, intensity: 2.0, section: 'BREAK' },   // BREAKDOWN into REBUILD
+    { name: 'SEGFAULT',     hpFrac: 0.40, spare: 1e9, intensity: 2.3, section: 'PEAK' },
+    { name: '_____',        hpFrac: 0.15, spare: 1e9, intensity: 2.5, section: 'WAVE' },
+  ],
+  hp: 6666, stats: { atk: 22, def: 10 }, bulletDmg: [8, 8, 8, 10], phaseGlitch: [0, 0.03, 0.04, 0.06],
+  barScale: 1.23,
+  transition: 'custom', retain: ['kiddie'],   // (boss 2's track stays decoded: the fight goes back there)
+  kits: [NullKit, ChandKit, OFX],              // THE NULL, and the two echoes' kits
+  palette: { name: '#ffffff', spareName: '#ffffff', hp: '#ffffff', hpBack: '#262626', accent: '#c8ff00', pelletGlow: 0xffffff, glyph: 0xffffff, pelletLook: 'bit' },
+  arenaTheme: 'null', bgTheme: 'null',
+  dialogue: NLINES, flavorText: NFLAVOR, dialogueStyle: 'face',
+  attacks: SECRET_PATTERNS,
+  acts: [
+    { key: 'check', label: 'CHECK' }, { key: 'listen', label: 'LISTEN' }, { key: 'talk', label: 'TALK' },
+    { key: 'x', label: 'CTRL+ALT+DEL 100%TP' }, { key: 'name', label: 'GIVE IT A NAME' },
+  ],
+  actMenuOpts: { yOff: -0.47, radius: 0.72, gap: 0.024 },
+  items: [{ key: 'cookie', label: 'CACHED COOKIE x2' }, { key: 'state', label: '★SAVE STATE x1' }],
+  fightType: 'null',
+  shatterStyle: 'blank',
+  glitchWords: ['NULL', 'DELETED', '_____'],
+  grazeTpMul: 1.5,                 // a high-risk fight: grazes give 50% more TP
+  hackMul: SECRET_BAL.fightMul,    // his H4CK is half your FIGHT here too
+  buildModel() { return new NullEntity(); },
+  updateModel() { SecretFight.tick(G.dt, G.rdt); },
+  newState() { return { items: { cookie: 2, state: 1 }, listens: 0, talks: 0, dropped: false, blankDone: false, finalTurn: false, p4Attacks: 0, uiDeleted: false, named: '', heldTurn: false, takenMul: 1, fin: null }; },
+  snapshot(B) { return { items: Object.assign({}, B.items), listens: B.listens, talks: B.talks, p4Attacks: B.p4Attacks, uiDeleted: B.uiDeleted }; },
+  restore(B, s) { Object.assign(B, { items: Object.assign({}, s.items), listens: s.listens, talks: s.talks, p4Attacks: s.p4Attacks, uiDeleted: s.uiDeleted, blankDone: false, finalTurn: false, fin: null }); },
+  hudName(B) { return (B && B.named) || SecretFight.nameNow || '_____'; },
+  // its MERCY bar has nothing in it
+  drawMercy(g, B, W) { const mw = 220, mx = Math.round((W - mw) / 2) + 40, my = 64; PixelFont.draw(g, 'MERCY', mx - 82, my, 2, '#777777'); PixelFont.draw(g, '_ _ _ _ _ _ _ _ _ _', mx, my, 2, '#777777'); },
+  onLoad() { SecretFight.nameNow = '_____'; },
+  intro(B) {
+    const kb = { text: 'hey... thats MINE', mood: 'kid', fn: () => { if (Party.model) Party.model.setMood('angry'); } };
+    B.talk([NullVoice.line(NLINES.supposed, B), { text: '...is that a text box. is it TALKING', mood: 'kid' }, NullVoice.line(NLINES.ends, B), kb,
+      NullVoice.line(NLINES.after, B), { text: 'ok. ok ok ok. i get a turn too right. we do this TOGETHER', mood: 'kid' }], () => B.newTurn());
+  },
+  flavor(B) {
+    if (B.finalTurn) return NFLAVOR.final;
+    if (B.turn === 1) return NFLAVOR.first;
+    return pick(NFLAVOR[B.phase]);
+  },
+  canName(B) { return B.phase === 3 && B.listens >= 3 && Party.compileFull(); },
+  refreshMenus(B) {
+    const it = B.items, im = G.ui.itemMenu.buttons, am = G.ui.actMenu.buttons;
+    im[0].setLabel(`CACHED COOKIE x${it.cookie}`); im[0].setDisabled(it.cookie <= 0);
+    im[1].setLabel(`★SAVE STATE x${it.state}`); im[1].setDisabled(it.state <= 0);
+    am[3].setDisabled(!Party.canX());
+    am[4].hidden = !this.canName(B);
+  },
+  actPrompt(B) { return this.canName(B) ? '* What will you do?\n* (It keeps asking for something you can give it.)' : B.phase === 3 ? '* What will you do?\n* (It keeps asking the same question.)' : '* What will you do?'; },
+  itemPrompt() { return '* Your inventory.\n* (★ = found in THE NULL. It was someone\'s, once.)'; },
+  itemLine(B) { return NullVoice.line(pick(NLINES.item), B); },
+  mercyPrompt() { return '* Mercy: _____.'; },
+  spareCap() { return 0; },
+  act(B, k) {
+    const U = G.ui, say = (l) => NullVoice.line(l, B);
+    if (k === 'x' && !Party.canX()) { G.audio.sfx.buzz(); U.showFlavor(Party.down ? '* K1DD1E is NOT RESPONDING.' : '* Not enough TP! (You need 100%.)\n* Graze bullets during attacks to build it up.'); return; }
+    U.actMenu.hide();
+    if (k === 'check') B.narrate(NLINES.check, () => B.afterAction([say(NLINES.supposed)]));
+    else if (k === 'listen') {
+      const i = Math.min(B.listens, NLINES.listenFlavor.length - 1); B.listens++;
+      G.audio.sfx.whisper();
+      const l = B.phase >= 3 ? NLINES.name : pick([NLINES.supposed, NLINES.ends, NLINES.after]);
+      B.narrate(`${NLINES.listenFlavor[i]}\n* "${NullVoice.render(l, B.listens)}"`, () => B.afterAction([]));
+    } else if (k === 'talk') {
+      const l = NLINES.talk[B.talks++ % NLINES.talk.length];
+      B.narrate('* You talk to it.\n* It types your words back to you with the letters missing.', () => B.afterAction([say(l)]));
+    } else if (k === 'x') Party.startX(B);
+    else if (k === 'name') { if (SecretFight.nameIt) SecretFight.nameIt(B); else B.afterAction([]); }
+  },
+  useItem(B, k) {
+    if (!B.items[k]) { G.audio.sfx.buzz(); return; }
+    B.items[k]--;
+    G.ui.itemMenu.hide();
+    const s = G.soul; Head.update();
+    G.audio.sfx.crunch(); B.after(0.3, () => G.audio.sfx.heal());
+    let text;
+    if (k === 'cookie') { const h = s.heal(22); text = `* You eat a CACHED COOKIE.\n* It's from a site that doesn't exist anymore.\n* You recovered ${h} HP!`; G.fx.damageNumber(Head.rel(_v2, 0, -0.05, 0.9), '+' + h + ' HP', '#3dff5a', 0.9); }
+    else {
+      s.heal(999); if (Party.on) { if (Party.down) Party.revive(1); else Party.heal(999); }
+      text = '* You load the SAVE STATE.\n* Everything is how it was a moment ago.\n* HP and K1DD1E fully restored!';
+    }
+    G.fx.heal(Head.rel(_v1, 0, -0.25, 0.6));
+    B.narrate(text, () => B.afterAction([this.itemLine(B)]));
+  },
+  mercy(B, k) {
+    G.ui.mercyMenu.hide();
+    B.narrate(k === 'spare' ? NLINES.spare : NLINES.flee, () => B.afterAction([NullVoice.line(k === 'spare' ? NV('SPARE?') : NV('THERE IS NO OUT.'), B)]));
+  },
+  fightLine(B, kind) { return NullVoice.line(pick(kind === 'miss' ? NLINES.miss : NLINES.hit), B); },
+  // FIGHT: the usual slash (bigger: it's enormous; phases 3-4 armoured), and in the last turn the finishing move
+  startFight(B) { if (B.finalTurn) SecretFight.finish(B, 'delete'); else B.startFight(); },
+  updateFight(B, dt, rdt) { B.updateFight(); },
+  fightMul(B) {
+    const arm = B.phase >= 2 ? SECRET_BAL.armor : 1;
+    if (arm < 1) G.ui.showPrompt('ARMOR (H4CK GOES THROUGH IT)', 1.2, '#888888');
+    return SECRET_BAL.fightMul * arm;
+  },
+  hpFloor() { return 1; },   // only the finishing move ends it
+  chooseAttack(B) {
+    const p = B.phase;
+    if (B.finalTurn) return 'wait';
+    if (p === 3) {
+      if (!B.blankDone && (B.bossHp <= this.hp * SECRET_BAL.blankAt || B.p4Attacks >= SECRET_BAL.blankAfter)) return 'blank';
+      B.p4Attacks++;
+      if (!B.uiDeleted) { B.uiDeleted = true; return 'deleteui'; }
+      return B.p4Attacks % 2 ? 'remix' : 'deleteui';
+    }
+    let list = [['ants', 'missing', 'undo'], ['cage', 'echoes', 'stack'], ['horizon', 'mirror', 'skip']][p];
+    if (p === 1 && !(Party.on && !Party.down)) list = list.filter((k) => k !== 'cage');
+    const name = list[B.rot[p] % list.length];
+    B.rot[p]++; if (B.rot[p] % list.length === 0) B.cycle[p]++;
+    return name;
+  },
+  attackLines(B, atk) {
+    if (atk.startsWith('shift') || atk === 'blank') return [];
+    const L = [], A = NLINES.atk[atk];
+    if (A) L.push(NullVoice.line(pick(A), B));
+    if (NLINES.kidAtk[atk] && Party.on && !Party.down && chance(0.7)) L.push({ text: NLINES.kidAtk[atk], mood: 'kid' });
+    return L;
+  },
+  onAttackEnd(B, name) {
+    G.loco.push.set(0, 0, 0); NullKit.hideAll(); if (G.boss) G.boss.reach(null);
+    if (name.startsWith('shift')) {
+      const np = +name.slice(5);
+      if (B.phase < np) B.applyPhase(np);
+      B.setState('ATTACK_END');
+      B.afterIn('ATTACK_END', 0.4, () => { const atk = B.chooseAttack(); B.talk(this.phaseLines(B, np).concat(B.attackLines(atk)), () => B.startAttack(atk)); });
+      return true;
+    }
+    if (name === 'blank') {
+      // the question hangs there; the song holds its breath (the outro's rumble) until the last blow
+      B.blankDone = true; B.finalTurn = true;
+      B.bossHp = Math.max(1, Math.min(B.bossHp, Math.round(this.hp * 0.01))); G.ui.refreshHUD();
+      G.clock.play('HOLD', { xfade: 0.8 });
+      if (SecretFight.stage) SecretFight.stage.lineArt = 0.6;
+      B.setState('ATTACK_END');
+      B.afterIn('ATTACK_END', 0.8, () => B.talk([NullVoice.line(NLINES.name, B, { speed: 9 }), { text: '...', mood: 'kid' }], () => B.newTurn()));
+      return true;
+    }
+    return false;
+  },
+  // the music carries the fight: the first attack drops with the drop; STACK TRACE runs over REBUILD; THE BLANK
+  // is the last 8 bars before the FINAL HIT
+  prepareAttack(B, name) {
+    const c = G.clock, m = G.audio.track.marks, M = c.bpb;
+    let bar = Math.floor(c.beat / M) + 1; if ((bar * M - c.beat) * c.beatDur < 0.3) bar++;
+    const when = c.timeOfBeat(bar * M);
+    const seek = (sec, pos) => c.after(when - 0.08, () => { if (B.attackName === name && B.state === 'ATTACK_WAIT') c.play(sec, { pos, when, beat0: bar * M }); });
+    if (B.phase === 0 && !B.dropped) { B.dropped = true; seek('DROP', m.GAP); B.pendingBar = bar + 1; return true; }
+    if (name === 'stack') { seek('BREAK', m.REBUILD); B.pendingBar = bar; return true; }
+    if (name === 'blank') { seek('WAVE', m.FINAL - 8 * c.barDur); B.pendingBar = bar; return true; }
+    return false;
+  },
+  // phase changes ride the song: one bar before the 0:45 hit, one bar before the 1:06.6 drop, a crossfade into
+  // the second wave (the look changes on that hit: NullShift)
+  seekShift(B, np, bar, when) {
+    const c = G.clock, m = G.audio.track.marks;
+    if (np === 1) c.seekAtBar('BREAK', m.HIT - c.barDur, when);
+    else if (np === 2) c.seekAtBar('PEAK', m.PEAK - c.barDur, when);
+    else c.seekAtBar('WAVE', m.WAVE, when, { xfade: 0.3 });
+    const name = 'shift' + np, P = this.attacks[name];
+    B.pattern = new P.cls(Object.assign({ intensity: 1, speedMul: G.bullets.speedMul, bars: P.bars, dmg: 0, bpb: c.bpb }, P.opts));
+    B.attackName = name;
+    G.soul.active = true; G.loco.enabled = true; G.loco.clamp = true; G.loco.setMode('free');
+    G.ui.hideFlavor(); G.ui.hideAllMenus(); G.ui.hideBubble();
+    B.pattern.start(bar); B.setState('BOSS_ATTACK');
+  },
+  phaseLines(B, np) { return (NLINES.phase[np] || []).map((l) => (l.mood ? l : NullVoice.line(l, B))); },
+  applyPhaseLook(B, phase, instant) {
+    const S = SecretFight.stage;
+    if (S) { S.invTarget = phase === 2 ? 1 : 0; if (instant) S.inv = S.invTarget; S.lineArt = 0; }
+    const want = phase === 2 ? 'nullInv' : 'null';
+    if (G.arena.themeName !== want) G.arena.setTheme(want, instant ? 0 : 0.3);
+    if (Party.on) Party.compileStep(phase + 1);
+    if (G.boss && instant) { G.boss.setPhase(phase); G.boss.inv = G.boss.invTarget; G.boss.wire = G.boss.wireTarget; }
+  },
+  onNewTurn(B) {
+    if (B.finalTurn && Party.on) Party.acted = true;   // (he's watching it: the last turn is yours)
+  },
+  // DELETE UI took your menu: the turn waits till it's restored
+  turnHeld(B) {
+    if (!SecretUI.del || !SecretUI.del.menu) return false;
+    B.heldTurn = true;
+    G.ui.showFlavor(G.xr ? '* Your menu was deleted.\n* Hold the MENU panel on your left wrist for 2 beats\n  while K1DD1E restores it.' : '* Your menu was deleted.\n* Hold C for 2 beats while K1DD1E restores it.');
+    return true;
+  },
+  onRetry(B) {
+    // the phase starts over: both of you at full HP, TP at 50%
+    G.soul.tp = 50; B.dropped = true; B.minHp = 0;
+    SecretUI.reset(); NullKit.hideAll(); NullKit.clearRec();
+    G.clock.setRate(1, 0.05);
+    if (SecretFight.stage) SecretFight.stage.lineArt = 0;
+    if (G.boss) G.boss.reach(null);
+  },
+  retryLines(B) { return NLINES.retry.map((l) => (l.mood ? l : NullVoice.line(l, B))); },
+  // the SOUL is deleted (it turns into underscores; they fade)
+  gameOverTalk(B) {
+    if (Party.on) Party.say('NO. ctrl z. CTRL Z.', 3.2);
+    G.audio.sfx.tk(); B.afterIn('GAME_OVER', 0.25, () => G.audio.sfx.tk());
+  },
+  debugMax(B) { B.bossHp = Math.min(B.bossHp, Math.round(this.hp * 0.05)); B.listens = Math.max(B.listens, 3); if (Party.on && Party.ally) { Party.ally.compile = 1; Party.ally.compileFail = false; } },
+  cleanup(B) {
+    if (NullKit.ready) NullKit.hideAll();
+    G.loco.push.set(0, 0, 0);
+    if (G.boss && G.boss.reach) G.boss.reach(null);
+    if (B) { B.minHp = 0; B.takenMul = 1; }
+    SecretUI.reset();
+    if (G.clock.running && G.clock.seg.ramp && G.clock.seg.ramp.r1 !== 1) G.clock.setRate(1, 0.05);
+  },
+  onUnload() {
+    if (G.ui.faceBox) { G.ui.faceBox.dispose(); G.ui.faceBox = null; }
+    NullAnts.dispose();
+    SecretUI.reset();
+    G.bullets.invK = 0; G.tele.dark = false;
+  },
+  updateState(B, state, dt, rdt) { if (state === 'SECRET_FINISH') SecretFight.updateFinish(B, dt, rdt); },
+  // the end: the fight's own victory (not boss 2's) - endings.fight is the DELETE ending
+  victory(B) { this.endings.fight(B); },
+  endings: {
+    fight(B) { SecretFight.leave(B, 'delete'); },
+  },
+});
+// (getters can't go through Object.assign: it would read them off the source)
+Object.defineProperties(SECRET_DEF, {
+  bpm: { get() { return this.music.bpm; }, configurable: true }, offset: { get() { return this.music.offset; }, configurable: true }, sections: { get() { return this.music.sections; }, configurable: true },
+});
+// its idle and last-turn pattern: it waits, and types its question
+class NullWait extends NullPattern {
+  onBeat(n) { if (G.boss && G.boss.setTalk && n % 4 === 0) G.boss.setTalk(n % 8 ? '?' : NullVoice.render(NLINES.name, G.battle ? G.battle.listens : 0)); }
+  isIdle() { return true; }
+}
+SECRET_PATTERNS.wait = { cls: NullWait, bars: 2, name: '_____', dmg: 0 };
+
+// ============================================================================
+//  SecretFight - THE NULL: from the fall to the end, and back into boss 2's hall
+// ============================================================================
+const SecretFight = {
+  stage: null, nameNow: '_____', nameT: 0, revealT: 0, warm: 0,
+  // in the dark, before the song starts: boss 2's hall goes; the boss, its kits and THE NULL are built (hidden)
+  prepare(B) {
+    const gold = B.fightGold;
+    B.loadBoss(SECRET_DEF);   // (frees boss 2's hall and model first)
+    B.resetBattleState(); B.fightGold = gold;
+    this.stage = new NullStage(G.arena.center);
+    G.boss.root.visible = false;
+    G.ui.bossHpShown = SECRET_DEF.hp;
+    this.revealT = 0;
+  },
+  // its shaders, compiled in the dark (not on the frame it appears), then drawn unseen for a few frames
+  prewarm() {
+    const S = this.stage, H = G.boss;
+    const pools = ['pellet', 'shard', 'sstar', 'glyph'].map((k) => G.bullets.pools[k].mesh);
+    secretPrewarm([S.group, S.sky.mesh, S.hole.group, S.hole.ring, S.hole.ring2, H.root, H.pix, H.trails].concat(pools));
+    NullKit.prewarm();
+    S.warm = 3; this.warm = 3;
+  },
+  warmUp(rdt) {
+    if (this.stage) this.stage.warmUp(rdt);
+    if (!(this.warm > 0) || !G.boss) return;
+    this.warm--;
+    const r = G.boss.root; r.visible = this.warm > 0; r.scale.setScalar(this.warm > 0 ? 1e-4 : 1);
+  },
+  // IMPACT (0:11.0): you land, and its eye opens
+  reveal(B) {
+    const S = this.stage;
+    S.show(true); this.revealT = 0;
+    G.boss.reset(); G.boss.root.visible = true; G.boss.eyeT = 0;
+    G.input.pulseAll(1, 180);
+    if (Flash.reduced) { G.fx.fadeT = 1; G.fx.fadeTo(0, 1.6, 0x000000); }
+    else { G.fx.vigU.uFadeCol.value.setHex(0xffffff); G.fx.fadeT = 0.85; G.fx.fadeTo(0, 5, 0xffffff); }   // one soft white beat (a single change)
+    B.setState('SECRET_NULL');
+    G.arena.visible = true; G.arena.opacity = 1; G.arena.setTheme('null');
+    G.soul.reset(true); G.soul.active = true; G.loco.enabled = false;
+    G.ui.setBattleHUD(true); G.ui.placeArenaUI(); G.ui.refreshHUD();
+    // he fell in too: beside you, on what's left of his CRT
+    Party.start(ALLY_KIDDIE);
+    Party.compileStep(1);
+    B.after(1.4, () => Party.say('...where are we', 2.4));
+    B.takeSnapshot();
+    B.afterIn('SECRET_NULL', 3.6, () => SECRET_DEF.intro(B));
+  },
+  update() { /* (the reveal settles: everything ticks in tick()) */ },
+  // every frame while it's the boss: its model, THE NULL, the kit, DELETE UI, its name
+  tick(dt, rdt) {
+    const S = this.stage, H = G.boss;
+    if (H) H.update(dt);
+    let inv = 0;
+    if (S && S.on) {
+      const sp = rdt / (Flash.reduced ? 1 : 0.3);   // the inversion: 0.3 s (Reduced: 1 s)
+      S.inv = S.invTarget > S.inv ? Math.min(S.invTarget, S.inv + sp) : Math.max(S.invTarget || 0, S.inv - sp);
+      this.revealT += rdt;
+      S.update(rdt, clamp(this.revealT / (Flash.reduced ? 1.2 : 0.35), 0, 1));
+      inv = S.inv;
+    }
+    G.bullets.invK = inv; G.tele.dark = inv > 0.5;
+    if (NullKit.ready) { NullKit.update(rdt, inv, !!(S && S.on)); NullKit.flush(); }
+    NullAnts.update(rdt);
+    if (ChandKit.ready) ChandKit.fx(dt);
+    if (OFX.ready) OFX.update(dt);
+    OUT.updateGlints(dt);
+    if (G.soul.active && NullKit.ready) NullKit.record();
+    SecretUI.update(dt, rdt);
+    // its name: the underscores flicker, and letters almost appear
+    this.nameT -= rdt;
+    if (this.nameT <= 0) {
+      this.nameT = Flash.reduced ? 0.33 : 0.14;
+      const prev = this.nameNow;
+      this.nameNow = chance(0.07) ? '_____'.split('').map(() => (chance(0.3) ? pick(['N', 'A', 'M', 'E', '?']) : '_')).join('') : chance(0.2) ? '_ ___' : '_____';
+      if (prev !== this.nameNow) G.ui.refreshHUD();
+    }
+  },
+  onBeat(b) { if (this.stage && b % 2 === 0) this.stage.onHalf(); },   // (the half-time pulse)
+  // ---------------------------------------------------------------- the finishing move (on the FINAL HIT)
+  // the song seeks to one bar before the FINAL HIT; K1DD1E selects it; you punch the DEL key; the blow lands
+  // exactly on the hit (if you don't, he does it for you)
+  finish(B, how) {
+    G.ui.hideAllMenus(); G.ui.hideFlavor();
+    B.setState('SECRET_FINISH');
+    const c = G.clock, m = G.audio.track.marks, M = c.bpb;
+    let bar = Math.floor(c.beat / M) + 1; if ((bar * M - c.beat) * c.beatDur < 0.4) bar++;
+    const when = c.timeOfBeat(bar * M);
+    c.after(when - 0.08, () => c.play('OUTRO', { pos: m.FINAL - c.barDur, when, beat0: bar * M, loop: false, xfade: 0.25 }));
+    B.fin = { how, hit: (bar + 1) * M, punched: false, landed: false, t: 0 };
+    if (Party.on && !Party.down) Party.say('ctrl+a. SELECTED. now HIT IT', 2.2);
+    if (!this.key) {
+      const t = canvasTex(64, 64, (g) => { g.fillStyle = '#101010'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#c8ff00'; g.fillRect(0, 0, 64, 4); g.fillRect(0, 60, 64, 4); g.fillRect(0, 0, 4, 64); g.fillRect(60, 0, 4, 64); PixelFont.draw(g, 'DEL', 15, 25, 2, '#c8ff00'); });
+      this.key = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.06), [0, 1, 2, 3].map(() => new THREE.MeshBasicMaterial({ color: 0x202020 })).concat([new THREE.MeshBasicMaterial({ map: t }), new THREE.MeshBasicMaterial({ color: 0x202020 })]));
+      scene.add(this.key);
+    }
+    Head.update(); this.key.position.copy(Head.rel(_v1, 0, -0.18, G.xr ? 0.45 : 0.9)); this.key.lookAt(Head.pos); this.key.visible = true; this.key.scale.setScalar(1);
+    G.ui.showPrompt(G.xr ? 'PUNCH  DEL  ON THE LAST HIT' : 'CLICK  DEL  ON THE LAST HIT', 2.4, '#c8ff00');
+    G.soul.active = false;
+  },
+  updateFinish(B, dt, rdt) {
+    const F = B.fin; if (!F) return;
+    F.t += rdt;
+    const c = G.clock, H = G.boss;
+    // K1DD1E's selection, round all of it
+    if (H && !F.landed) { const p = H.root.position, s = H.root.scale.x; _v1.set(p.x - 9 * s, 0, p.z - 4 * s); _v2.set(p.x + 9 * s, 30 * s, p.z + 9 * s); NullKit.antsBox(_v1, _v2, NULL_TELE, 1.4, 0.18); }
+    const K = this.key;
+    if (K && K.visible && !F.punched) {
+      K.position.y += Math.sin(G.time * 3) * 0.0004;
+      let hit = false;
+      if (G.xr) { for (const h of G.input.hands) if (h.connected && h.swingSpeed > 0.4 && h.tip.distanceTo(K.position) < 0.11) { hit = true; h.pulse(1, 80); } }
+      else hit = G.input.desk.click || G.input.keyDown('Space');
+      if (hit) { F.punched = true; G.audio.sfx.thock(true); K.scale.set(1, 1, 0.4); G.ui.showPrompt('...', 0.6, '#c8ff00'); }
+    }
+    if (!F.landed && c.beat >= F.hit - 0.02) {
+      F.landed = true;
+      if (!F.punched && Party.on && !Party.down) Party.say('ugh. FINE. i got it', 1.6);
+      if (K) K.visible = false;
+      if (H && H.erase) H.erase();
+      G.audio.sfx.cut(); G.audio.sfx.deleteBuzz(); G.input.pulseAll(1, 260);
+      B.bossHp = 0; G.ui.refreshHUD();
+      B.afterIn('SECRET_FINISH', 2.8, () => B.fightVictory());
+    }
+  },
+  // ---------------------------------------------------------------- out of THE NULL, back into boss 2's hall
+  // (the endings decide what you see first; this is the way home: the boss 2 fight ends as SPARED)
+  leave(B, how) {
+    B.setState('SECRET_RETURN');
+    G.fx.fadeTo(1, 1.2, 0x000000);
+    G.audio.fadeMusic(0, 1.5);
+    B.afterIn('SECRET_RETURN', 1.6, () => {
+      this.dispose(); Party.stop(); SecretUI.reset();
+      const D = BOSSES.kiddie;
+      B.loadBoss(D);
+      Object.assign(B, D.newState());
+      B.phase = 0; B.spare = 100; B.bossHp = Math.max(1, Math.round(D.hp * 0.3)); B.tired = false;
+      G.ui.bossHpShown = B.bossHp;
+      G.arena.visible = true; G.arena.opacity = 1; G.arena.resetBox(0.01);
+      if (D.applyPhaseLook) D.applyPhaseLook(B, 0, true);
+      if (G.boss) G.boss.setPhase(0);
+      G.soul.active = false;
+      G.ui.setBattleHUD(true); G.ui.refreshHUD();
+      G.clock.play(D.phaseRules[0].section); G.audio.fadeMusic(1, 1.2);
+      G.fx.fadeTo(0, 0.8, 0x000000);
+      B.talk([{ text: '...', mood: 'sad', speed: 6 }, { text: 'ok so we are like. actually friends now. i dont make the rules', mood: 'happy' }], () => B.spareEnding());
+    });
+  },
+  dispose() { if (this.stage) { this.stage.dispose(); this.stage = null; } if (this.key) { disposeObject(this.key); this.key = null; } },
+};
 // @@/SECRET
 
 // ============================================================================
@@ -32227,7 +34554,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, SECRET: { Corrupt, BlotchShop, CorruptHoles, SecretEvent, SecretFight, NullHole, NullStage, SECRET_MUSIC, BLOTCH, Party, ALLY_KIDDIE }, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
+window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, SECRET: { Corrupt, BlotchShop, CorruptHoles, SecretEvent, SecretFight, NullHole, NullStage, SECRET_MUSIC, BLOTCH, Party, ALLY_KIDDIE, SECRET_DEF, SECRET_PATTERNS, NullKit, NullEntity, NullVoice, SecretUI, SECRET_BAL }, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)

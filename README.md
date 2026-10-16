@@ -348,5 +348,96 @@ Hidden inside boss 2.
   about once an attack he shoots the bullet nearest to you down with a little yellow star.
   His compile bar fills a step every phase, but only while he's never been DOWN for more
   than 2 turns in a row (then: BUILD FAILED).
+- **_____ itself.** What's left after things end: deleted files, unsaved progress, closed
+  tabs, erased words. Every other boss is afraid of endings; this is what they were afraid
+  of. It doesn't hate you. It just erases. About 30 m tall, standing far behind the box: a
+  hunched silhouette of absolute black with a crisp white outline (an inverted hull, the
+  same thin line at any distance), its edges crumbling into square pixels that drift off
+  and come back. Holes drift open and shut through it, white-rimmed, and through them you
+  see the lensed stars behind it: it looks cut out of the sky. Its face is one enormous
+  empty text field; the eye is a text cursor that blinks on the half-time pulse (never out
+  of rhythm) and slides to follow your SOUL, the mouth a long underscore that stretches when
+  it speaks. Its hands are a marquee (marching ants) and a lasso cursor. Pieces of the other
+  bosses orbit it, inverted and half erased: a chandelier crystal, a strip of tent canvas,
+  SUNDOWN's hat and one of SCR1PT_K1DD1E's keyboards ("hey... thats MINE"). When it moves it
+  leaves datamosh smears; between attacks it types words into its face and deletes them.
+  Its name on the HUD is `_____`, flickering, letters almost appearing.
+- **Its voice** types into its face and into a dialogue box shaped like the same empty
+  field, at eye level, with letters missing: `Y_U _ER_ N_T S_PP_S_D T_ B_ H_R_.`,
+  `_V_RYTH_NG _NDS.`, `I _M WH_T C_M_S _FT_R.` No blip, just silence and a faint
+  keyboard-delete "tk" a moment behind each letter.
+- **Stats.** HP 6666, ATK 22, DEF 10. Its hits do 7-9 (9-11 in phase 4). It's enormous, so
+  your FIGHT does x1.5 here (H4CK too: still half of yours), x0.75 through its armour in
+  phases 3-4 (H4CK and CTRL+ALT+DEL go straight through). Only the finishing move can take
+  its last HP. Grazes give 50% more TP. Easy and Purist scale it like every boss.
+- **THE NULL's box is broken**: its 12 edges are 36 floating fragments that realign into a
+  whole box on every bar line and drift a few cm apart in between. The remains of every
+  arena drift round it, low-poly and inverted (manor wallpaper, hex characters, circus
+  bunting, desert rocks), off to the sides and behind you, never between you and it; some
+  orbit the black hole and stretch thin as they fall in.
+- **Phases, on the song:**
+
+  | Phase | Starts | Music | Look |
+  |---|---|---|---|
+  | 1 NULL POINTER | the first attack | the drop (the first attack waits for the gap, so the drop lands with it) | the black silhouette |
+  | 2 ERASURE | under 70% | seeks one bar before the 0:45 hit; BREAKDOWN into REBUILD | cracks of white light split across it |
+  | 3 SEGFAULT | under 40% | one bar before the 1:06.6 drop; the PEAK | it inverts (0.3 s, Reduced 1 s): white body, black outline, and the whole world with it; white bullets turn black, telegraphs draw dark |
+  | 4 _____ | under 15% | a crossfade into the second wave on the next bar | it unravels into wireframe, vertices drifting; its text field is the only solid thing left |
+
+  Each change lands on its hit (a soft beat of light, Reduced: a slow fade).
+- **Its attacks** (every telegraph 2 beats or more, in a sickly `#c8ff00`; heavy hits on
+  the half-time pulse, streams on the beat; each escape is checked reachable at a
+  comfortable speed):
+  - **MARCHING ANTS**: its marquee drags 3D selection boxes round the box; their dashed
+    outlines march for 2 beats, then everything inside is deleted (a cut, a beat of missing
+    texture). Later waves add inverse selections (in the telegraph colour): only inside is
+    safe.
+  - **MISSING TEXTURE**: the floor flips into pink-and-black checker columns that shoot up
+    in rows on the beat. The ripple's start and direction show 2 beats ahead, each row lights
+    2 beats before it erupts, and the cells that stay dark are a winding gap.
+  - **UNDO HISTORY**: it records your SOUL's path; hollow inverted hearts tagged `-2 BARS`
+    (and later `-1 BAR`) retrace exactly where you were, leaving dotted trails, with a
+    whisper. Stay still or move in loops and your past catches you.
+  - **DELETED_K1DD1E**: the lasso pulls him into a marching-ants cage across the box; he
+    loses pixels and HP. Get there and punch the cage on the half-time beat 4 times while
+    erasers sweep the box. Saved: +10% TP and a fist bump (touch his tiny glove: a soft
+    pulse), "...ok. ok. thanks. dont tell anyone i screamed". Too slow: he's DOWN.
+  - **ECHOES**: corrupted re-runs of the other bosses' attacks, their own pattern classes
+    with the corrupt flag, at this song's tempo: THE PROPRIETOR's CHANDELIER RAIN as black
+    crystals, GRANDIOSO's RING OF FIRE as hollow black rings (its hole picking and beat plan,
+    without the big top), SUNDOWN's FAN THE HAMMER fired from its hands, the stars smearing
+    pixels. Each deletes itself mid-attack.
+  - **STACK TRACE** (REBUILD only, the song seeks to it): curtains of falling error text pour
+    in and sweep the box; the one column that reads OK is the gap. Every 4 beats, then 2,
+    then every beat in the last bar.
+  - **EVENT HORIZON**: a mini black hole in the middle of the box pulls your SOUL (2 m/s^2 at
+    most; streaming specks and a rising tone show it; it only ever moves you, never turns
+    you). Bullets fall into real orbits round it (each orbit shows a thin dashed ring 2 beats
+    ahead, with a gap) and spiral in on the half-time pulse.
+  - **MIRROR BUFFER**: a shimmering, harmless sheet sweeps the box every bar; every bullet
+    has a mirrored copy across it, so the safe space keeps changing shape.
+  - **FRAME SKIP**: the bullets jump once a beat; between jumps they're dim, and a ghost
+    ring shows where each will land a beat ahead. Only the bullets skip.
+  - **DELETE UI**: its marquee closes round your HUD for 2 beats and deletes it: your HP, TP
+    and menu are gone. SCR1PT_K1DD1E restores each while you hold its panel on your wrist
+    for 2 beats (desktop: hold Z for HP, X for TP, C for the menu); without a menu, your turn
+    waits for it. Until then you take 20% less damage, your SOUL's glow shows your HP
+    (bright = healthy, dim and flickering = low) and you feel a heartbeat paced by it.
+    Meanwhile the earlier attacks cycle in 2-bar fragments.
+  - **THE BLANK** (its last attack: the 8 bars before the FINAL HIT): the world turns to
+    white line art on black, the song slows a little, it types `WH_T _S _ N_M_?` into its
+    face, and its bullets are its unfinished letters drifting at you. You can't fall here.
+- **The last turn**: the song holds its breath (the outro's rumble) while it waits. FIGHT is
+  the finishing move: the song seeks one bar before the FINAL HIT, K1DD1E selects it, a DEL
+  key floats in front of you, and the blow lands exactly on the hit (don't punch and he does
+  it for you).
+- **ACTs**: CHECK ("* _____ - ATK 22 DEF 10. It's what's left when something is deleted.
+  It doesn't have a name. Nobody ever gave it one."), LISTEN (reads its broken sentences;
+  each use fills one more letter back into every line), TALK, and CTRL+ALT+DEL. Items:
+  CACHED COOKIE x2 (22 HP) and ★SAVE STATE x1 (both of you back to full). MERCY: there's
+  nothing in its bar.
+- **GAME OVER**: your SOUL is deleted, it turns into underscores and they fade; "NO. ctrl z.
+  CTRL Z." Retry starts the phase over, both of you at full HP, TP at 50%.
 - Debug: `\` in boss 2's fight plays the tape (on your turn), then each press takes
-  MERCY down another 25; in the shop it puts a tape in your bag.
+  MERCY down another 25; in the shop it puts a tape in your bag. `N` moves the secret fight
+  on a phase like any other.
