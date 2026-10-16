@@ -44,6 +44,8 @@ front of its animated world, in a frame of its world's colours), and a shop betw
 Each boss also carries one ★ item you can't buy anywhere (HOUSE KEY, CTRL+Z, BOUQUET,
 POCKET WATCH) that only works on that boss.
 
+Something is hidden inside boss 2. (Spoilers: see [_____](#_____-the-secret-boss-spoilers).)
+
 Each file is harder than the one before. GRANDIOSO and SUNDOWN have bigger HP bars, hit
 harder and run their acts hotter, and between their acts' own beats they aim at you: a
 gold line (GRANDIOSO's knives) or an orange one (SUNDOWN's revolver) shows each shot a
@@ -381,7 +383,7 @@ Hidden inside boss 2.
   |---|---|---|---|
   | 1 NULL POINTER | the first attack | the drop (the first attack waits for the gap, so the drop lands with it) | the black silhouette |
   | 2 ERASURE | under 70% | seeks one bar before the 0:45 hit; BREAKDOWN into REBUILD | cracks of white light split across it |
-  | 3 SEGFAULT | under 40% | one bar before the 1:06.6 drop; the PEAK | it inverts (0.3 s, Reduced 1 s): white body, black outline, and the whole world with it; white bullets turn black, telegraphs draw dark |
+  | 3 SEGFAULT | under 40% | one bar before the 1:06.8 drop; the PEAK | it inverts (0.3 s, Reduced 1 s): white body, black outline, and the whole world with it; white bullets turn black, telegraphs draw dark |
   | 4 _____ | under 15% | a crossfade into the second wave on the next bar | it unravels into wireframe, vertices drifting; its text field is the only solid thing left |
 
   Each change lands on its hit (a soft beat of light, Reduced: a slow fade).
@@ -438,6 +440,34 @@ Hidden inside boss 2.
   nothing in its bar.
 - **GAME OVER**: your SOUL is deleted, it turns into underscores and they fade; "NO. ctrl z.
   CTRL Z." Retry starts the phase over, both of you at full HP, TP at 50%.
+- **The ending: DELETE.** FIGHT in the last turn. It's erased by its own marquee on the FINAL
+  HIT (1:50.5), from the feet up, in pixels, until only the empty text field is left, and it
+  closes. The black hole collapses into a single white pixel, which pops. "...we deleted the
+  delete thing. is that... good?" 1500 EXP, 666 G. Then you and K1DD1E float back up through
+  the void (only the specks move past you; you don't).
+- **The ending: NAME IT.** LISTEN to it at least 3 times and keep K1DD1E's compile bar
+  full (never DOWN more than 2 turns in a row); once its HP is under 15% a new ACT appears:
+  **GIVE IT A NAME**. He writes his first real program, `name.exe` (BUILD SUCCEEDED on his
+  hoodie), and a keyboard floats up: poke any name into it, up to 10 letters (desktop: type,
+  Backspace, Enter), then OK. The song seeks to the FINAL HIT, and it lands as a soft
+  G major chime instead of a blast (the music ducks under it): the first major chord in the
+  fight. Its face fills with your name, the HUD's `_____` becomes it, and it shrinks from
+  30 m to a small, curious thing about 1 m tall, walking up to the box: a little black
+  shape with a white outline and a tiny blinking cursor for an eye. The black hole closes,
+  gently, and THE NULL fills with soft starlight. Its first full sentence, with no blanks:
+  "I HAVE A NAME. THANK YOU." K1DD1E: "i wrote that. like. myself. no copy paste. ...gg."
+  0 EXP, 1200 G and the **NULL SOUL** pin (an inverted heart: black, a white outline, a
+  blinking cursor; wear it from Settings > SOUL PIN).
+- **After either ending** you're back in boss 2's hall and his fight ends SPARED, since you
+  went through that together ("ok so we are like. actually friends now. i dont make the
+  rules"); his SPARE rewards come on top. Replays pay 50%, like every boss.
+- **What it leaves behind**: the save remembers it (`secret: discovered, beaten, ending,
+  creatureName`; older saves get the defaults). Once the black hole has opened, SAVE FILES
+  shows a hidden glitched `▓▓▓▓▓` that takes you into boss 2's hall and straight into a
+  short version of the event (no tape needed). Beaten, FILE 2 gets a glitched ★ beside its
+  star and the ending on its card. KNOBS has two new things to talk about, the track is in
+  his SOUND TEST as `_____`, and the one you named sits on his counter ("...yeah. it can
+  stay. it's quiet. i like quiet.") and by SUNDOWN's campfire if that ending happens.
 - Debug: `\` in boss 2's fight plays the tape (on your turn), then each press takes
   MERCY down another 25; in the shop it puts a tape in your bag. `N` moves the secret fight
   on a phase like any other.

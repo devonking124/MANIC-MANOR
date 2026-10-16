@@ -586,6 +586,7 @@ const REWARDS = {
   kiddie: { fight: [420, 69], spare: [0, 86] },
   ringmaster: { fight: [600, 300], spare: [0, 375] },
   outlaw: { fight: [800, 400], spare: [0, 500] },
+  secret: { fight: [1500, 666], name: [0, 1200] },   // v5: DELETE / NAME IT
 };
 const Save = {
   data: {
@@ -749,6 +750,7 @@ const PINS = {
   disco:    { name: 'DISCO SOUL', effect: 'A MIRRORBALL HEART', price: 150, color: '#c8d8ff' },
   neon:     { name: 'NEON BOX', effect: 'THE BATTLE BOX GLOWS NEON', price: 100, color: '#ff3cc8' },
   hat:      { name: 'SUNDOWN HAT', effect: 'A TINY HAT FOR YOUR SOUL', price: 200, color: '#c4532e', needs: 'outlaw' },
+  null:     { name: 'NULL SOUL', effect: 'AN INVERTED HEART AND A BLINKING CURSOR', price: 0, color: '#ffffff', reward: true },   // NAME IT
 };
 
 // ============================================================================
@@ -2693,6 +2695,7 @@ class Soul {
     if (id === 'cassette' && !P.cassette) P.cassette = buildPinCassette(0.022);
     if (id === 'hat' && !P.hat) P.hat = buildPinHat(0.022);
     if (id === 'disco' && !P.disco) P.disco = buildPinDisco(0.022);
+    if (id === 'null' && !P.null) P.null = buildPinNull(0.022);
     for (const k in P) { if (!P[k].parent) this.heart.add(P[k]); P[k].visible = k === id; }
     this.setMode(this.mode, true);
   }
@@ -2714,7 +2717,7 @@ class Soul {
   setMode(m, silent) {
     this.mode = m;
     const C = CONFIG.COL;
-    const red = this.pin === 'gold' ? 0xffd23c : this.pin === 'disco' ? 0xd8e4ff : C.red;   // pins only recolor the red SOUL
+    const red = this.pin === 'gold' ? 0xffd23c : this.pin === 'disco' ? 0xd8e4ff : this.pin === 'null' ? 0x080808 : C.red;   // pins only recolor the red SOUL
     const col = m === 'blue' ? C.blue : m === 'green' ? C.green : m === 'yellow' ? C.warn : m === 'cyan' ? C.cyan : m === 'pink' ? C.pink : red;
     this.mat.color.setHex(col); this.aura.material.color.setHex(col);
     if (!silent) G.audio.sfx.ding();
@@ -2762,6 +2765,7 @@ class Soul {
       this.mat.color.setHSL((G.time * 0.15) % 1, 0.35, 0.82);
       if (Math.random() < dt * 6) G.fx.sparkle(this.pos, 1);
     }
+    if (this.pin === 'null' && this.pinParts.null) this.pinParts.null.userData.cursor.visible = (G.clock.running ? Math.floor(G.clock.beat / 2) : Math.floor(G.time * 1.5)) % 2 === 0;   // its cursor blinks
     this.dbgHit.visible = this.dbgGraze.visible = G.debug.hitboxes && this.active;
     // the VINYL SHIELD orbits the heart
     const vv = this.vinyl && this.active && this.alive && this.shatterT < 0;
@@ -4381,6 +4385,7 @@ class UI {
     this.saveMenu = new Menu(files.concat([
       { face: { cw: 330, ch: 120, draw: (g, W, H, b) => this.drawShopDoor(g, W, H, b) }, size: 0.82, style: 'rift', onPress: () => B.openShop('files') },
       { label: 'BACK', icon: 'back', style: 'rift', onPress: () => B.closeSaveFiles() },
+      { label: '▓▓▓▓▓', style: 'rift', color: '#ff00ff', hoverColor: '#ffffff', onPress: () => B.chooseSecret() },   // (hidden until the black hole has opened once)
     ]), { yOff: -0.26, radius: 1.0, deskR: 2.05, gap: 0.04, split: files.length });
     // START: STORY MODE / FREE PLAY (big illustrated cards) and BACK
     const mcard = (mode) => ({ face: { cw: 340, ch: 236, draw: (g, W, H, b) => this.drawModeCard(g, W, H, b, mode) }, size: 1.12, style: 'rift', onPress: () => (mode === 'story' ? B.chooseStory() : B.chooseFreePlay()) });
@@ -4481,7 +4486,10 @@ class UI {
   }
   // ------------------------------------------------------------------ save files
   drawFileCard(g, W, H, b, id) { BossCards.draw(g, W, H, b, id); }
-  refreshSaveCards() { for (const b of this.saveMenu.buttons) if (b.face_) b.draw(); }
+  refreshSaveCards() {
+    const sb = this.saveMenu.buttons[this.saveMenu.buttons.length - 1]; sb.hidden = !Save.data.secret.discovered;   // ▓▓▓▓▓
+    for (const b of this.saveMenu.buttons) if (b.face_) b.draw();
+  }
   refreshModeCards() { for (const b of this.modeMenu.buttons) if (b.face_) b.draw(); }
   // the mode cards: STORY MODE (the RIFT, your SOUL, how far you've got) and FREE PLAY (chained shut until the
   // story is done; then "coming soon")
@@ -4741,7 +4749,7 @@ class UI {
     const B = G.boss;
     if (B && B.root.visible && B.headWorldPos) {
       const f = B.headWorldPos(_tFace), fd = E.z - f.z;
-      if (fd > 1) { u = (f.x - E.x) / fd; v = Math.min(v, (f.y - E.y) / fd - 0.09 - hh); }
+      if (fd > 1) { u = (f.x - E.x) / fd; v = B.talkAbove ? Math.max(v, (f.y - E.y) / fd + 0.1 + hh) : Math.min(v, (f.y - E.y) / fd - 0.09 - hh); }
     }
     u = W.uR - W.uL > 2 * hw ? clamp(u, W.uL + hw, W.uR - hw) : (W.uL + W.uR) / 2;
     v = W.vT - W.vB > 2 * hh ? clamp(v, W.vB + hh, W.vT - hh) : (W.vB + W.vT) / 2;
@@ -9858,6 +9866,7 @@ class Battle {
   }
   toTitle() {
     if (this.fightGold) this.bankHalf();   // quitting a fight: half the gold found comes with you
+    this.replaySecret = false;
     this.cleanup();
     G.coins.clear();
     this.pausedMenus = null;
@@ -9929,10 +9938,21 @@ class Battle {
     G.ui.showBig('!  WARNING  !\n\nThis game contains flashing lights\nand strobing effects.\n\nChoose your visual mode.\n(Reduced is recommended and selected.)', { scale: 3, dist: 1.7, y: 0.2, color: '#ffffff', frame: 'rift' });
     G.ui.safetyMenu.showArc({ yOff: -0.45 });
   }
+  // ▓▓▓▓▓ (FILE 2, once the black hole has opened): boss 2's hall, then straight into a short version of the event
+  chooseSecret() {
+    G.ui.saveMenu.hide(); G.ui.hideBig();
+    G.audio.sfx.glitch();
+    this.pendingBoss = 'kiddie'; this.pendingSecret = true;
+    MusicLibrary.getTrack('kiddie'); MusicLibrary.getTrack('secret');
+    this.setState('SAFETY_WARNING');
+    G.ui.showBig('!  WARNING  !\n\nThis game contains flashing lights\nand strobing effects.\n\nChoose your visual mode.\n(Reduced is recommended and selected.)', { scale: 3, dist: 1.7, y: 0.2, color: '#ffffff', frame: 'rift' });
+    G.ui.safetyMenu.showArc({ yOff: -0.45 });
+  }
   chooseFlashing(mode) {
     Settings.set('flashing', mode);
     G.ui.safetyMenu.hide(); G.ui.hideBig();
-    const go = () => this.startBattle(this.pendingBoss || 'proprietor');
+    const secret = this.pendingSecret; this.pendingSecret = false;
+    const go = () => { this.startBattle(this.pendingBoss || 'proprietor'); this.replaySecret = !!secret; };
     if (G.bg.theme === 'rift') RiftKit.plunge(go); else go();
   }
   openSettings() { G.ui.titleMenu.hide(); G.ui.showTitle(false); this.setState('SETTINGS'); G.ui.openSettingsPanel(true); }
@@ -10496,7 +10516,7 @@ class Battle {
   canPause() {
     const r = G.clock.seg.ramp;
     if (r && r.r1 < 0.5 && G.audio.now < r.t0 + r.dur + 0.15) return false; // mid tape-stop
-    return G.inWorld && !['BOOT', 'TITLE', 'MODE_SELECT', 'STORY', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT', 'LOADING', 'SHOP_ENTER', 'SECRET_EVENT', 'SECRET_RETURN', 'SECRET_FINISH'].includes(this.state) && !(this.state === 'SHOP' && Shop.exiting);
+    return G.inWorld && !['BOOT', 'TITLE', 'MODE_SELECT', 'STORY', 'SAVE_FILES', 'SAFETY_WARNING', 'HOW_TO', 'SETTINGS', 'PAUSED', 'COUNT_IN', 'GAME_OVER', 'RESULTS', 'VICTORY_FIGHT', 'PHASE_SHIFT', 'LOADING', 'SHOP_ENTER', 'SECRET_EVENT', 'SECRET_RETURN', 'SECRET_FINISH', 'SECRET_NAME', 'SECRET_END'].includes(this.state) && !(this.state === 'SHOP' && Shop.exiting);
   }
   pause() {
     if (!this.canPause()) return;
@@ -10608,7 +10628,11 @@ class Battle {
         const t = this.stateT;
         if (Flash.reduced) G.arena.opacity = clamp(t / 1.3, 0, 1);
         else G.arena.opacity = t > 1.3 ? 1 : (Math.sin(t * 21) > 0.4 - t * 0.7 ? 1 : 0.12);
-        if (t > 1.5 && !this.introTalked) { this.introTalked = true; G.arena.opacity = 1; this.def.intro(this); }
+        if (t > 1.5 && !this.introTalked) {
+          this.introTalked = true; G.arena.opacity = 1;
+          if (this.replaySecret && this.def.id === 'kiddie') { this.replaySecret = false; SecretEvent.start(this, true); }   // ▓▓▓▓▓
+          else this.def.intro(this);
+        }
         break;
       }
       case 'BOSS_DIALOGUE': this.updateTalk(rdt); break;
@@ -26136,6 +26160,11 @@ BOSSES.outlaw = {
       g.root.lookAt(F.position.x, top, F.position.z);
       K.camp.add(g.root); this.campGuests.push(g);
     });
+    if (Save.data.secret.creatureName) {   // the one you named in THE NULL came too
+      const g = buildNullCreature(0.5, Save.data.secret.creatureName);
+      g.root.position.set(M.x + 0.35, top, M.z - 1.3); g.baseY = top; g.root.lookAt(F.position.x, top, F.position.z);
+      K.camp.add(g.root); this.campGuests.push(g);
+    }
   },
   updateEnding(B, dt) {
     const E = this.ending, H = G.boss; if (!E || !H) return;
@@ -28085,7 +28114,7 @@ function shopBuildItems(K) {
     const it = mk(id, 'cons', consumableGeo(id, consRect(['lemonade', 'bassbar', 'vinyl', 'battery'].indexOf(id))), x, y, z, id === 'vinyl' ? -Math.PI / 2 + 0.3 : 0.4, { r: 0.09 });
     if (id === 'vinyl') { it.mesh.rotation.x = -0.25; it.homeQ.copy(it.mesh.quaternion); }
   });
-  Object.keys(PINS).forEach((id, i) => {
+  Object.keys(PINS).filter((id) => !PINS[id].reward).forEach((id, i) => {
     mk(id, 'pin', uvAll(pinGeo(id), W2[0], W2[1]), -1.952, 1.62 - Math.floor(i / 3) * 0.2, 0.17 + (i % 3) * 0.18, Math.PI / 2, { r: 0.06 });
   });
 }
@@ -28339,6 +28368,8 @@ const KNOBS_TOPICS = [
   { id: 'bigtop', label: 'THE BIG TOP', needs: 'ringmaster', lines: [['grandioso orders confetti by the ton.', "i don't sell confetti. he keeps asking."], ['he did a show in here once. one guest. me.', 'standing ovation. i was already standing.']] },
   { id: 'frontier', label: 'THE FRONTIER', needs: 'ringmaster', lines: [["out past the big top there's a desert. a guy out there's been waiting for sundown a long time.", 'he never misses. he never shoots first, either.'], ['the clock in that ghost town stopped at noon.', 'everybody out there is waiting for something.']] },
   { id: 'sundown', label: 'SUNDOWN', needs: 'outlaw', lines: [['he came in once. bought nothing.', 'listened to a record all the way through. tipped his hat. left.'], ['you know he only ever wanted somebody to stay for the sunset?', 'same, man. same.']] },
+  { id: 'null', label: '_____', when: () => Save.data.secret.discovered, lines: [['so you played it.', '...i felt the shop go quiet for a sec. you good?']] },
+  { id: 'named', label: 'THE NAME', when: () => !!Save.data.secret.creatureName, lines: [['you gave the end a name. huh. guess that makes it a beginning.', "...don't quote me, sounded better in my head."]] },
   { id: 'headphones', label: "WHAT'S WITH THE HEADPHONES?", lines: null },
 ];
 
@@ -28360,6 +28391,7 @@ const Shop = {
     const K = Save.data.knobs;
     if (K.restock || !K.stock) { K.stock = Object.assign({}, SHOP.STOCK); K.restock = false; Save.write(); }
     this.refreshShelves();
+    NullCameo.shop();   // the named one, on the counter
     ShopKit.knobs.eyeDim = Save.data.lv >= 3;
     // the void outside, no battle box
     G.arena.visible = false; G.bg.setTheme('shop');
@@ -28613,7 +28645,7 @@ const Shop = {
   // ------------------------------------------------------------ TALK
   talkMenu() {
     if (this.busy()) return;
-    const topics = KNOBS_TOPICS.filter((t) => !t.needs || Save.beaten(t.needs));
+    const topics = KNOBS_TOPICS.filter((t) => (t.when ? t.when() : !t.needs || Save.beaten(t.needs)));
     this.openSub(topics.map((t) => ({ label: t.label, scale: 2, color: t.id === 'headphones' ? '#2affd5' : '#ff9d1a', onPress: () => this.talkAbout(t) })), { split: Math.ceil((topics.length + 1) / 2) });
   },
   talkAbout(t) {
@@ -28629,10 +28661,10 @@ const Shop = {
     const heard = MUSIC_KEYS.filter((k) => k === 'shop' || Save.data.soundTest.includes(k));
     ShopKit.knobs.react('point', { at: _v1.copy(ShopKit.juke.position).setY(1.0) });
     if (heard.length <= 1) this.say(pick(KNOBS_LINES.soundTestNone), null, true); else this.say(pick(KNOBS_LINES.soundTest), null, true);
-    const defs = heard.map((k) => ({ label: (k === 'shop' ? 'SHOP: ' : MUSIC_INFO[k].label + ': ') + MUSIC_INFO[k].title.toUpperCase().slice(0, 26), scale: 2, color: this.juke && this.juke.key === k ? '#ffe600' : '#2affd5', onPress: () => this.playSong(k) }));
+    const defs = heard.map((k) => ({ label: (k === 'shop' ? 'SHOP: ' : k === 'secret' ? '' : MUSIC_INFO[k].label + ': ') + MUSIC_INFO[k].title.toUpperCase().slice(0, 26), scale: 2, color: this.juke && this.juke.key === k ? '#ffe600' : '#2affd5', onPress: () => this.playSong(k) }));
     this.openSub(defs, { split: Math.ceil((defs.length + 1) / 2) });
   },
-  songColor(k) { return { proprietor: '#c23cff', kiddie: '#3cff6e', ringmaster: '#ffc83c', outlaw: '#ff7a2a', shop: '#2affd5' }[k] || '#ffffff'; },
+  songColor(k) { return { proprietor: '#c23cff', kiddie: '#3cff6e', ringmaster: '#ffc83c', outlaw: '#ff7a2a', shop: '#2affd5', secret: '#ffffff' }[k] || '#ffffff'; },
   playSong(key) {
     this.closeSub();
     const K = ShopKit;
@@ -28735,6 +28767,7 @@ const Shop = {
     this.updateTalk(rdt);
     this.updateItems(rdt);
     BlotchShop.update(rdt);
+    NullCameo.update(rdt);
     this.updateMirror();
     if (this.hag && !this.hag.done) this.updateHaggleTaps();
     // idle chatter, now and then
@@ -28753,6 +28786,7 @@ const Shop = {
     const clears = Object.keys(D.clears);
     if (!K.pacifist && clears.length && !clears.some((k) => k.endsWith(':fight'))) { K.pacifist = true; lines.push(...KNOBS_LINES.pacifist); }
     if (D.lv >= 3 && !K.lv3) { K.lv3 = true; lines.push(...KNOBS_LINES.lv3); }
+    if (D.secret.creatureName && !K.creature) { K.creature = true; lines.push("...yeah. it can stay. it's quiet. i like quiet."); }   // (it's on his counter)
     Save.write();
     this.say(lines);
     ShopKit.knobs.react('wave');
@@ -31089,7 +31123,7 @@ class NullEntity {
     const wire = this.wire > 0.5;
     if (this.eraseT < 0) for (const P of this.parts) { P.body.visible = P.hull.visible = !wire; P.wire.visible = this.wire > 0.02; }
     this.wireU.uDrift.value = this.wire * 1.2; this.wireU.uK.value = this.inv > 0.5 ? 0.08 : 1;
-    U.uHole.value = this.phase >= 1 ? 1.3 : 1;
+    U.uHole.value = this.named ? -4 : this.phase >= 1 ? 1.3 : 1;   // (named and small: whole, no holes)
     const ic = this.inv > 0.5 ? 0x000000 : 0xffffff;
     this.frameMat.color.setHex(ic); this.cursorMat.color.setHex(ic);
     for (const m of this.lassoMats) m.color.setHex(ic);
@@ -31178,9 +31212,9 @@ class NullEntity {
     for (const p of this.pixL) {
       p.t += rdt;
       if (!p.s || p.t > p.life) { p.s = pick(this.samples); p.t = 0; p.life = rand(3, 6); }
-      const k = p.t / p.life, out = Math.sin(k * Math.PI) * p.out;   // drift off, come back
+      const sc = this.root.scale.x, k = p.t / p.life, out = Math.sin(k * Math.PI) * p.out;   // drift off, come back
       _v2.copy(p.s.p).addScaledVector(p.s.n, out); p.s.P.parent.localToWorld(_v2);
-      _q1.setFromEuler(_e1.set(p.t * p.spin, p.t * p.spin * 0.7, 0)); _s1.setScalar(p.size * (k < 0.1 ? k * 10 : k > 0.9 ? (1 - k) * 10 : 1));
+      _q1.setFromEuler(_e1.set(p.t * p.spin, p.t * p.spin * 0.7, 0)); _s1.setScalar(p.size * sc * (k < 0.1 ? k * 10 : k > 0.9 ? (1 - k) * 10 : 1));
       _m1.compose(_v2, _q1, _s1); M.setMatrixAt(n++, _m1);
     }
     M.count = n; M.instanceMatrix.needsUpdate = true;
@@ -33090,6 +33124,322 @@ const SecretFight = {
   },
   dispose() { if (this.stage) { this.stage.dispose(); this.stage = null; } if (this.key) { disposeObject(this.key); this.key = null; } },
 };
+
+// ============================================================================
+//  _____'s two endings, and what's left of it afterwards
+//    DELETE (FIGHT): erased by its own marquee on the FINAL HIT; the black hole collapses into one white pixel,
+//      which pops; you and K1DD1E float back up through the void. 1500 EXP, 666 G.
+//    NAME IT (LISTEN 3 times + his compile bar full + its HP under 15%: GIVE IT A NAME): he writes name.exe, a
+//      keyboard floats up, you type a name (up to 10 letters); the FINAL HIT lands as a soft G major chime, its
+//      face fills with the name, it shrinks to a small curious thing about 1 m tall, the black hole closes
+//      gently and THE NULL fills with soft starlight. Its first full sentence. 0 EXP, 1200 G, the NULL SOUL pin.
+//    Either way: back to boss 2's hall, his fight ends SPARED (and his SPARE rewards come on top).
+//    Afterwards: the save remembers (FILE 2's glitched star, the replay), KNOBS talks about it, the track is in
+//    the SOUND TEST, and a named one sits on KNOBS' counter and by SUNDOWN's campfire.
+// ============================================================================
+const NLINES_END = {
+  deleted: '...we deleted the delete thing. is that... good?',
+  named: 'I HAVE A NAME. THANK YOU.',
+  wrote: 'i wrote that. like. myself. no copy paste. ...gg.',
+  build: ['name.exe. i wrote it. me. it COMPILES', 'ok. type something. anything. it doesnt have one'],
+};
+// ---------------------------------------------------------------------------
+//  the named one, small (KNOBS' counter, SUNDOWN's campfire, the cameos): a little black shape with a white
+//  outline, a text field for a face, a tiny blinking cursor eye. h: its height (m)
+// ---------------------------------------------------------------------------
+function buildNullCreature(h = 1, name = '') {
+  const root = new THREE.Group(), s = h;
+  const black = new THREE.MeshBasicMaterial({ color: 0x050505 }), white = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide });
+  const add = (geo, x, y, z) => {
+    const m = new THREE.Mesh(geo, black); m.position.set(x * s, y * s, z * s); m.scale.setScalar(s); root.add(m);
+    const o = new THREE.Mesh(geo, white); o.position.copy(m.position); o.scale.setScalar(s * 1.07); root.add(o);
+    return m;
+  };
+  add(new THREE.SphereGeometry(0.2, 16, 12).scale(1, 1.25, 0.8), 0, 0.27, 0);
+  for (const x of [-0.08, 0.08]) add(new THREE.CylinderGeometry(0.035, 0.045, 0.18, 8), x, 0.07, 0);
+  const head = add(roundedBoxGeo(0.42, 0.26, 0.16, 0.05, 2), 0, 0.66, 0.02);
+  // its face: a field (a white frame) with the cursor eye; its name under it
+  const fr = new THREE.Mesh(new THREE.PlaneGeometry(0.3 * s, 0.12 * s), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  fr.position.set(0, 0.66 * s, 0.11 * s); root.add(fr);
+  const inner = new THREE.Mesh(new THREE.PlaneGeometry(0.28 * s, 0.1 * s), black); inner.position.set(0, 0.66 * s, 0.112 * s); root.add(inner);
+  const eye = new THREE.Mesh(new THREE.PlaneGeometry(0.012 * s, 0.07 * s), new THREE.MeshBasicMaterial({ color: 0xffffff })); eye.position.set(0, 0.66 * s, 0.115 * s); root.add(eye);
+  let tag = null;
+  if (name) {
+    const t = canvasTex(128, 24, (g) => { g.clearRect(0, 0, 128, 24); PixelFont.draw(g, name, Math.round((128 - PixelFont.width(name, 2)) / 2), 5, 2, '#ffffff'); });
+    tag = new THREE.Mesh(new THREE.PlaneGeometry(0.4 * s, 0.075 * s), new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.4 }));
+    tag.position.set(0, 0.66 * s, 0.116 * s); tag.scale.setScalar(0.62); root.add(tag);
+  }
+  const C = { root, t: rand(0, 5), tiltT: 2, tilt: 0 };
+  // it tilts its head, curious; the cursor blinks on the half-time pulse
+  C.update = (dt) => {
+    C.t += dt; C.tiltT -= dt; if (C.tiltT <= 0) { C.tiltT = rand(2, 5); C.tilt = rand(-0.35, 0.35); }
+    head.rotation.z = damp(head.rotation.z, C.tilt, 2, dt);
+    const on = G.clock.running ? Math.floor(G.clock.beat / 2) % 2 === 0 : Math.floor(C.t * 1.4) % 2 === 0;
+    eye.visible = on; eye.position.x = (tag ? 0.1 : 0) * s + Math.sin(C.t * 0.7) * 0.02 * s;
+    root.position.y = (C.baseY || 0) + Math.abs(Math.sin(C.t * 1.7)) * 0.01 * s;
+  };
+  return C;
+}
+// the cameos: on KNOBS' counter (and his line, once), by SUNDOWN's campfire (SUNDOWN's ending adds it)
+const NullCameo = {
+  c: null,
+  named() { return Save.data.secret.creatureName || ''; },
+  shop() {
+    if (!this.named() || !ShopKit.ready) return;
+    const C = this.c = buildNullCreature(0.3, this.named());
+    C.root.position.set(0.22, SHOP.COUNTER.top, -0.7); C.baseY = SHOP.COUNTER.top; C.root.rotation.y = 0.25;
+    ShopKit.root.add(C.root);   // (freed with the shop)
+  },
+  update(rdt) { if (this.c && this.c.root.parent) this.c.update(rdt); else this.c = null; },
+};
+// the NULL SOUL pin: an inverted heart, black with a white outline and a blinking cursor
+function buildPinNull(s) {
+  const g = new THREE.Group();
+  const solid = (r, c) => r >= 0 && r < HEART_BITS.length && c >= 0 && c < 7 && HEART_BITS[r][c] === '#';
+  const rim = (r, c) => !(solid(r - 1, c) && solid(r + 1, c) && solid(r, c - 1) && solid(r, c + 1));
+  const o = new THREE.Mesh(buildVoxelHeart(s * 1.18, s * 1.6, rim), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  o.position.z = -s * 0.1; g.add(o);
+  const cur = new THREE.Mesh(new THREE.BoxGeometry(s * 0.5, s * 2.6, s * 0.4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  cur.position.set(s * 1.2, s * 0.6, s * 0.95); g.add(cur); g.userData.cursor = cur;
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+//  NameKeyboard - a floating keyboard you poke with a fingertip (desktop: type on yours, Backspace, Enter).
+//  Up to 10 characters; OK confirms (not with nothing typed).
+// ---------------------------------------------------------------------------
+class NameKeyboard {
+  constructor() {
+    this.group = new THREE.Group(); this.group.visible = false; scene.add(this.group);
+    const rows = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'], K = 0.058;
+    this.keys = [];
+    this.board = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.02, 0.29), new THREE.MeshBasicMaterial({ color: 0x0a0a0a }));
+    this.board.position.y = -0.012; this.group.add(this.board);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.672, 0.008, 0.302), new THREE.MeshBasicMaterial({ color: 0xffffff })); edge.position.y = -0.024; this.group.add(edge);
+    const mk = (label, x, z, w) => {
+      const g = new THREE.Group(); g.position.set(x, 0.012, z); this.group.add(g);
+      const capMat = new THREE.MeshBasicMaterial({ color: 0x1c1c1c });
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(w - 0.006, 0.022, K - 0.006), capMat); g.add(cap);
+      const tw = Math.round(48 * w / K), tex = canvasTex(tw, 48, (c) => { c.fillStyle = '#1c1c1c'; c.fillRect(0, 0, tw, 48); c.fillStyle = '#ffffff'; c.fillRect(0, 0, tw, 2); c.fillRect(0, 46, tw, 2); c.fillRect(0, 0, 2, 48); c.fillRect(tw - 2, 0, 2, 48); const sc = label.length > 1 ? 2 : 3; PixelFont.draw(c, label, Math.round((tw - PixelFont.width(label, sc)) / 2), Math.round((48 - 7 * sc) / 2), sc, label === 'OK' ? '#c8ff00' : '#ffffff'); });
+      const top = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.008, K - 0.008), new THREE.MeshBasicMaterial({ map: tex }));
+      top.rotation.x = -Math.PI / 2; top.position.y = 0.0115; g.add(top);
+      this.keys.push({ label, g, cap, capMat, x, z, w, press: 0, armed: [true, true] });
+    };
+    rows.forEach((r, ri) => { const n = r.length, x0 = -(n - 1) / 2 * K + ri * 0.012; for (let i = 0; i < n; i++) mk(r[i], x0 + i * K, -0.09 + ri * K, K); });
+    mk('DEL', -0.2, 0.09 + 0.004, K * 2); mk('SPACE', 0, 0.094, K * 3.2); mk('OK', 0.2, 0.094, K * 2);
+    // the name, above it
+    this.panel = new TextPanel({ w: 0.62, h: 0.1, cw: 496, ch: 80, bg: 'rgba(0,0,0,0.95)', border: '#ffffff', borderPx: 4, scale: 4, align: 'center', valign: 'middle', color: '#ffffff', renderOrder: 9 });
+    this.panel.mesh.position.set(0, 0.11, -0.2); this.panel.mesh.rotation.x = -0.35; this.group.add(this.panel.mesh);
+    this.name = ''; this.onDone = null; this.blinkT = 0;
+  }
+  open(pos, face, onDone) {
+    this.name = ''; this.onDone = onDone; this.done = false;
+    this.group.position.copy(pos); this.group.lookAt(face.x, pos.y, face.z); this.group.rotateX(G.xr ? 0.55 : 0.95);
+    this.group.visible = true; this.group.updateMatrixWorld(true);
+    for (const k of this.keys) { k.armed[0] = k.armed[1] = false; k.press = 0; }
+    this.draw();
+  }
+  close() { this.group.visible = false; }
+  draw() { const blink = Math.floor(G.time * 2.5) % 2 === 0; this.panel.setText((this.name || '') + (blink && this.name.length < 10 ? '_' : ' ')); }
+  press(label) {
+    if (this.done) return;
+    if (label === 'OK') { if (!this.name.trim()) { G.audio.sfx.buzz(); return; } this.done = true; G.audio.sfx.select(); const f = this.onDone; this.onDone = null; if (f) f(this.name.trim()); return; }
+    if (label === 'DEL') { this.name = this.name.slice(0, -1); G.audio.sfx.tk(); }
+    else if (this.name.length >= 10) { G.audio.sfx.buzz(); return; }
+    else { this.name += label === 'SPACE' ? ' ' : label; G.audio.sfx.clack(); }
+    this.draw();
+  }
+  update(rdt) {
+    if (!this.group.visible) return;
+    this.group.updateMatrixWorld(true);
+    if (G.xr) {
+      for (let hi = 0; hi < 2; hi++) {
+        const h = G.input.hands[hi]; if (!h.connected) continue;
+        _v1.copy(h.tip); this.group.worldToLocal(_v1);
+        for (const k of this.keys) {
+          const inside = Math.abs(_v1.x - k.x) < k.w / 2 && Math.abs(_v1.z - k.z) < 0.029 && _v1.y < 0.03 && _v1.y > -0.04;
+          if (inside && k.armed[hi]) { k.armed[hi] = false; k.press = 1; h.pulse(0.5, 25); this.press(k.label); }
+          if (!inside) k.armed[hi] = true;
+        }
+      }
+    } else {
+      const I = G.input;
+      for (let c = 65; c <= 90; c++) if (I.keyDown('Key' + String.fromCharCode(c))) { this.press(String.fromCharCode(c)); const k = this.keys.find((x) => x.label === String.fromCharCode(c)); if (k) k.press = 1; }
+      if (I.keyDown('Space')) this.press('SPACE');
+      if (I.keyDown('Backspace')) this.press('DEL');
+      if (I.keyDown('Enter') || I.keyDown('NumpadEnter')) this.press('OK');
+      if (I.desk.click) {   // (a click on a key under the crosshair)
+        Head.update(); _v2.set(0, 0, -1).applyQuaternion(Head.quat);
+        for (const k of this.keys) { k.g.getWorldPosition(_v3); _v4.subVectors(_v3, Head.pos); const t = _v4.dot(_v2); if (t <= 0) continue; _v5.copy(Head.pos).addScaledVector(_v2, t); if (_v5.distanceTo(_v3) < k.w / 2) { k.press = 1; this.press(k.label); break; } }
+      }
+    }
+    for (const k of this.keys) { k.press = Math.max(0, k.press - rdt * 6); k.cap.position.y = -0.008 * k.press; k.capMat.color.setHex(k.press > 0.1 ? 0x3a4a00 : 0x1c1c1c); }
+    this.blinkT -= rdt; if (this.blinkT <= 0) { this.blinkT = 0.2; this.draw(); }
+  }
+  dispose() { disposeObject(this.group); }
+}
+
+// ---------------------------------------------------------------------------
+//  the endings
+// ---------------------------------------------------------------------------
+Object.assign(SecretFight, {
+  // ACT > GIVE IT A NAME
+  nameIt(B) {
+    B.setState('SECRET_NAME');
+    G.ui.hideAllMenus(); G.ui.hideFlavor();
+    const a = Party.ally;
+    if (a) { a.done = true; if (Party.model) { Party.model.setMood('happy'); Party.model.talkT = 3; if (Party.model.drawHoodie) Party.model.drawHoodie(); } }
+    Party.say(NLINES_END.build[0], 2.6); G.audio.sfx.compileDing(); B.after(0.4, () => G.audio.sfx.compileDing());
+    G.ui.showPrompt('BUILD SUCCEEDED', 1.6, '#3cff6e');
+    B.afterIn('SECRET_NAME', 2.2, () => {
+      Party.say(NLINES_END.build[1], 3);
+      if (!this.kb) this.kb = new NameKeyboard();
+      Head.update();
+      this.kb.open(Head.rel(new THREE.Vector3(), 0, G.xr ? -0.3 : -0.2, G.xr ? 0.42 : 0.8), Head.pos, (name) => this.named(B, name));
+      G.ui.showPrompt(G.xr ? 'POKE THE KEYS: GIVE IT A NAME (UP TO 10), THEN OK' : 'TYPE A NAME (UP TO 10 LETTERS), THEN ENTER', 3.2, '#ffffff');
+    });
+  },
+  updateName(B, dt, rdt) { if (this.kb) this.kb.update(rdt); },
+  named(B, name) {
+    this.kb.close();
+    B.pendingName = name.slice(0, 10);
+    this.finish(B, 'name');
+  },
+  // the FINAL HIT, NAME IT: a soft chime, not a blast (the music ducks under it)
+  nameHit(B) {
+    const H = G.boss, S = this.stage, name = B.pendingName || '_';
+    G.audio.setLowpass(260, 0.04); G.audio.fadeMusic(0.12, 0.05);
+    G.audio.sfx.chimeG(); G.input.pulseAll(0.3, 80);
+    B.after(2.4, () => { G.audio.setLowpass(20000, 3); G.audio.fadeMusic(1, 3); });
+    B.named = name; G.ui.refreshHUD();
+    if (H) {
+      H.named = name; H.drawText(name); H.setPhase(0); H.talking = 0;
+      for (const f of H.frags) f.obj.visible = false;
+      H.shrinkTo(1 / 30, -2.5, 4.5);
+      H.talkAbove = true;   // its words over its head now, not over it
+    }
+    if (S) S.closeK = 0.0001;   // the black hole closes, gently; soft starlight
+    G.fx.vigU.uFadeCol.value.setHex(0xffffff); G.fx.fadeT = Flash.reduced ? 0.2 : 0.35; G.fx.fadeTo(0, 2, 0xffffff);
+    this.reward(B, 'name', name);
+    B.setState('SECRET_END');
+    B.afterIn('SECRET_END', 5.2, () => { B.dlg = null; G.ui.say(NLINES_END.named, { speed: 10 }); });
+    B.afterIn('SECRET_END', 9.0, () => { G.ui.hideBubble(); Party.say(NLINES_END.wrote, 4); if (Party.model) Party.model.setMood('happy'); });
+    B.afterIn('SECRET_END', 12.5, () => this.results(B));
+    B.afterIn('SECRET_END', 18.5, () => this.floatBack(B, 'name'));
+  },
+  // DELETE: after the erase (fightVictory > def.victory)
+  deleted(B) {
+    const S = this.stage;
+    B.setState('SECRET_END');
+    this.reward(B, 'fight');
+    if (S) S.collapse = { t: 0 };   // the black hole collapses into one white pixel, which pops
+    B.afterIn('SECRET_END', 4.4, () => { Party.say(NLINES_END.deleted, 4); if (Party.model) Party.model.setMood('sad'); });
+    B.afterIn('SECRET_END', 8.4, () => this.results(B));
+    B.afterIn('SECRET_END', 14.0, () => this.floatBack(B, 'fight'));
+  },
+  // the rewards (the first clear in full, replays at 50%), the save, the SOUND TEST
+  reward(B, how, name) {
+    B.grantClear(how);
+    const S = Save.data.secret;
+    S.discovered = true; S.beaten = true; S.ending = how === 'name' ? 'name' : 'delete';
+    if (how === 'name') {
+      S.creatureName = name;
+      const C = Save.data.cosmetics; if (!C.owned.includes('null')) C.owned.push('null');
+    }
+    Save.heard('secret');
+    Save.write();
+  },
+  results(B) {
+    const R = B.reward; B.reward = null;
+    const how = Save.data.secret.ending;
+    let text = how === 'name' ? `IT HAS A NAME: ${Save.data.secret.creatureName}\n\nEXP {EXP}   GOLD {GOLD}\nNEW SOUL PIN: NULL SOUL` : '_____ WAS DELETED.\n\nEXP {EXP}   GOLD {GOLD}';
+    let scale = 3;
+    if (R) {
+      text = text.replace('{EXP}', R.exp).replace('{GOLD}', R.gold);
+      const extra = [];
+      if (R.found) extra.push(`+${R.found} G FOUND IN THE FIGHT`);
+      if (!R.first) extra.push('REPLAY: 50% REWARDS');
+      if (R.lv) extra.push(`YOUR LV INCREASED TO ${R.lv}!`);
+      if (extra.length) { text += '\n\n' + extra.join('\n'); scale = 2; }
+      if (R.gold > 0) { const g = R.gold; B.afterIn('SECRET_END', 1.2, () => G.coins.toWrist(G.ui.big.mesh.position, g, undefined, true)); }
+      if (R.lv) B.afterIn('SECRET_END', 1.9, () => { G.audio.sfx.levelUp(); G.ui.showPrompt(`LV ${R.lv}!  +4 MAX HP  +5% DAMAGE`, 2.6, '#ffd23c'); });
+    }
+    G.ui.showBig(text, { type: true, scale, dist: 1.8, y: 0.18 });
+  },
+  // you and K1DD1E float back up through the void (only the specks move: you don't), into boss 2's hall
+  floatBack(B, how) {
+    G.ui.hideBig(); G.ui.hideBubble();
+    G.arena.visible = false; G.ui.setBattleHUD(false);
+    this.up = new FallFX(); for (const M of this.up.m) M.v = -M.v * 1.6; for (const W of this.up.words) W.v = -W.v;
+    this.upT = 0;
+    B.afterIn('SECRET_END', 4.2, () => { if (this.up) { this.up.dispose(); this.up = null; } this.leave(B, how); });
+  },
+  // per frame through the endings: the hole collapsing or closing, the specks going by
+  updateEnd(B, dt, rdt) {
+    const S = this.stage;
+    if (this.up) { this.upT += rdt; this.up.update(rdt, clamp(this.upT / 1.2, 0, 1)); }
+    if (!S) return;
+    if (S.collapse) {
+      const C = S.collapse; C.t += rdt;
+      const k = clamp(C.t / 2.6, 0, 1);
+      S.holeR = lerp(7, 0.0001, k * k); S.hole.set(S.holeR, 1 - k * 0.6); S.hole.group.scale.setScalar(Math.max(1e-4, 1 - k));
+      if (k >= 1 && !C.pixel) {
+        C.pixel = true; C.pt = 0;
+        G.audio.sfx.cut(); G.input.pulseAll(0.4, 60);
+      }
+      if (C.pixel) {
+        C.pt += rdt;
+        const p = S.holePos, a = C.pt < 0.9 ? 1 : Math.max(0, 1 - (C.pt - 0.9) / 0.25), sz = C.pt < 0.9 ? 0.25 : 0.25 + (C.pt - 0.9) * 6;
+        if (a > 0) G.fx.glow.add(p.x, p.y, p.z, sz, 1, 1, 1, a, 0);
+        if (C.pt >= 0.9 && !C.popped) { C.popped = true; G.audio.sfx.popDing(); }
+      }
+      S.sky.U.uR.value = Math.max(0.001, S.holeR);
+    }
+    if (S.closeK) {
+      // NAME IT: the hole closes over a few seconds; the stars brighten (soft starlight)
+      S.closeK = Math.min(1, S.closeK + rdt / 5);
+      const k = smooth01(S.closeK);
+      S.holeR = lerp(7, 0.0001, k); S.hole.set(S.holeR, 1 - k); S.hole.group.scale.setScalar(Math.max(1e-4, 1 - k));
+      S.sky.U.uR.value = Math.max(0.001, S.holeR); S.sky.U.uSoft.value = k;
+    }
+  },
+});
+// the finishing move knows both endings now: NAME IT has no DEL key (OK on the keyboard was the blow)
+{
+  const finish0 = SecretFight.finish, update0 = SecretFight.updateFinish;
+  SecretFight.finish = function (B, how) {
+    finish0.call(this, B, how);
+    if (how === 'name') {
+      if (this.key) this.key.visible = false;
+      B.fin.punched = true; G.ui.prompt.mesh.visible = false;
+      Party.say('running name.exe. here goes', 2);
+      G.soul.active = false;
+    }
+  };
+  SecretFight.updateFinish = function (B, dt, rdt) {
+    const F = B.fin;
+    if (F && F.how === 'name') {
+      if (!F.landed && G.clock.beat >= F.hit - 0.02) { F.landed = true; this.nameHit(B); }
+      return;
+    }
+    update0.call(this, B, dt, rdt);
+  };
+}
+// the boss bundle: its endings, and the states they run in
+Object.assign(SECRET_DEF, {
+  victory(B) { SecretFight.deleted(B); },
+  endings: { fight(B) { SecretFight.deleted(B); } },
+});
+{
+  const us = SECRET_DEF.updateState;
+  SECRET_DEF.updateState = function (B, state, dt, rdt) {
+    if (state === 'SECRET_NAME') SecretFight.updateName(B, dt, rdt);
+    else if (state === 'SECRET_END') SecretFight.updateEnd(B, dt, rdt);
+    else us.call(this, B, state, dt, rdt);
+  };
+  const un = SECRET_DEF.onUnload;
+  SECRET_DEF.onUnload = function (B) { un.call(this, B); if (SecretFight.kb) { SecretFight.kb.dispose(); SecretFight.kb = null; } if (SecretFight.up) { SecretFight.up.dispose(); SecretFight.up = null; } };
+}
 // @@/SECRET
 
 // ============================================================================
@@ -34368,6 +34718,8 @@ const BossCards = {
     // header
     PixelFont.draw(g, `FILE ${def.fileNo}`, 14, 12, 3, hv ? '#ffffff' : th.sub);
     if (beat) PixelFont.draw(g, '★', W - 36, 10, 4, '#ffd23c', { shadow: '#5a3a00' });
+    const sec = id === 'kiddie' && Save.data.secret.beaten ? Save.data.secret : null;   // the secret, beaten: a glitched star
+    if (sec) PixelFont.draw(g, '★', W - 66, 10, 4, '#ff00ff', { shadow: '#2a002a', glitch: 0.25 * Flash.glitchMul + 0.05 });
     // the art window
     const AX = 12, AY = 42, AW = W - 24, AH = 186;
     g.save(); g.beginPath(); g.rect(AX, AY, AW, AH); g.clip(); g.translate(AX, AY);
@@ -34377,6 +34729,7 @@ const BossCards = {
     g.strokeStyle = open ? th.edge : '#5a5a6a'; g.lineWidth = 3; g.strokeRect(AX - 1.5, AY - 1.5, AW + 3, AH + 3);
     // cleared: a rubber stamp across the foot of the art (clear of the boss's face)
     if (beat) this.stamp(g, AX + AW / 2, AY + AH - 34, beat === 'spare' ? 'SPARED' : 'DEFEATED', beat === 'spare' ? '#3cff6e' : '#ff4466');
+    if (sec) { const et = sec.ending === 'name' ? `_____: ${sec.creatureName || 'NAMED'}` : '_____: DELETED'; g.fillStyle = 'rgba(0,0,0,0.75)'; g.fillRect(AX, AY, Math.min(AW, PixelFont.width(et, 2) + 12), 22); PixelFont.draw(g, et, AX + 6, AY + 4, 2, '#ff00ff', { glitch: 0.12 * Flash.glitchMul }); }
     // name plate
     const py = AY + AH + 10;
     g.fillStyle = open ? th.plate : '#16141c'; g.fillRect(10, py, W - 20, 48);
@@ -34554,7 +34907,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, SECRET: { Corrupt, BlotchShop, CorruptHoles, SecretEvent, SecretFight, NullHole, NullStage, SECRET_MUSIC, BLOTCH, Party, ALLY_KIDDIE, SECRET_DEF, SECRET_PATTERNS, NullKit, NullEntity, NullVoice, SecretUI, SECRET_BAL }, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
+window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, SECRET: { Corrupt, BlotchShop, CorruptHoles, SecretEvent, SecretFight, NullHole, NullStage, SECRET_MUSIC, BLOTCH, Party, ALLY_KIDDIE, SECRET_DEF, SECRET_PATTERNS, NullKit, NullEntity, NullVoice, SecretUI, SECRET_BAL, NameKeyboard, NullCameo, buildNullCreature }, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)
