@@ -324,5 +324,29 @@ Hidden inside boss 2.
   procedural starfield lensed round it (the bending happens in the sky's own shader, so
   there's an Einstein ring for almost nothing). Every shader is compiled, and drawn
   unseen for a few frames, while it's dark, so nothing hitches on the reveal.
+- **Your ally.** SCR1PT_K1DD1E fell in too. In THE NULL he fights beside you: the first
+  (and only) co-op fight, on a party system any fight can use. He floats about 1.5 m to
+  your side inside the box, sitting on a cracked, half-deleted mini CRT, his hoodie's
+  terminals trying to compile his first real program. The status row under the box (and a
+  panel under your HP on your left wrist) shows SOUL and K1DD1E (60 HP). He dodges, a beat
+  late and not always the right way, and a bullet that reaches him hurts him. At 0 HP
+  he's DOWN (washed out like a ghost, lagging, NOT RESPONDING over his head) until he's
+  patched; he can't die, and only you can lose.
+- **His turn** comes after yours, from his own menu in his colours:
+  - **H4CK**: punch his 4 keys on the beat (his TYPE ATTACK); half your FIGHT's damage,
+    straight through its armour.
+  - **F1REWALL**: a hex shield orbits your SOUL through the next attack and blocks its
+    first 3 hits.
+  - **P4TCH**: heals you 18 HP; when he's DOWN it's the only thing he can run, and it
+    brings him back at 50%.
+  - **D3BUG**: a weak seam glows on its body; your next FIGHT does x2.
+- **TP is shared.** The X-ACTION **CTRL+ALT+DEL** (100% TP, him not DOWN): he types
+  like mad, three giant keycaps (CTRL, ALT, DEL) fall into reach, and you punch each on
+  three consecutive half-time beats (desktop: click on them) for 4% of its max HP a key,
+  12% for all three. It uses his turn too.
+- During attacks he shouts callouts ("LEFT LEFT LEFT", "dont touch the outlines!!"), and
+  about once an attack he shoots the bullet nearest to you down with a little yellow star.
+  His compile bar fills a step every phase, but only while he's never been DOWN for more
+  than 2 turns in a row (then: BUILD FAILED).
 - Debug: `\` in boss 2's fight plays the tape (on your turn), then each press takes
   MERCY down another 25; in the shop it puts a tape in your bag.

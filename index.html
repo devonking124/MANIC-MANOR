@@ -2791,6 +2791,7 @@ class Soul {
   // returns true if damage was applied
   hurt(dmg) {
     if (!this.alive || !this.active || this.invuln > 0 || G.debug.god) return false;
+    if (Party.on && Party.blockHit()) return false;   // an ally's F1REWALL
     if (this.vinyl) { this.breakVinyl(); return false; }
     let hp = this.hp - Stats.taken(dmg);
     const B = G.battle;
@@ -2830,7 +2831,7 @@ class Soul {
   // first contact with a bullet's graze zone
   graze(src) {
     this.grazeCount++;
-    this.addTP(CONFIG.TP_PER_GRAZE * this.tpMul * Stats.tpMul());
+    this.addTP(CONFIG.TP_PER_GRAZE * this.tpMul * Stats.tpMul() * ((G.def && G.def.grazeTpMul) || 1));
     if (G.battle && G.battle.onGraze) G.battle.onGraze(this.pos);
     this.grazeGlow = 1;
     G.audio.sfx.graze();
@@ -2845,7 +2846,7 @@ class Soul {
   grazeHold(dt) {
     if (this.grazeContT > 0) return;
     this.grazeContT = dt * 0.5;
-    this.tp = clamp(this.tp + CONFIG.TP_GRAZE_PER_SEC * this.tpMul * Stats.tpMul() * dt, 0, 100);
+    this.tp = clamp(this.tp + CONFIG.TP_GRAZE_PER_SEC * this.tpMul * Stats.tpMul() * ((G.def && G.def.grazeTpMul) || 1) * dt, 0, 100);
     this.grazeGlow = Math.max(this.grazeGlow, 0.5);
   }
   shatter(style) {
@@ -4566,8 +4567,8 @@ class UI {
   refreshHUD() { this.hudDirty = true; }
   drawHUD() {
     const soul = G.soul, B = G.battle;
-    // status row
-    {
+    // status row (with an ally: the party row, SOUL and him)
+    if (Party.on) { Party.drawRow(this.status.ctx, this.status.o.cw, this.status.o.ch); this.status.tex.needsUpdate = true; } else {
       const g = this.status.ctx, W = this.status.o.cw, H = this.status.o.ch, s = 3;
       g.clearRect(0, 0, W, H);
       const y = Math.round((H - 7 * s) / 2);
@@ -9813,7 +9814,7 @@ class Battle {
     this.fightUI.hide(); this.danceUI.hide(); this.exitDoor.hide();
     if (this.def.cleanup) this.def.cleanup(this);
     if (this.corrupt) { Corrupt.clear(); this.corrupt = null; }
-    SecretEvent.abort(); SecretFight.dispose();   // (leaving in the middle of the secret)
+    SecretEvent.abort(); SecretFight.dispose(); Party.stop();   // (leaving in the middle of the secret)
     if (Shop.active) Shop.teardown();
     const U = G.ui;
     U.hideAllMenus(); U.hideFlavor(); U.hideBubble(); U.hideBig(); U.closeSettingsPanel(); U.closeHowTo(); U.hideAsk(); U.closeBag();
@@ -9946,13 +9947,14 @@ class Battle {
   }
   takeSnapshot() {
     this.snapshot = { phase: this.phase, bossHp: this.bossHp, spare: this.spare, tp: G.soul.tp, rot: this.rot.slice(), cycle: this.cycle.slice(),
-      finalDone: this.finalDone, tired: this.tired, extra: this.def.snapshot(this) };
+      finalDone: this.finalDone, tired: this.tired, extra: this.def.snapshot(this), party: Party.on ? Party.snapshot() : null };
   }
   restoreSnapshot() {
     const s = this.snapshot; if (!s) return;
     // (while the BLOTCHED TAPE plays, a retry keeps the MERCY it had fallen to)
     Object.assign(this, { phase: s.phase, bossHp: s.bossHp, spare: this.corrupt ? this.spare : s.spare, rot: s.rot.slice(), cycle: s.cycle.slice(), finalDone: s.finalDone, tired: s.tired });
     this.def.restore(this, s.extra);
+    if (Party.on) Party.restore(s.party);
     G.ui.bossHpShown = this.bossHp;
   }
   // ------------------------------------------------------------------ dialogue helpers
@@ -10009,6 +10011,7 @@ class Battle {
   newTurn() {
     if (this.state === 'GAME_OVER') return;
     this.turn++;
+    if (Party.on) Party.onTurn(this);
     this.setState('PLAYER_MENU');
     G.loco.enabled = false; G.loco.stop();
     if (this.def.onNewTurn) this.def.onNewTurn(this);   // per-turn effects (heal over time, sulking, ...)
@@ -10126,6 +10129,8 @@ class Battle {
     const crit = Math.abs((tHit || G.audio.now) - G.audio.latency - G.clock.timeOfBeat(f.center)) <= CONFIG.FIGHT_CRIT_WINDOW;
     const spd = 1 + (CONFIG.FIGHT_SPEED_BONUS - 1) * clamp((speed - 1.0) / 2.5, 0, 1);
     let dmg = CONFIG.FIGHT_BASE * acc * spd * (crit ? CONFIG.FIGHT_CRIT : 1) * (this.tired ? 2 : 1);
+    if (Party.on) dmg *= Party.fightMul();          // D3BUG: his seam doubles your next FIGHT
+    if (this.def.fightMul) dmg *= this.def.fightMul(this);   // a boss's armour (phases)
     dmg = Stats.atk(Math.max(1, Math.round(dmg + rand(-3, 3))));
     this.bossHp = Math.max(0, this.bossHp - dmg);
     if (crit) { G.audio.sfx.crit(); this.critGold(); } else G.audio.sfx.slash();
@@ -10189,6 +10194,7 @@ class Battle {
     return this.phase;
   }
   afterAction(reaction) {
+    if (Party.on && !Party.acted) { Party.takeTurn(this, reaction); return; }   // an ally: his move, after yours
     if (this.corrupt) reaction = Corrupt.take(this, reaction);   // his scared lines first; from -75 words lose letters
     const tp = this.targetPhase();
     if (tp > this.phase) { this.phaseShift(this.phase + 1, reaction); return; }
@@ -10225,6 +10231,7 @@ class Battle {
     G.bullets.frozen = false; G.bullets.bugChance = 0; G.bullets.quarantine = 0; G.bullets.srcTag = null;
     G.shooter.enabled = false; G.loco.boost = 1;
     G.loco.enabled = false; if (G.boss) G.boss.attackPose(false);
+    if (Party.on) Party.onAttackEnd();
     const name = this.attackName;
     if (this.def.onAttackEnd && this.def.onAttackEnd(this, name)) return;   // custom continuation (phase sequences)
     this.setState('ATTACK_END');
@@ -10247,6 +10254,7 @@ class Battle {
     if (this.state === 'ATTACK_WAIT' && bar >= this.pendingBar && this.pattern) {
       this.pattern.start(bar); this.setState('BOSS_ATTACK'); if (G.boss) G.boss.doorsPulse();
       if (this.def.onPatternStart) this.def.onPatternStart(this, this.pattern);
+      if (Party.on) Party.onPatternStart(this, this.pattern);
     }
     if (this.state === 'BOSS_ATTACK' && Settings.data.beatHaptics) G.input.pulseAll(0.12, 18);
     if (this.state === 'PHASE_SHIFT' && this.shiftArmed) {
@@ -10266,6 +10274,7 @@ class Battle {
   onBeat(b, when) {
     G.fx.onBeat(b); if (G.boss) G.boss.onBeat(b); G.arena.onBeat(b);
     if (SecretFight.stage) SecretFight.onBeat(b, when);
+    if (Party.on) Party.onBeat(b);
     if (Shop.active) Shop.onBeat(b, when);
     // METRONOME tape: a soft tick on the beat while bullets are flying (they pulse with it too)
     if (this.state === 'BOSS_ATTACK' && Stats.metronome() && G.bullets.total > 0) G.audio.sfx.tick(when);
@@ -10580,10 +10589,13 @@ class Battle {
       case 'HOW_TO': case 'MODE_SELECT': break;
       case 'STORY': StoryScene.update(dt, rdt); break;
       case 'SECRET_EVENT': SecretEvent.update(dt, rdt); break;   // v5: the black hole opens, the fall
+      case 'PARTY_HACK': Party.updateHack(this, dt, rdt); break;   // the ally's H4CK
+      case 'PARTY_X': Party.updateX(this, dt, rdt); break;         // the X-ACTION
       case 'SECRET_NULL': SecretFight.update(this, dt, rdt); break;
       default: if (this.def.updateState && !frozen) this.def.updateState(this, this.state, dt, rdt);
     }
     if (this.corrupt && !frozen) Corrupt.update(this, dt, rdt);
+    if (Party.on && !frozen) Party.update(dt, rdt);
     // lights flicker (reduced: a smooth dip instead of a strobe)
     if (this.flickerT > 0 && !frozen) {
       this.flickerT -= rdt;
@@ -13677,6 +13689,7 @@ class KiddieModel {
     this.eyeTex.needsUpdate = true;
   }
   drawHoodie() {
+    if (this.compileDraw) { this.compileDraw(this.hg); this.hoodTex.needsUpdate = true; return; }   // (as an ally: his compile)
     const g = this.hg, W = 256, mode = this.hello ? 'hello' : this.admin ? 'admin' : 'code';
     // knit fabric between the windows
     g.fillStyle = mode === 'admin' ? '#2a0814' : mode === 'hello' ? '#1e3448' : '#1b3654'; g.fillRect(0, 0, W, W);
@@ -29488,6 +29501,7 @@ Object.assign(Sfx.prototype, {
     this.tone({ type: 'square', f: 62, f2: 44, dur: 0.5, vol: 0.03, attack: 0.4 });
   },
 });
+
 // the secret's sounds (all synthesized): the deletion cut, marching ants, the cursor's tick, its keyboard-delete
 // "tk", the black hole's hum, the spaghetti whoosh, orbit whirs, the ghost whisper, the compile ding, the G major
 // chime, and datamosh blips (50 ms slices of the decoded secret track, retriggered on the beat)
@@ -29796,9 +29810,13 @@ const NULL_FLOOR_FS = `
     gl_FragColor = vec4(col, 1.0);
     #include <colorspace_fragment>
   }`;
+// the shared lit-material light block, saved on the way in and handed back on the way out
+function nullSaveLight() { const U = CircusShade.uniforms(), s = {}; for (const k of RiftKit.LIGHT_KEYS) { const v = U[k].value; s[k] = typeof v === 'number' ? v : Array.isArray(v) ? v.map((x) => x.clone()) : v.clone(); } return s; }
+function nullRestoreLight(s) { if (!s) return; const U = CircusShade.uniforms(); for (const k of RiftKit.LIGHT_KEYS) { const v = U[k].value; if (typeof v === 'number') U[k].value = s[k]; else if (Array.isArray(v)) v.forEach((x, i) => x.copy(s[k][i])); else v.copy(s[k]); } }
 class NullStage {
   constructor(C) {
     this.C = C.clone();
+    this.savedLight = nullSaveLight();
     const g = this.group = new THREE.Group(); scene.add(g);
     this.holePos = C.clone().add(new THREE.Vector3(0, 34, -95)); this.holeR = 7;
     this.sky = new NullSky(this.holePos, this.holeR);
@@ -29830,11 +29848,19 @@ class NullStage {
     this.hole.update(rdt, this.pulse, bass, this.inv, warm);
     this.hole.horizon.material.color.setScalar(this.inv);   // (inverted: a white hole in a white-on-black world)
     const F = this.floorU; F.uK.value = k; F.uInv.value = this.inv; F.uPulse.value = this.pulse;
+    // its light: cold, from the hole above and behind, a cyan rim; almost nothing from below
+    const U = CircusShade.uniforms(), b = 0.85 + 0.3 * bass;
+    U.uKeyDir.value.copy(this.holePos).sub(this.C).normalize();
+    U.uKeyCol.value.set(0.72, 0.9, 1.0).multiplyScalar(0.85 * b * k);
+    U.uSky.value.set(0.13, 0.13, 0.18).multiplyScalar(k); U.uGround.value.set(0.02, 0.02, 0.03);
+    U.uRimCol.value.set(0.5, 1.0, 0.98);
+    U.uHaze.value.set(0, 0, 0, 0); U.uHaze2.value.set(0, 0, 0, 0); U.uPtN.value = 0; U.uSpN.value = 0;
   }
   // drawn for a few frames at zero brightness, in the dark (so nothing compiles on the frame it's first seen)
   warmUp(rdt) { if (!(this.warm > 0)) return; this.warm--; this.show(true); this.update(rdt, 0, true); if (this.warm === 0) this.show(false); }
   dispose() {
     this.sky.dispose(); this.hole.dispose(); disposeObject(this.group);
+    nullRestoreLight(this.savedLight); this.savedLight = null;
   }
 }
 
@@ -30210,6 +30236,9 @@ const SecretFight = {
     if (Flash.reduced) { G.fx.fadeT = 1; G.fx.fadeTo(0, 1.6, 0x000000); }
     else { G.fx.vigU.uFadeCol.value.setHex(0xffffff); G.fx.fadeT = 0.85; G.fx.fadeTo(0, 5, 0xffffff); }   // one soft white beat (a single change)
     B.setState('SECRET_NULL');
+    // he fell in too: beside you, on what's left of his CRT
+    Party.start(ALLY_KIDDIE);
+    B.after(1.6, () => Party.say('...where are we', 2.6));
     G.clock.after(G.audio.now + 9, () => { if (B.state === 'SECRET_NULL') this.backToKiddie(B); });
   },
   update(B, dt, rdt) {
@@ -30223,7 +30252,7 @@ const SecretFight = {
     G.fx.fadeTo(1, 4, 0x000000);
     B.setState('SECRET_RETURN');
     B.afterIn('SECRET_RETURN', 0.9, () => {
-      this.dispose();
+      this.dispose(); Party.stop();
       const D = BOSSES.kiddie;
       B.loadBoss(D);
       G.arena.visible = true; G.arena.opacity = 1; G.arena.resetBox(0.01);
@@ -30239,6 +30268,501 @@ const SecretFight = {
   dispose() { if (this.stage) { this.stage.dispose(); this.stage = null; } },
 };
 
+// ============================================================================
+//  Party - a fight with an ally beside you (a shared system; its first ally: SCR1PT_K1DD1E in THE NULL).
+//    - he floats about 1.5 m to your side inside the box, on a cracked, half-deleted mini CRT. He dodges
+//      (scripted, and not perfectly); a bullet that reaches him hurts him. At 0 HP he's DOWN (ghosted,
+//      lagging, NOT RESPONDING over his head) until P4TCH brings him back. He can't die: only you can lose
+//    - each turn, after your action, his own menu (his colours): H4CK, F1REWALL, P4TCH, D3BUG
+//    - TP is shared; the X-ACTION CTRL+ALT+DEL (100% TP) is a team attack
+//    - during attacks: callouts in his bubble, and about once an attack he shoots a bullet down for you
+//    - his compile bar (his first real program) fills a step every phase, unless he's been DOWN for more
+//      than 2 turns in a row
+//    - the party row: under the box (SOUL + K1DD1E) and on your left wrist
+// ============================================================================
+const ALLY_KIDDIE = {
+  id: 'kiddie', name: 'K1DD1E', maxHp: 60, col: '#2affd5', col2: '#3cff6e',
+  actions: [
+    { key: 'hack', label: 'H4CK', color: '#3cff6e' },
+    { key: 'firewall', label: 'F1REWALL', color: '#2affd5' },
+    { key: 'patch', label: 'P4TCH', color: '#ffd23c' },
+    { key: 'debug', label: 'D3BUG', color: '#ff3cc8' },
+  ],
+  lines: {
+    hack: ['ok ok ok. hitting it with everything', 'running exploit.exe. it is a real one this time', 'sudo hit it'],
+    firewall: ['firewall up. three hits. i counted', 'hex shield online. dont waste it', 'blocking the next three. probably'],
+    patch: ['patching you. hold still', 'applying update 1 of 1', 'there. +18. dont say i never did anything'],
+    revive: ['...rebooting. im fine. im FINE', 'ok who unplugged me', 'back online. what did i miss'],
+    debug: ['found a seam. hit it THERE', 'its weak point is glowing. hit the glow', 'debugger attached. x2 on your next one'],
+    down: ['NOT RESPONDING', '...'],
+    hurt: ['ow', 'OW', 'that one had my name on it', 'hey!!'],
+    star: ['got it', 'pew', 'one less', 'you owe me'],
+  },
+  callouts: ['LEFT LEFT LEFT', 'dont touch the outlines!!', 'ok THAT one is bad', 'move move move', 'its copying you', 'up! go UP', 'watch the green ones', 'i hate this one'],
+};
+const Party = {
+  on: false, ally: null, A: null, model: null, anchor: null, acted: false, menu: null,
+  SCALE: 0.2,
+  // ---------------------------------------------------------------- set up / take down
+  start(def) {
+    this.stop();
+    this.on = true; this.A = def;
+    this.ally = { hp: def.maxHp, maxHp: def.maxHp, down: false, downStreak: 0, worstStreak: 0, compile: 0, compileFail: false, firewall: 0, debugNext: false, invuln: 0, lag: 0, starUsed: false, calloutT: 0 };
+    this.acted = false;
+    // the model: his own (scaled down), on his CRT, half deleted
+    const m = this.model = new KiddieModel();
+    m.reset(); m.ally = true; m.screenU.uCrack.value = 0.85; m.setScreen('static');
+    // anchor (where he is, turned to you) > inner (his scale, and his own model's offset cancelled) > the model
+    const an = this.anchor = new THREE.Group(); scene.add(an);
+    const S = this.SCALE, inner = new THREE.Group(); an.add(inner); inner.add(m.root);
+    inner.scale.setScalar(S); inner.position.set(0, -(1.55 + 1.5 + 0.35) * S, (8.8 - 0.2) * S);
+    // the CRT he sits on is a small one (scaled about its top, so he still sits on it)
+    m.crt.scale.setScalar(0.45); m.crt.position.y = 1.5 * (1 - 0.45);
+    // his hoodie now shows his compile, not copied code
+    m.compileDraw = (g) => this.drawHoodie(g);
+    // a missing-texture bite out of the CRT's corner (half deleted)
+    const miss = canvasTex(32, 32, (g) => { for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { g.fillStyle = (x + y) % 2 ? '#ff00ff' : '#000000'; g.fillRect(x * 8, y * 8, 8, 8); } });
+    this.missMat = new THREE.MeshBasicMaterial({ map: miss, side: THREE.DoubleSide });
+    for (const [x, y, z, w, h, ry] of [[1.62, -0.95, 1.12, 1.1, 1.3, 0], [2.02, -0.9, 0.4, 1.2, 1.4, Math.PI / 2]]) {
+      const q = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.missMat); q.position.set(x, y, z); q.rotation.y = ry; m.crt.add(q);
+    }
+    this.pos = new THREE.Vector3(); this.vel = new THREE.Vector3(); this.home = new THREE.Vector3();
+    this.place(true);
+    // his menu: his colours
+    this.menu = new Menu(def.actions.map((a) => ({ label: a.label, color: a.color, hoverColor: '#ffffff', onPress: () => this.choose(a.key) })), { yOff: -0.47, radius: 0.66, gap: 0.03 });
+    // NOT RESPONDING, over his head; his bubble (callouts)
+    this.label = new TextPanel({ w: 0.42, h: 0.07, cw: 300, bg: 'rgba(255,255,255,0.92)', border: '#ff2a4a', borderPx: 3, color: '#ff2a4a', scale: 2, align: 'center', valign: 'middle', renderOrder: 12 });
+    this.label.setText('NOT RESPONDING'); this.label.mesh.visible = false; scene.add(this.label.mesh);
+    this.bubble = new TextPanel({ w: 0.5, h: 0.1, cw: 360, bg: 'rgba(4,16,14,0.92)', border: def.col, borderPx: 3, color: '#ffffff', scale: 2, align: 'center', valign: 'middle', renderOrder: 12 });
+    this.bubble.mesh.visible = false; scene.add(this.bubble.mesh); this.bubbleT = 0;
+    // the firewall: a hex shield orbiting your SOUL
+    this.hex = new THREE.Group();
+    for (let i = 0; i < 6; i++) {
+      const h = new THREE.Mesh(new THREE.RingGeometry(0.03, 0.04, 6), new THREE.MeshBasicMaterial({ color: 0x2affd5, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+      this.hex.add(h);
+    }
+    this.hex.visible = false; scene.add(this.hex);
+    // his star (the shot that takes a bullet out)
+    this.star = new THREE.Mesh(new THREE.OctahedronGeometry(0.03, 0), new THREE.MeshBasicMaterial({ color: 0xffe14a }));
+    this.star.visible = false; scene.add(this.star); this.shot = null;
+    // his panel on your left wrist (under your HP)
+    this.wrist = new TextPanel({ w: 0.085, h: 0.032, cw: 128, ch: 48, bg: 'rgba(0,0,0,0.9)', border: def.col, borderPx: 3, renderOrder: 30 });
+    this.wrist.mesh.position.set(0, -0.05, 0); G.ui.wristHP.mesh.add(this.wrist.mesh);
+    this.typeUI = null;
+    this.drawWrist();
+    G.ui.refreshHUD();
+  },
+  stop() {
+    if (!this.on && !this.model) return;
+    if (this.menu) { this.menu.hide(); disposeObject(this.menu.group); this.menu = null; }
+    for (const p of [this.label, this.bubble, this.wrist]) if (p) { if (p.mesh.parent) p.mesh.parent.remove(p.mesh); disposeObject(p.mesh); }
+    if (this.anchor) { this.model.dispose(); disposeObject(this.anchor); }
+    for (const o of [this.hex, this.star]) if (o) disposeObject(o);
+    if (this.typeUI) { this.typeUI.dispose(); this.typeUI = null; }
+    if (this.xk) { this.xk.dispose(); this.xk = null; }
+    if (this.missMat) { this.missMat.map.dispose(); this.missMat.dispose(); }
+    Object.assign(this, { on: false, ally: null, model: null, anchor: null, menu: null, label: null, bubble: null, wrist: null, hex: null, star: null, missMat: null });
+    G.ui.refreshHUD();
+  },
+  get down() { return !!(this.ally && this.ally.down); },
+  onBeat(b) { const m = this.model; if (m && !this.ally.down) { m.bounce = 1; m.nod = 1; } },
+  // ---------------------------------------------------------------- the turn: after yours, his
+  onTurn(B) {
+    const a = this.ally; if (!a) return;
+    this.acted = false; a.starUsed = false;
+    if (a.down) {
+      a.downStreak++; a.worstStreak = Math.max(a.worstStreak, a.downStreak);
+      if (a.downStreak > 2 && !a.compileFail) { a.compileFail = true; this.say('BUILD FAILED', 2.5); G.audio.sfx.errorBuzz(G.audio.now, 0.4); }
+    } else a.downStreak = 0;
+    this.drawWrist();
+  },
+  takeTurn(B, reaction) {
+    this.acted = true; this.reaction = reaction;
+    B.setState('PARTY_MENU');
+    G.ui.showFlavor(this.ally.down ? '* K1DD1E is NOT RESPONDING.\n* P4TCH might bring him back.' : `* What will K1DD1E do?   (HP ${this.ally.hp}/${this.ally.maxHp})`);
+    this.menu.buttons.forEach((b, i) => { const k = this.A.actions[i].key; b.setDisabled(this.ally.down && k !== 'patch'); b.setLabel(this.ally.down && k === 'patch' ? 'P4TCH (REVIVE)' : this.A.actions[i].label); });
+    this.menu.showArc();
+    this.model.setMood('smug'); this.model.talkT = 0.6;
+  },
+  // his turn is over: on to the boss's
+  done() { const B = G.battle, r = this.reaction; this.reaction = null; B.afterAction(r || []); },
+  choose(key) {
+    const B = G.battle, a = this.ally, L = this.A.lines;
+    this.menu.hide(); G.ui.hideFlavor();
+    if (a.down && key !== 'patch') { G.audio.sfx.buzz(); this.takeTurn(B, this.reaction); return; }
+    G.audio.sfx.select();
+    if (key === 'hack') { this.say(pick(L.hack)); this.startHack(B); return; }
+    if (key === 'firewall') {
+      a.firewall = 3; this.say(pick(L.firewall)); G.audio.sfx.digiWhoosh();
+      B.narrate('* K1DD1E puts up a F1REWALL.\n* A hex shield will block the next 3 bullets.', () => this.done());
+    } else if (key === 'patch') {
+      if (a.down) {
+        this.revive(0.5); this.say(pick(L.revive));
+        G.audio.sfx.bootBeep(G.audio.now); G.audio.sfx.heal();
+        B.narrate(`* K1DD1E runs P4TCH on himself.\n* He's back! (${a.hp} HP)`, () => this.done());
+      } else {
+        const h = G.soul.heal(18); this.say(pick(L.patch)); G.audio.sfx.heal();
+        G.fx.heal(Head.rel(_v1, 0, -0.25, 0.6));
+        B.narrate(`* K1DD1E P4TCHes you up.\n* You recovered ${h} HP!`, () => this.done());
+      }
+    } else if (key === 'debug') {
+      a.debugNext = true; this.say(pick(L.debug)); G.audio.sfx.compileDing();
+      if (G.boss && G.boss.showSeam) G.boss.showSeam(true);
+      B.narrate('* K1DD1E attaches a debugger.\n* A weak seam glows on its body. Your next FIGHT does x2!', () => this.done());
+    }
+    this.drawWrist(); G.ui.refreshHUD();
+  },
+  // your FIGHT's damage: x2 if he found the seam (used up)
+  fightMul() { const a = this.ally; if (!a || !a.debugNext) return 1; a.debugNext = false; if (G.boss && G.boss.showSeam) G.boss.showSeam(false); return 2; },
+  // ---------------------------------------------------------------- H4CK: 4 keys on the beat (his TYPE ATTACK)
+  startHack(B) {
+    const T = this.typeUI || (this.typeUI = new TypeUI());
+    B.setState('PARTY_HACK');
+    Head.update();
+    T.setLetters(shuffle(TYPE_LETTERS.split('')).slice(0, 6));
+    T.show(Head.rel(new THREE.Vector3(), 0, G.xr ? -0.42 : -0.28, G.xr ? 0.42 : 0.85), Head.pos);
+    const b = G.clock.beat;
+    let bar = Math.floor(b / 4) + 1; if ((bar * 4 - b) * G.clock.beatDur < 0.5) bar++;
+    const idx = shuffle([0, 1, 2, 3, 4, 5]).slice(0, 4);
+    this.hack = { keys: idx.map((i, k) => ({ i, beat: bar * 4 + 4 + k, res: null })), perfect: 0, sum: 0, done: false };
+    for (const k of T.keys) { k.capMat.color.setHex(0x8a8a90); k.ring.visible = false; k.armed[0] = k.armed[1] = false; }
+    G.ui.showPrompt(G.xr ? 'H4CK: PUNCH HIS 4 KEYS ON THE BEAT!' : 'H4CK: TYPE THE 4 LIT LETTERS ON THE BEAT!', 2.4, '#3cff6e');
+    this.model.talkT = 4;
+  },
+  updateHack(B, dt, rdt) {
+    const f = this.hack, T = this.typeUI; if (!f || !T) return;
+    const beat = G.clock.beat, now = G.audio.now;
+    for (const K of f.keys) {
+      const k = T.keys[K.i]; if (K.res) continue;
+      const lead = K.beat - beat;
+      if (lead <= 2) { k.ring.visible = true; k.ring.scale.setScalar(0.045 + Math.max(0, lead) * 0.03); k.ring.material.color.setHex(lead < 0.5 ? 0xffe14a : 0x3cff6e); k.capMat.color.setHex(lead < 0.5 ? 0xfff2a0 : 0xb0ffc0); }
+      let hit = false, tHit = now;
+      if (lead < 0.6) {
+        if (G.xr) {
+          for (let h = 0; h < 2; h++) {
+            const hd = G.input.hands[h]; if (!hd.connected) continue;
+            const inside = T.tipInKey(K.i, hd.tip);
+            if (inside && k.armed[h]) { hit = true; k.armed[h] = false; hd.pulse(0.9, 40); }
+            if (!inside) k.armed[h] = true;
+          }
+        } else if (G.input.keyDown('Key' + k.letter)) { hit = true; tHit = G.input.desk.pressedAt['Key' + k.letter] || now; }
+      }
+      if (hit) { const err = Math.abs(tHit - G.audio.latency - G.clock.timeOfBeat(K.beat)); K.res = err <= 0.09 ? 'perfect' : err <= 0.18 ? 'good' : 'miss'; }
+      else if (lead < -0.6) K.res = 'miss';
+      if (K.res) {
+        k.ring.visible = false; k.press = 1;
+        T.group.updateMatrixWorld(true); k.g.getWorldPosition(_v3); _v3.y += 0.08;
+        if (K.res === 'perfect') { f.perfect++; f.sum += 1; k.capMat.color.setHex(0x3cff6e); G.audio.sfx.thock(true); G.fx.sparkle(_v3, 10); G.fx.damageNumber(_v3, 'PERFECT', '#3cff6e', 0.5); }
+        else if (K.res === 'good') { f.sum += 0.6; k.capMat.color.setHex(0xffffff); G.audio.sfx.thock(true); G.fx.damageNumber(_v3, 'GOOD', '#ffffff', 0.5); }
+        else { k.capMat.color.setHex(0x44444a); G.audio.sfx.thock(false); G.fx.damageNumber(_v3, 'MISS', '#888888', 0.5); }
+      }
+    }
+    for (const k of T.keys) { k.press = Math.max(0, k.press - rdt * 5); k.cap.position.y = -0.012 * k.press; }
+    if (!f.done && f.keys.every((K) => K.res)) { f.done = true; B.afterIn('PARTY_HACK', 0.35, () => this.resolveHack(B)); }
+  },
+  resolveHack(B) {
+    const f = this.hack, T = this.typeUI;
+    B.after(0.6, () => T.hide());
+    const numPos = G.boss ? G.boss.headWorldPos(new THREE.Vector3()) : Head.rel(new THREE.Vector3(), 0, 1, 5);
+    if (f.sum <= 0) { G.fx.damageNumber(numPos, 'MISS', '#aaaaaa', 2.2); B.afterIn('PARTY_HACK', 1.0, () => this.done()); return; }
+    // half your FIGHT, and it goes straight through its armour
+    const hacked = f.perfect === f.keys.length;
+    const dmg = Stats.atk(Math.max(1, Math.round(CONFIG.FIGHT_BASE * 0.5 * (f.sum / f.keys.length) * (hacked ? 1.3 : 1) + rand(-2, 2))));
+    B.bossHp = Math.max(0, B.bossHp - dmg);
+    if (hacked) { G.audio.sfx.crit(); G.ui.showPrompt('HACKED!  (IGNORES ARMOR)', 1.5, '#3cff6e'); } else G.audio.sfx.impact();
+    if (G.boss) G.boss.hurt(); G.ui.bossShake = 0.6; G.ui.refreshHUD();
+    G.fx.damageNumber(numPos, String(dmg), '#3cff6e', hacked ? 2.8 : 2.2);
+    this.hack = null;
+    if (B.bossHp <= 0) { B.afterIn('PARTY_HACK', 0.2, () => B.fightVictory()); return; }
+    B.afterIn('PARTY_HACK', 1.3, () => this.done());
+  },
+  // ---------------------------------------------------------------- the X-ACTION: CTRL+ALT+DEL
+  canX() { return this.on && !this.down && G.soul.tp >= 100; },
+  startX(B) {
+    G.soul.addTP(-100); G.ui.refreshHUD();
+    this.acted = true;   // (a team attack: his turn too)
+    const X = this.xk || (this.xk = new XKeys());
+    B.setState('PARTY_X');
+    const b = G.clock.beat;
+    let b0 = Math.ceil(b / 2) * 2 + 4; if ((b0 - b) * G.clock.beatDur < 1.2) b0 += 2;
+    X.start(b0);
+    this.model.talkT = 6; this.model.setMood('angry');
+    this.say('CTRL. ALT. DEL. NOW');
+    G.ui.showPrompt(G.xr ? 'PUNCH CTRL, ALT, DEL ON THE BIG BEATS!' : 'CLICK ON THE BIG BEATS: CTRL, ALT, DEL!', 2.6, '#ffe14a');
+    this.xB = B;
+  },
+  updateX(B, dt, rdt) {
+    const X = this.xk; if (!X) return;
+    X.update(dt, rdt);
+    if (X.finished && !X.resolved) {
+      X.resolved = true;
+      const n = X.hits, D = B.def, dmg = Math.round(D.hp * 0.04 * n * (Settings.data.difficulty === 'easy' ? 1.1 : 1));
+      const numPos = G.boss ? G.boss.headWorldPos(new THREE.Vector3()) : Head.rel(new THREE.Vector3(), 0, 1, 5);
+      if (n > 0) {
+        B.bossHp = Math.max(0, B.bossHp - dmg);
+        if (G.boss && G.boss.deleteChunks) G.boss.deleteChunks(n);
+        G.audio.sfx.cut(); G.audio.sfx.deleteBuzz(); G.ui.bossShake = 1; G.ui.refreshHUD();
+        G.fx.damageNumber(numPos, String(dmg), '#ff00ff', 3.2);
+        G.ui.showPrompt(n === 3 ? 'CTRL+ALT+DEL!  (12%)' : `${n}/3 KEYS  (${n * 4}%)`, 1.8, '#ff00ff');
+      } else G.fx.damageNumber(numPos, 'MISS', '#aaaaaa', 2.2);
+      B.after(0.8, () => X.hide());
+      if (B.bossHp <= 0) { B.afterIn('PARTY_X', 0.4, () => B.fightVictory()); return; }
+      B.afterIn('PARTY_X', 1.4, () => B.afterAction([{ text: n === 3 ? 'i cant believe that worked' : 'close enough. i think' }]));
+    }
+  },
+  // ---------------------------------------------------------------- enemy turns: dodging, getting hit, callouts, the star
+  onPatternStart(B, pat) {
+    const a = this.ally; if (!a || a.down) return;
+    a.starUsed = false; a.starAt = rand(0.3, 0.7);
+    const L = pat && pat.callouts ? pat.callouts : this.A.callouts;
+    if (chance(0.8)) this.say(pick(L), 1.8);
+    a.calloutT = rand(3, 6);
+    this.hex.visible = a.firewall > 0;
+  },
+  onAttackEnd() { const a = this.ally; if (!a) return; a.firewall = 0; this.hex.visible = false; },
+  // the firewall takes the hit instead (Soul.hurt asks)
+  blockHit() {
+    const a = this.ally; if (!a || a.firewall <= 0 || G.battle.state !== 'BOSS_ATTACK') return false;
+    a.firewall--; G.audio.sfx.deflect(); G.fx.sparkle(G.soul.pos, 10); G.input.pulseAll(0.4, 40);
+    if (a.firewall <= 0) this.hex.visible = false;
+    return true;
+  },
+  hurtAlly(dmg) {
+    const a = this.ally; if (!a || a.down || a.invuln > 0) return;
+    a.hp = Math.max(0, a.hp - dmg); a.invuln = 1.1;
+    this.model.hurt();
+    if (a.hp <= 0) {
+      a.down = true; a.downStreak = 0; this.model.sad = true; this.model.setScreen('error', 99);
+      this.bubble.mesh.visible = false; this.bubbleT = 0; G.audio.sfx.errorBuzz(G.audio.now, 0.5);   // (the NOT RESPONDING label says it)
+    } else if (chance(0.5)) this.say(pick(this.A.lines.hurt), 1.2);
+    this.drawWrist(); G.ui.refreshHUD();
+  },
+  revive(k = 0.5) { const a = this.ally; if (!a) return; a.down = false; a.hp = Math.max(a.hp, Math.ceil(a.maxHp * k)); a.downStreak = 0; this.model.sad = false; this.model.setScreen('static'); this.drawWrist(); G.ui.refreshHUD(); },
+  heal(n) { const a = this.ally; if (!a || a.down) return; a.hp = Math.min(a.maxHp, a.hp + n); this.drawWrist(); },
+  // where he wants to be: 1.2-1.5 m to your side, inside the box
+  place(snap) {
+    const A = G.arena, s = G.soul.pos;
+    const side = s.x - A.center.x > 0.2 ? -1 : 1;
+    this.home.set(clamp(s.x + side * 1.35, A.min.x + 0.2, A.max.x - 0.2), clamp(s.y + 0.15, A.min.y + 0.25, A.max.y - 0.2), clamp(s.z - 0.25, A.min.z + 0.2, A.max.z - 0.2));
+    if (snap) this.pos.copy(this.home);
+  },
+  say(text, t = 2.2) {
+    if (!this.bubble) return;
+    this.bubble.setText(text); this.bubble.mesh.visible = true; this.bubbleT = t;
+    if (this.model) this.model.talkT = Math.max(this.model.talkT, 0.8);
+    G.audio.sfx.blip('glitch');
+  },
+  update(dt, rdt) {
+    if (!this.on) return;
+    const a = this.ally, B = G.battle, m = this.model;
+    a.invuln = Math.max(0, a.invuln - dt);
+    const fighting = B.state === 'BOSS_ATTACK';
+    // where he floats: beside you; during attacks he dodges (reacting a beat late, not always right)
+    this.place(false);
+    _v1.copy(this.home);
+    if (fighting && !a.down) {
+      this.dodgeT = (this.dodgeT || 0) - dt;
+      if (this.dodgeT <= 0) {
+        this.dodgeT = 0.14;
+        this.push = this.push || new THREE.Vector3(); this.push.set(0, 0, 0);
+        if (Math.random() < 0.72) for (const p of G.bullets.list) for (const b of p.active) {
+          if (!b.collide || b.dying) continue;
+          _v2.subVectors(this.pos, b.pos); const d = _v2.length();
+          if (d < 0.75 && d > 1e-3) this.push.addScaledVector(_v2, (0.75 - d) / d * 1.6);
+        }
+      }
+      if (this.push) _v1.add(this.push);
+    }
+    const A = G.arena;
+    _v1.set(clamp(_v1.x, A.min.x + 0.15, A.max.x - 0.15), clamp(_v1.y, A.min.y + 0.2, A.max.y - 0.15), clamp(_v1.z, A.min.z + 0.15, A.max.z - 0.15));
+    _v2.subVectors(_v1, this.pos); const dl = _v2.length(), maxStep = 1.5 * dt;
+    if (dl > maxStep) _v2.multiplyScalar(maxStep / dl);
+    if (!a.down) this.pos.add(_v2);
+    // bullets that reach him
+    if (fighting && !a.down && a.invuln <= 0) {
+      for (const p of G.bullets.list) for (const b of p.active) {
+        if (!b.collide || b.dying || !ruleHarmful(b.rule)) continue;
+        const r = 0.11 + b.r;
+        if (b.pos.distanceToSquared(this.pos) < r * r) { this.hurtAlly(Math.max(2, Math.round((b.dmg || 6) * 0.65))); b.die(); b.collide = false; break; }
+      }
+    }
+    // callouts now and then; one bullet shot down per attack
+    if (fighting && !a.down && B.pattern) {
+      a.calloutT -= dt; if (a.calloutT <= 0) { a.calloutT = rand(5, 9); if (chance(0.6)) this.say(pick(B.pattern.callouts || this.A.callouts), 1.6); }
+      const P = B.pattern, prog = P.startBeat !== undefined ? (G.clock.beat - P.startBeat) / Math.max(1, P.beats) : 0;
+      if (!a.starUsed && prog > a.starAt) this.shootOne();
+    }
+    this.updateShot(dt);
+    // the model: on the anchor (he sits 0.85 m-ish up on his CRT, scaled), lagging when DOWN
+    Head.update();
+    const an = this.anchor, S = this.SCALE;
+    an.position.copy(this.pos);
+    an.rotation.y = Math.atan2(Head.pos.x - this.pos.x, Head.pos.z - this.pos.z);
+    a.lag += dt;
+    const step = a.down ? 0.28 : 0;
+    if (a.lag >= step) {
+      const gl = G.fx.glow, add = gl.add;
+      gl.add = function (x, y, z, size, r, g, b, al, sh) { return add.call(this, x, y, z, size * S * 2.2, r, g, b, al, sh); };
+      try { m.update(a.lag); } finally { gl.add = add; }
+      a.lag = 0;
+    }
+    for (const mat of m.litMats) mat.uniforms.uGlow.value.setScalar(a.down ? 0.55 : mat.uniforms.uGlow.value.x);   // DOWN: washed out, a ghost
+    an.visible = !(a.invuln > 0 && !a.down && Math.floor(a.invuln * (Flash.reduced ? 3 : 10)) % 2);
+    m.headWorldPos(_v3);
+    this.label.mesh.visible = a.down; if (a.down) { this.label.mesh.position.copy(_v3).add(_v4.set(0, 0.16, 0)); this.label.mesh.lookAt(Head.pos); }
+    this.bubbleT -= rdt;
+    this.bubble.mesh.visible = this.bubbleT > 0;
+    if (this.bubble.mesh.visible) { this.bubble.mesh.position.copy(_v3).add(_v4.set(0, a.down ? 0.26 : 0.17, 0)); this.bubble.mesh.lookAt(Head.pos); }
+    // the hex shield
+    if (this.hex.visible) {
+      const t = G.time, s = G.soul.pos;
+      this.hex.children.forEach((h, i) => { const ang = t * 2.2 + i / 6 * TAU; h.position.set(s.x + Math.cos(ang) * 0.11, s.y + Math.sin(ang * 1.3) * 0.04, s.z + Math.sin(ang) * 0.11); h.lookAt(Head.pos); h.visible = i < a.firewall * 2; });
+    }
+    if (this.wristDirty) { this.wristDirty = false; this.drawWrist(); }
+  },
+  // his star: from him to the bullet nearest to you (0.25 s), and it's gone
+  shootOne() {
+    const a = this.ally; a.starUsed = true;
+    let best = null, bd = 1.3;
+    for (const p of G.bullets.list) for (const b of p.active) {
+      if (!b.collide || b.dying || !ruleHarmful(b.rule)) continue;
+      const d = b.pos.distanceTo(G.soul.pos); if (d < bd) { bd = d; best = b; }
+    }
+    if (!best) return;
+    this.shot = { b: best, t: 0, from: this.pos.clone() };
+    this.star.visible = true; G.audio.sfx.shoot();
+  },
+  updateShot(dt) {
+    const S = this.shot; if (!S) return;
+    S.t += dt / 0.25;
+    this.star.position.lerpVectors(S.from, S.b.pos, Math.min(1, S.t)); this.star.rotation.y += dt * 12;
+    G.fx.glow.add(this.star.position.x, this.star.position.y, this.star.position.z, 0.09, 1, 0.9, 0.3, 0.8, 0);
+    if (S.t >= 1) {
+      if (S.b.active && !S.b.dying) { S.b.die(); S.b.collide = false; G.fx.sparkle(S.b.pos, 8); G.audio.sfx.deflect(); if (chance(0.4)) this.say(pick(this.A.lines.star), 1); }
+      this.shot = null; this.star.visible = false;
+    }
+  },
+  // ---------------------------------------------------------------- his compile bar (a step a phase)
+  compileStep(n) {
+    const a = this.ally; if (!a || a.compileFail) return;
+    const k = clamp(n / 4, 0, 1);
+    if (k > a.compile) { a.compile = k; G.audio.sfx.compileDing(); this.say(k >= 1 ? 'compiled. it compiled. i didnt copy it' : `compiling... ${Math.round(k * 100)}%`, 2); }
+  },
+  compileFull() { const a = this.ally; return !!a && !a.compileFail && a.compile >= 1; },
+  drawHoodie(g) {
+    const a = this.ally, W = 256;
+    g.fillStyle = '#10241c'; g.fillRect(0, 0, W, W);
+    g.fillStyle = 'rgba(255,255,255,0.05)'; for (let y = 0; y < W; y += 4) g.fillRect(0, y, W, 1);
+    for (let wy = 0; wy < 2; wy++) for (let wx = 0; wx < 2; wx++) {
+      const x0 = wx * 128 + 8, y0 = wy * 128 + 8, ww = 112, wh = 112;
+      g.fillStyle = a && a.compileFail ? '#ff2a4a' : '#3cff6e'; g.fillRect(x0 - 2, y0 - 2, ww + 4, wh + 4);
+      g.fillStyle = '#020806'; g.fillRect(x0, y0, ww, wh);
+      if (!a) continue;
+      if (a.done) { PixelFont.draw(g, 'BUILD', x0 + 20, y0 + 38, 3, '#3cff6e'); PixelFont.draw(g, 'SUCCEEDED', x0 + 4, y0 + 66, 2, '#3cff6e'); continue; }
+      if (a.compileFail) { PixelFont.draw(g, 'BUILD', x0 + 20, y0 + 38, 3, '#ff2a4a'); PixelFont.draw(g, 'FAILED', x0 + 20, y0 + 66, 3, '#ff2a4a'); continue; }
+      PixelFont.draw(g, '> make', x0 + 4, y0 + 6, 1, '#2affd5');
+      PixelFont.draw(g, 'name.exe', x0 + 4, y0 + 18, 2, '#3cff6e');
+      for (let l = 0; l < 4; l++) PixelFont.draw(g, KID_CODE[(l + (this.model ? this.model.hoodScroll : 0) + wx * 3 + wy * 5) % KID_CODE.length].slice(0, 17), x0 + 4, y0 + 40 + l * 10, 1, l % 2 ? '#3cff6e' : '#1f8a50');
+      g.fillStyle = '#0c3a20'; g.fillRect(x0 + 6, y0 + 88, ww - 12, 12);
+      g.fillStyle = '#3cff6e'; g.fillRect(x0 + 8, y0 + 90, Math.round((ww - 16) * a.compile), 8);
+      PixelFont.draw(g, `${Math.round(a.compile * 100)}%`, x0 + 40, y0 + 102, 1, '#ffffff');
+    }
+  },
+  // ---------------------------------------------------------------- the party row (the box) and the wrist
+  drawRow(g, W, H) {
+    const soul = G.soul, a = this.ally, s = 3;
+    g.clearRect(0, 0, W, H);
+    const y = Math.round((H - 7 * s) / 2);
+    const panel = (x, w, name, col, hp, max, down) => {
+      g.fillStyle = 'rgba(0,0,0,0.75)'; g.fillRect(x, 2, w, H - 4);
+      g.fillStyle = col; g.fillRect(x, 2, w, 2); g.fillRect(x, H - 4, w, 2);
+      PixelFont.draw(g, name, x + 6, y, s, col, { shadow: '#000' });
+      const bx = x + 6 + PixelFont.width(name, s) + 10, bw = w - (bx - x) - 80;
+      g.fillStyle = '#c80024'; g.fillRect(bx, y, bw, 7 * s);
+      if (!down) { g.fillStyle = '#ffe600'; g.fillRect(bx, y, Math.round(bw * hp / max), 7 * s); }
+      PixelFont.draw(g, down ? 'DOWN' : `${Math.ceil(hp)}/${max}`, bx + bw + 6, y + 3, 2, down ? '#ff2a4a' : '#ffffff');
+    };
+    panel(4, 250, 'SOUL', '#ff2244', soul.hp, soul.maxHp, false);
+    panel(262, 240, 'K1DD1E', '#2affd5', a.hp, a.maxHp, a.down);
+    PixelFont.draw(g, `TP ${Math.floor(soul.tp)}%`, W - 92, y, s, '#ff9d1a', { shadow: '#000' });
+  },
+  drawWrist() {
+    const P = this.wrist; if (!P) return;
+    const a = this.ally, g = P.ctx; g.fillStyle = '#000'; g.fillRect(0, 0, 128, 48);
+    g.fillStyle = '#2affd5'; g.fillRect(0, 0, 128, 3); g.fillRect(0, 45, 128, 3); g.fillRect(0, 0, 3, 48); g.fillRect(125, 0, 3, 48);
+    PixelFont.draw(g, 'K1DD1E', 8, 8, 2, '#2affd5');
+    if (a.down) PixelFont.draw(g, 'DOWN', 8, 26, 2, '#ff2a4a');
+    else { g.fillStyle = '#c80024'; g.fillRect(8, 26, 112, 12); g.fillStyle = '#ffe600'; g.fillRect(8, 26, Math.round(112 * a.hp / a.maxHp), 12); }
+    P.tex.needsUpdate = true;
+  },
+  // retries: the phase starts over (both of you at full HP, TP 50%)
+  snapshot() { const a = this.ally; return a ? { compile: a.compile, compileFail: a.compileFail, worstStreak: a.worstStreak } : null; },
+  restore(s) {
+    const a = this.ally; if (!a) return;
+    if (s) Object.assign(a, s);
+    a.hp = a.maxHp; a.down = false; a.downStreak = 0; a.firewall = 0; a.debugNext = false; a.invuln = 0;
+    this.model.sad = false; this.model.setScreen('static'); this.drawWrist();
+  },
+};
+// the X-ACTION's three giant keycaps: they fall from the sky into reach, one punch each on 3 big beats
+class XKeys {
+  constructor() {
+    this.group = new THREE.Group(); scene.add(this.group); this.group.visible = false;
+    this.keys = ['CTRL', 'ALT', 'DEL'].map((l, i) => {
+      const g = new THREE.Group(); this.group.add(g);
+      const capMat = CircusShade.material({ color: 0xe8e8f0, gloss: 1.1, shine: 60, rim: 0.5, emit: 0.42, vertexColors: false }); capMat.color = capMat.uniforms.uColor.value;
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 0.1, 4, 1).rotateY(Math.PI / 4), capMat); g.add(cap);
+      const tex = canvasTex(64, 32, (gg) => { gg.fillStyle = '#e8e8f0'; gg.fillRect(0, 0, 64, 32); PixelFont.draw(gg, l, Math.round((64 - PixelFont.width(l, 2)) / 2), 9, 2, '#111111'); });
+      const top = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.075), new THREE.MeshBasicMaterial({ map: tex })); top.rotation.x = -Math.PI / 2; top.position.y = 0.051; g.add(top);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffe14a, transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; g.add(ring);
+      return { g, cap, capMat, ring, res: null, armed: [true, true], press: 0, home: new THREE.Vector3() };
+    });
+  }
+  start(b0) {
+    Head.update();
+    this.b0 = b0; this.hits = 0; this.finished = false; this.resolved = false;
+    this.keys.forEach((k, i) => {
+      k.res = null; k.beat = b0 + i * 2; k.press = 0; k.armed[0] = k.armed[1] = false;
+      Head.rel(k.home, (i - 1) * 0.3, G.xr ? -0.32 : -0.22, G.xr ? 0.45 : 0.95);
+      k.g.position.copy(k.home); k.g.position.y += 3; k.capMat.color.setHex(0xe8e8f0); k.ring.visible = false;
+      k.g.lookAt(Head.pos.x, k.home.y, Head.pos.z); k.g.rotateX(G.xr ? 0.5 : 0.85);
+    });
+    this.group.visible = true;
+  }
+  update(dt, rdt) {
+    const beat = G.clock.beat, now = G.audio.now;
+    for (const k of this.keys) {
+      // the fall: from 3 m up, landing two beats before its beat
+      const land = clamp(1 - (k.beat - 2 - beat) / 3, 0, 1);
+      k.g.position.y = k.home.y + 3 * (1 - easeOut(land)) - 0.02 * k.press;
+      if (k.res) { k.press = Math.max(0, k.press - rdt * 4); continue; }
+      const lead = k.beat - beat;
+      if (lead <= 2) { k.ring.visible = true; k.ring.scale.setScalar(0.13 + Math.max(0, lead) * 0.08); }
+      let hit = false, tHit = now;
+      if (lead < 0.7 && land >= 1) {
+        if (G.xr) {
+          for (let h = 0; h < 2; h++) {
+            const hd = G.input.hands[h]; if (!hd.connected) continue;
+            const inside = hd.tip.distanceTo(k.g.position) < 0.16;
+            if (inside && k.armed[h]) { hit = true; k.armed[h] = false; hd.pulse(1, 80); }
+            if (!inside) k.armed[h] = true;
+          }
+        } else if (G.input.desk.click || G.input.keyDown('Space')) { hit = true; tHit = G.input.desk.clickAt || G.input.desk.pressedAt.Space || now; G.input.desk.click = false; }
+      }
+      if (hit) { const err = Math.abs(tHit - G.audio.latency - G.clock.timeOfBeat(k.beat)); k.res = err <= 0.16 ? 'hit' : 'miss'; }
+      else if (lead < -0.7) k.res = 'miss';
+      if (k.res) {
+        k.ring.visible = false; k.press = 1;
+        if (k.res === 'hit') { this.hits++; k.capMat.color.setHex(0xff00ff); G.audio.sfx.thock(true); G.audio.sfx.cut(); G.fx.sparkle(k.g.position, 14); G.fx.damageNumber(_v1.copy(k.g.position).setY(k.g.position.y + 0.15), k === this.keys[2] ? 'DEL!' : 'OK', '#ff00ff', 0.6); }
+        else { k.capMat.color.setHex(0x44444a); G.audio.sfx.thock(false); }
+      }
+    }
+    if (!this.finished && this.keys.every((k) => k.res)) this.finished = true;
+  }
+  hide() { this.group.visible = false; }
+  dispose() { disposeObject(this.group); }
+}
 // @@/SECRET
 
 // ============================================================================
@@ -31703,7 +32227,7 @@ G.battle = new Battle();
 G.ui = new UI();
 G.coins = new Coins();
 G.soul.applyPin(Save.data.cosmetics.equipped);
-window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, SECRET: { Corrupt, BlotchShop, CorruptHoles, SecretEvent, SecretFight, NullHole, NullStage, SECRET_MUSIC, BLOTCH }, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
+window.__MM = { G, CONFIG, Settings, StoryScene, BossPortraits, PATTERNS, Head, BOSSES, Save, Stats, MusicLibrary, Shop, ShopKit, OUT, SECRET: { Corrupt, BlotchShop, CorruptHoles, SecretEvent, SecretFight, NullHole, NullStage, SECRET_MUSIC, BLOTCH, Party, ALLY_KIDDIE }, KITS: { BigTopKit, StormKit, RingKit, JuggleKit, CircusFX, DesertKit, FenceKit, OutlawKit, TrainKit, DrawKit, OFX, HallKit, ManorBits, WallKit, ChandKit, DoorKit, PortraitKit, StairKit, FurnKit, BallKit, CorridorKit, DataKit, KidKit, RiftKit, SoulLogo, RiftUI }, camera };
 
 // ============================================================================
 //  2D page overlay (title, music loading, settings, how-to)
